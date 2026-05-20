@@ -1,0 +1,65 @@
+import type {
+  Lead,
+  Company,
+  Campaign,
+  ResearchFinding,
+  Interaction,
+  Opportunity,
+  LeadAnalysisOutput,
+} from '@/lib/types'
+import { ai, MODEL, requireAnthropic } from '@/lib/ai/client'
+import { parseJson, extractText } from '@/lib/ai/parse'
+import { withTimeout } from '@/lib/ai/timeout'
+import { BRAND_VOICE } from '@/lib/prompts/brand'
+import { buildLeadContext } from './_context'
+
+export async function analyzeLeadWhyNow(
+  lead: Lead,
+  company: Company | null,
+  findings: ResearchFinding[],
+  interactions: Interaction[],
+  opportunities: Opportunity[],
+  campaign?: Campaign | null,
+): Promise<LeadAnalysisOutput> {
+  requireAnthropic()
+
+  const context = buildLeadContext(lead, company, findings, interactions, opportunities, campaign)
+
+  const prompt = `${context}
+
+---
+
+Provide a strategic relationship analysis for Oaki Studio. Be specific and honest.
+
+If there is no strong why-now signal, say so and set confidence below 50 and intent_level to "low". Do not fabricate urgency.
+
+Return ONLY valid JSON matching this structure:
+{
+  "summary": "2-3 sentence strategic assessment of this relationship and the current opportunity. Reference specific signals from the research.",
+  "why_now": "The specific reason — tied to real signals or honest acknowledgment that no strong signal exists yet.",
+  "intent_level": "low | medium | high",
+  "recommended_next_action": "One specific, actionable next step for Oaki's founder.",
+  "suggested_email": "Complete email draft. Subject: [subject line]\\n\\n[body]. Short, premium, human. Reference something specific about their work.",
+  "suggested_linkedin_dm": "Short LinkedIn DM — 2-3 sentences maximum. Specific hook, no generic opener.",
+  "discovery_questions": ["Strategic question 1", "Strategic question 2", "Strategic question 3", "Strategic question 4"],
+  "objections": ["Likely objection 1", "Likely objection 2", "Likely objection 3"],
+  "opportunities": ["Longer-term opportunity beyond immediate deal 1", "Opportunity 2"],
+  "risk_level": "low | medium | high",
+  "confidence": 0
+}
+
+confidence: 0-100 integer. How confident are you that now is the right moment to act? Be calibrated.`
+
+  const response = await withTimeout(
+    ai.messages.create({
+      model: MODEL,
+      max_tokens: 2500,
+      system: BRAND_VOICE,
+      messages: [{ role: 'user', content: prompt }],
+    }),
+    undefined,
+    'analyzeLeadWhyNow',
+  )
+
+  return parseJson<LeadAnalysisOutput>(extractText(response.content))
+}

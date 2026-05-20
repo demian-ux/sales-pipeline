@@ -1,0 +1,36 @@
+import { NextResponse } from 'next/server'
+import { getGmailClient } from '@/lib/gmail/client'
+import { syncThreadsForLead } from '@/lib/gmail/sync'
+import { getLeads } from '@/lib/sheets'
+import { sessionCache } from '@/lib/sheets/cache'
+
+export async function POST() {
+  try {
+    const gmail = await getGmailClient()
+    if (!gmail) {
+      return NextResponse.json({ error: 'Gmail not connected' }, { status: 401 })
+    }
+
+    const leads = await getLeads()
+    const leadsWithEmail = leads.filter((l) => l.email)
+
+    let synced = 0
+    let total = 0
+
+    for (const lead of leadsWithEmail) {
+      const threads = await syncThreadsForLead(lead, gmail)
+      sessionCache.threads[lead.lead_id] = threads
+      synced++
+      total += threads.length
+    }
+
+    return NextResponse.json({
+      synced_leads: synced,
+      total_threads: total,
+      synced_at: new Date().toISOString(),
+    })
+  } catch (err) {
+    console.error('Gmail sync error:', err)
+    return NextResponse.json({ error: 'Sync failed' }, { status: 500 })
+  }
+}

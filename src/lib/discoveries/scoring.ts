@@ -1,0 +1,61 @@
+import type { DiscoveryScoreBreakdown, DiscoverySignalTier } from '@/lib/types'
+
+// Weights must sum to 1.0
+const WEIGHTS = {
+  opportunity_clarity: 0.35,
+  investment_size:     0.20,
+  timing:              0.15,
+  actors:              0.10,
+  sector_growth:       0.10,
+  region_strategic:    0.10,
+} as const
+
+// Sub-score shape used by the Claude analyzer — un-prefixed (matches the JSON
+// schema returned by the prompt). The DB columns use a `score_` prefix.
+export interface ScoreBreakdownRaw {
+  opportunity_clarity: number
+  investment_size: number
+  timing: number
+  actors: number
+  sector_growth: number
+  region_strategic: number
+}
+
+export function computeDiscoveryScore(scores: ScoreBreakdownRaw): number {
+  const raw =
+    scores.opportunity_clarity * WEIGHTS.opportunity_clarity +
+    scores.investment_size     * WEIGHTS.investment_size     +
+    scores.timing              * WEIGHTS.timing              +
+    scores.actors              * WEIGHTS.actors              +
+    scores.sector_growth       * WEIGHTS.sector_growth       +
+    scores.region_strategic    * WEIGHTS.region_strategic
+
+  return Math.round(Math.min(100, Math.max(0, raw)))
+}
+
+export function scoreToTier(score: number | null): DiscoverySignalTier {
+  if ((score ?? 0) >= 70) return 'strong_opportunity'
+  if ((score ?? 0) >= 40) return 'watchlist'
+  return 'archive'
+}
+
+export function tierLabel(tier: DiscoverySignalTier): string {
+  switch (tier) {
+    case 'strong_opportunity': return 'Strong Opportunity'
+    case 'watchlist':          return 'Watchlist'
+    case 'archive':            return 'Archive'
+  }
+}
+
+// DB rows store sub-scores with the `score_` prefix. This helper rebuilds the
+// raw shape from a row object (typed loosely because Supabase returns `any`).
+export function rowToBreakdown(row: Partial<DiscoveryScoreBreakdown>): ScoreBreakdownRaw {
+  return {
+    opportunity_clarity: row.score_opportunity_clarity ?? 0,
+    investment_size:     row.score_investment_size     ?? 0,
+    timing:              row.score_timing              ?? 0,
+    actors:              row.score_actors              ?? 0,
+    sector_growth:       row.score_sector_growth       ?? 0,
+    region_strategic:    row.score_region_strategic    ?? 0,
+  }
+}

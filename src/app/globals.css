@@ -1,0 +1,325 @@
+@import "tailwindcss";
+
+/* ── Design tokens ─────────────────────────────────────────────────────── */
+
+:root {
+  /* Backgrounds */
+  --bg:        #080808;
+  --surface:   #101010;
+  --surface-2: #181818;
+  --surface-3: #212121;
+
+  /* Borders */
+  --border:        #2c2c2c;
+  --border-subtle: #1c1c1c;
+  --border-hover:  #404040;
+  --border-focus:  #c8a96e;
+
+  /* Text */
+  --text:       #ebebeb;
+  --text-muted: #8a8a8a;
+  --text-faint: #505050;
+
+  /* Accent (gold) */
+  --accent:     #c8a96e;
+  --accent-dim: rgba(200, 169, 110, 0.10);
+  --accent-mid: rgba(200, 169, 110, 0.20);
+
+  /* Semantic colors */
+  --green:      #4caf86;
+  --green-dim:  rgba(76, 175, 134, 0.10);
+  --red:        #e05c5c;
+  --red-dim:    rgba(224, 92, 92, 0.10);
+  --yellow:     #d4a843;
+  --yellow-dim: rgba(212, 168, 67, 0.10);
+  --blue:       #5c8ed4;
+  --blue-dim:   rgba(92, 142, 212, 0.10);
+
+  /* Radius scale */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-xl: 16px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.4);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.5);
+
+  /* Transitions */
+  --t-fast:   0.10s ease;
+  --t-base:   0.15s ease;
+  --t-slow:   0.25s ease;
+}
+
+/* ── Reset ─────────────────────────────────────────────────────────────── */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+  text-size-adjust: 100%;
+}
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: 'cv01', 'ss01';
+}
+
+/* ── Base elements ─────────────────────────────────────────────────────── */
+
+a {
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+button {
+  cursor: pointer;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+input, select, textarea {
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  outline: none;
+  transition: border-color var(--t-base);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--accent);
+}
+
+/* ── Focus ring ────────────────────────────────────────────────────────── */
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r-xs);
+}
+
+/* ── Selection ─────────────────────────────────────────────────────────── */
+
+::selection {
+  background: var(--accent-mid);
+  color: var(--text);
+}
+
+/* ── Scrollbar ─────────────────────────────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-hover);
+}
+
+/* ── Card hover — applied to Link > div patterns ───────────────────────── */
+
+a .hover-card,
+a:hover .hover-card {
+  transition:
+    border-color var(--t-base),
+    background var(--t-base),
+    box-shadow var(--t-base);
+}
+
+a:hover .hover-card {
+  border-color: var(--border-hover) !important;
+  background: var(--surface-2) !important;
+}
+
+/* Generic clickable card */
+.card-clickable {
+  transition: border-color var(--t-base), background var(--t-base);
+  cursor: pointer;
+}
+
+.card-clickable:hover {
+  border-color: var(--border-hover);
+  background: var(--surface-2);
+}
+
+/* ── Prose / pre ───────────────────────────────────────────────────────── */
+
+pre {
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+/* ── Page scaffolding ──────────────────────────────────────────────────── */
+
+.page {
+  padding: 28px 32px;
+  max-width: 1120px;
+}
+
+.page-header {
+  margin-bottom: 28px;
+}
+
+.page-eyebrow {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-bottom: 4px;
+}
+
+.page-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+
+/* ── Section label ─────────────────────────────────────────────────────── */
+
+.section-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-bottom: 10px;
+}
+
+/* ── Divider ───────────────────────────────────────────────────────────── */
+
+.divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 20px 0;
+}
+
+/* ── Stat chip ─────────────────────────────────────────────────────────── */
+
+.stat-chip {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 14px 16px;
+  transition: border-color var(--t-base);
+}
+
+.stat-chip:hover {
+  border-color: var(--border-hover);
+}
+
+/* ── Badge ─────────────────────────────────────────────────────────────── */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 100px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+/* ── Button base ───────────────────────────────────────────────────────── */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--t-base);
+  white-space: nowrap;
+}
+
+.btn:hover {
+  border-color: var(--border-hover);
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #000;
+  border-color: var(--accent);
+}
+
+.btn-primary:hover {
+  background: #d4b578;
+  border-color: #d4b578;
+}
+
+/* ── Empty state ───────────────────────────────────────────────────────── */
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: var(--r-md);
+  color: var(--text-faint);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* ── Sidebar item hover ────────────────────────────────────────────────── */
+
+.sidebar-item:hover {
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+}
+
+/* ── Animated loading dot ──────────────────────────────────────────────── */
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.4; }
+  50%       { opacity: 1; }
+}
+
+.loading-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1.2s ease-in-out infinite;
+}
