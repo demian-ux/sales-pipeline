@@ -49,7 +49,11 @@ export function getAuthUrl(): string {
   return getOAuth2Client().generateAuthUrl({
     access_type: 'offline',
     scope: SCOPES,
-    prompt: 'consent',
+    // 'select_account' forces Google's account picker every time so you can
+    // pick which Gmail to connect, even if you're already signed into another
+    // Google account in the browser. 'consent' still re-prompts for scope
+    // grant (needed to receive a refresh_token).
+    prompt: 'select_account consent',
   })
 }
 
