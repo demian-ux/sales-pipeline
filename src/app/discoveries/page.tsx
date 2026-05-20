@@ -75,7 +75,7 @@ export default function DiscoveriesPage() {
       const res = await fetch('/api/discoveries/ingest', { method: 'POST' })
       const data = await res.json()
       if (res.status === 401) {
-        setIngestMsg('Manual ingest needs INGEST_SECRET — wait for the next cron run, or use curl.')
+        setIngestMsg('Session expired — please log in again.')
         return
       }
       if (!res.ok) {

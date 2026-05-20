@@ -1,32 +1,55 @@
-// Discoveries ingestion endpoint.
-//   POST → manual trigger, requires `Authorization: Bearer ${INGEST_SECRET}`.
-//   GET  → recent runs list, OR (when called with `x-vercel-cron: 1`) a cron-
-//          triggered ingestion.
+// Discoveries ingestion endpoint. Three legitimate auth paths:
 //
-// Cron is wired in `vercel.json`. Pro plan unlocks the 300s function timeout
-// needed for a real run.
+//   1. `x-vercel-cron: 1` header  — Vercel cron (only Vercel's edge can set it)
+//   2. `Authorization: Bearer ${INGEST_SECRET}`  — external curl / scripts
+//   3. Valid `oaki_session` cookie  — authenticated UI user clicking "Run research"
+//
+// The route is in the middleware's PUBLIC_PREFIXES list so cron + bearer
+// requests bypass the session-cookie redirect, and we re-check auth here
+// inside the handler.
+//
+// Cron is wired in `vercel.json`. Pro plan unlocks the 300s function timeout.
 
 import { type NextRequest } from 'next/server'
 import { getSupabaseAdmin, isSupabaseAdminConfigured } from '@/lib/supabase'
 import { runIngestion } from '@/lib/discoveries/processor'
 import { env } from '@/lib/env'
+import {
+  isAuthConfigured,
+  verifySessionCookieValue,
+  SESSION_COOKIE_NAME,
+} from '@/lib/auth'
 
 export const maxDuration = 300
+
+async function isAuthorizedRequest(request: NextRequest): Promise<boolean> {
+  // 1. Vercel cron — Vercel's edge network sets this header on scheduled
+  //    invocations and the outside world cannot spoof it.
+  if (request.headers.get('x-vercel-cron') === '1') return true
+
+  // 2. Bearer token — `INGEST_SECRET` from env.
+  const authHeader = request.headers.get('authorization')
+  if (env.INGEST_SECRET && authHeader === `Bearer ${env.INGEST_SECRET}`) return true
+
+  // 3. Valid session cookie — same HMAC the middleware uses.
+  const cookie = request.cookies.get(SESSION_COOKIE_NAME)?.value
+  if (cookie && (await verifySessionCookieValue(cookie))) return true
+
+  // 4. Open mode — if app auth itself is off (no APP_PASSWORD/SESSION_SECRET),
+  //    the whole app is open and this route should be too. Matches the rest of
+  //    the app's posture in local dev.
+  if (!isAuthConfigured()) return true
+
+  return false
+}
 
 export async function POST(request: NextRequest) {
   if (!isSupabaseAdminConfigured()) {
     return Response.json({ error: 'Supabase not configured' }, { status: 503 })
   }
-
-  // Bearer auth — required for manual POST triggers.
-  const authHeader = request.headers.get('authorization')
-  if (!env.INGEST_SECRET) {
-    return Response.json({ error: 'INGEST_SECRET not configured' }, { status: 503 })
-  }
-  if (authHeader !== `Bearer ${env.INGEST_SECRET}`) {
+  if (!(await isAuthorizedRequest(request))) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 })
   }
-
   return runOnce()
 }
 
@@ -35,13 +58,15 @@ export async function GET(request: NextRequest) {
     return Response.json({ error: 'Supabase not configured' }, { status: 503 })
   }
 
-  // Vercel cron — header is set by Vercel itself on scheduled invocations.
-  const isVercelCron = request.headers.get('x-vercel-cron') === '1'
-  if (isVercelCron) {
-    return runOnce()
+  // Vercel cron — also triggers a run via GET (with the cron header).
+  if (request.headers.get('x-vercel-cron') === '1') return runOnce()
+
+  // Otherwise the request is asking for the recent run list — gate it the same
+  // way as POST so the list doesn't leak when auth is on.
+  if (!(await isAuthorizedRequest(request))) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // Otherwise: return recent run history (for the UI to render a status panel).
   const { data, error } = await getSupabaseAdmin()
     .from('ingestion_runs')
     .select('*')
