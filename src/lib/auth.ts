@@ -93,3 +93,30 @@ export async function verifySessionCookieValue(value: string | undefined | null)
 export function isPasswordCorrect(submitted: string): boolean {
   return !!env.APP_PASSWORD && submitted === env.APP_PASSWORD
 }
+
+// ─── Ingest auth helper ────────────────────────────────────────────────────
+// Shared by /api/discoveries/ingest (POST + GET) and its [runId] sibling so
+// they accept the same auth paths consistently.
+
+type IngestAuthRequest = {
+  headers: { get: (name: string) => string | null }
+  cookies: { get: (name: string) => { value: string } | undefined }
+}
+
+export async function isIngestAuthorized(request: IngestAuthRequest): Promise<boolean> {
+  // 1. Vercel cron — Vercel's edge sets this header on scheduled invocations.
+  if (request.headers.get('x-vercel-cron') === '1') return true
+
+  // 2. Bearer token from env.
+  const authHeader = request.headers.get('authorization')
+  if (env.INGEST_SECRET && authHeader === `Bearer ${env.INGEST_SECRET}`) return true
+
+  // 3. Valid session cookie — same HMAC the middleware uses.
+  const cookie = request.cookies.get(SESSION_COOKIE_NAME)?.value
+  if (cookie && (await verifySessionCookieValue(cookie))) return true
+
+  // 4. Open mode — when the app's basic auth isn't configured, ingest is too.
+  if (!isAuthConfigured()) return true
+
+  return false
+}

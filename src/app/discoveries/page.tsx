@@ -6,6 +6,17 @@ import FilterPanel, { DEFAULT_FILTERS, type DiscoveryFilterState } from '@/compo
 import { IconRefresh, IconLoader, IconTrendingUp, IconCalendar } from '@/components/ui/icons'
 import type { Discovery } from '@/lib/types'
 
+// Returns null when the response body isn't JSON (e.g. a Vercel HTML error
+// page). Lets callers avoid the "Unexpected token ..." JSON.parse exception
+// and surface the HTTP status instead.
+async function safeJson<T = unknown>(res: Response): Promise<T | null> {
+  try {
+    return (await res.json()) as T
+  } catch {
+    return null
+  }
+}
+
 export default function DiscoveriesPage() {
   const [filters, setFilters] = useState<DiscoveryFilterState>(DEFAULT_FILTERS)
   const [discoveries, setDiscoveries] = useState<Discovery[]>([])
@@ -68,30 +79,70 @@ export default function DiscoveriesPage() {
 
   async function handleIngest() {
     setIngesting(true)
-    setIngestMsg('Researching…')
+    setIngestMsg('Starting research…')
     try {
-      // No bearer header on this fetch — server route only accepts manual POST
-      // with the secret. Surface a hint for now; first real run will be cron-triggered.
       const res = await fetch('/api/discoveries/ingest', { method: 'POST' })
-      const data = await res.json()
       if (res.status === 401) {
         setIngestMsg('Session expired — please log in again.')
+        setIngesting(false)
         return
       }
+      // The server returns JSON; if we got an HTML/text error page instead
+      // (e.g. a Vercel 502), `safeJson` returns null and we surface a useful
+      // status code instead of "Unexpected token ..." from JSON.parse.
+      const data = await safeJson<{ run_id?: string; error?: string }>(res)
       if (!res.ok) {
-        setIngestMsg(`Error: ${data.error ?? `Request failed (${res.status})`}`)
+        setIngestMsg(`Error: ${data?.error ?? `Request failed (${res.status})`}`)
+        setIngesting(false)
         return
       }
-      const failNote = data.failed_sources?.length
-        ? ` (${data.failed_sources.length} source${data.failed_sources.length > 1 ? 's' : ''} failed)`
-        : ''
-      setIngestMsg(`${data.articles_new} new from ${data.articles_analyzed} analyzed${failNote}`)
-      fetchDiscoveries(filters)
+      if (!data?.run_id) {
+        setIngestMsg('Server did not return a run_id')
+        setIngesting(false)
+        return
+      }
+      pollRunStatus(data.run_id)
     } catch (err) {
       setIngestMsg(`Request failed: ${err instanceof Error ? err.message : 'unknown'}`)
-    } finally {
       setIngesting(false)
     }
+  }
+
+  async function pollRunStatus(runId: string) {
+    const POLL_MS = 3000
+    const MAX_POLLS = 120 // ~6 minutes
+    for (let i = 0; i < MAX_POLLS; i++) {
+      await new Promise((r) => setTimeout(r, POLL_MS))
+      try {
+        const res = await fetch(`/api/discoveries/ingest/${runId}`)
+        if (!res.ok) continue
+        const run = await safeJson<{
+          status?: 'running' | 'done' | 'failed'
+          current_step?: string
+          progress_percent?: number
+          articles_new?: number
+          articles_analyzed?: number
+        }>(res)
+        if (!run) continue
+
+        if (run.status === 'done') {
+          setIngestMsg(`${run.articles_new ?? 0} new from ${run.articles_analyzed ?? 0} analyzed`)
+          fetchDiscoveries(filters)
+          setIngesting(false)
+          return
+        }
+        if (run.status === 'failed') {
+          setIngestMsg(`Failed: ${run.current_step ?? 'unknown error'}`)
+          setIngesting(false)
+          return
+        }
+        setIngestMsg(`${run.current_step ?? 'Working…'} (${run.progress_percent ?? 0}%)`)
+      } catch {
+        // transient — keep polling
+      }
+    }
+    setIngestMsg('Polling timed out — run may still be in progress, refresh in a minute.')
+    setIngesting(false)
   }
 
   return (

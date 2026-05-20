@@ -1,56 +1,34 @@
-// Discoveries ingestion endpoint. Three legitimate auth paths:
+// Discoveries ingestion endpoint.
 //
-//   1. `x-vercel-cron: 1` header  — Vercel cron (only Vercel's edge can set it)
-//   2. `Authorization: Bearer ${INGEST_SECRET}`  — external curl / scripts
-//   3. Valid `oaki_session` cookie  — authenticated UI user clicking "Run research"
+// POST: kicks off a run in the background via `after()` and returns
+//   `202 { run_id }` immediately. The UI polls `/api/discoveries/ingest/[runId]`
+//   for progress. Synchronous waits would routinely blow past Vercel's 300s
+//   function timeout on a busy run.
 //
-// The route is in the middleware's PUBLIC_PREFIXES list so cron + bearer
-// requests bypass the session-cookie redirect, and we re-check auth here
-// inside the handler.
+// GET: returns recent runs (auth required), OR — when called with the
+//   `x-vercel-cron: 1` header — also kicks off a background run.
 //
-// Cron is wired in `vercel.json`. Pro plan unlocks the 300s function timeout.
+// Three+1 auth paths (see `lib/auth.ts: isIngestAuthorized`):
+//   - Vercel cron header
+//   - `Authorization: Bearer ${INGEST_SECRET}`
+//   - Valid `oaki_session` cookie
+//   - Open access when basic auth is not configured (local dev)
 
-import { type NextRequest } from 'next/server'
+import { type NextRequest, after } from 'next/server'
 import { getSupabaseAdmin, isSupabaseAdminConfigured } from '@/lib/supabase'
 import { runIngestion } from '@/lib/discoveries/processor'
-import { env } from '@/lib/env'
-import {
-  isAuthConfigured,
-  verifySessionCookieValue,
-  SESSION_COOKIE_NAME,
-} from '@/lib/auth'
+import { isIngestAuthorized } from '@/lib/auth'
 
 export const maxDuration = 300
-
-async function isAuthorizedRequest(request: NextRequest): Promise<boolean> {
-  // 1. Vercel cron — Vercel's edge network sets this header on scheduled
-  //    invocations and the outside world cannot spoof it.
-  if (request.headers.get('x-vercel-cron') === '1') return true
-
-  // 2. Bearer token — `INGEST_SECRET` from env.
-  const authHeader = request.headers.get('authorization')
-  if (env.INGEST_SECRET && authHeader === `Bearer ${env.INGEST_SECRET}`) return true
-
-  // 3. Valid session cookie — same HMAC the middleware uses.
-  const cookie = request.cookies.get(SESSION_COOKIE_NAME)?.value
-  if (cookie && (await verifySessionCookieValue(cookie))) return true
-
-  // 4. Open mode — if app auth itself is off (no APP_PASSWORD/SESSION_SECRET),
-  //    the whole app is open and this route should be too. Matches the rest of
-  //    the app's posture in local dev.
-  if (!isAuthConfigured()) return true
-
-  return false
-}
 
 export async function POST(request: NextRequest) {
   if (!isSupabaseAdminConfigured()) {
     return Response.json({ error: 'Supabase not configured' }, { status: 503 })
   }
-  if (!(await isAuthorizedRequest(request))) {
+  if (!(await isIngestAuthorized(request))) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 })
   }
-  return runOnce()
+  return startBackgroundRun()
 }
 
 export async function GET(request: NextRequest) {
@@ -58,12 +36,9 @@ export async function GET(request: NextRequest) {
     return Response.json({ error: 'Supabase not configured' }, { status: 503 })
   }
 
-  // Vercel cron — also triggers a run via GET (with the cron header).
-  if (request.headers.get('x-vercel-cron') === '1') return runOnce()
+  if (request.headers.get('x-vercel-cron') === '1') return startBackgroundRun()
 
-  // Otherwise the request is asking for the recent run list — gate it the same
-  // way as POST so the list doesn't leak when auth is on.
-  if (!(await isAuthorizedRequest(request))) {
+  if (!(await isIngestAuthorized(request))) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -77,12 +52,13 @@ export async function GET(request: NextRequest) {
   return Response.json({ runs: data })
 }
 
-async function runOnce(): Promise<Response> {
+async function startBackgroundRun(): Promise<Response> {
   const supabase = getSupabaseAdmin()
 
+  // Create the run record up-front so the UI can immediately poll for it.
   const { data: run, error: runError } = await supabase
     .from('ingestion_runs')
-    .insert({ status: 'running' })
+    .insert({ status: 'running', current_step: 'Queued', progress_percent: 0 })
     .select('id')
     .single()
 
@@ -90,7 +66,8 @@ async function runOnce(): Promise<Response> {
     return Response.json({ error: 'Failed to create run record' }, { status: 500 })
   }
 
-  // Try ordered query first; fall back if `sort_order` column is missing.
+  // Load the active sources synchronously so we can fail-fast with a clear
+  // error before kicking off the background work.
   const ordered = await supabase
     .from('sources')
     .select('name, url')
@@ -102,14 +79,46 @@ async function runOnce(): Promise<Response> {
     : ordered
 
   if (queryResult.error) {
+    await markRunFailed(run.id, `Sources query failed: ${queryResult.error.message}`)
     return Response.json({ error: `Sources query failed: ${queryResult.error.message}` }, { status: 500 })
   }
 
   const sources = queryResult.data ?? []
   if (sources.length === 0) {
+    await markRunFailed(run.id, 'No active sources configured')
     return Response.json({ error: 'No active sources configured' }, { status: 400 })
   }
 
-  const result = await runIngestion(sources, run.id)
-  return Response.json(result)
+  // Schedule the heavy work to run after the response has been sent. The
+  // function keeps executing until `maxDuration` is reached or it returns.
+  after(async () => {
+    try {
+      await runIngestion(sources, run.id)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error('[ingest] background run crashed:', message)
+      await markRunFailed(run.id, `Background run crashed: ${message}`)
+    }
+  })
+
+  return Response.json(
+    {
+      run_id: run.id,
+      status: 'running',
+      sources_count: sources.length,
+    },
+    { status: 202 },
+  )
+}
+
+async function markRunFailed(runId: string, currentStep: string): Promise<void> {
+  await getSupabaseAdmin()
+    .from('ingestion_runs')
+    .update({
+      status: 'failed',
+      finished_at: new Date().toISOString(),
+      current_step: currentStep,
+      progress_percent: 100,
+    })
+    .eq('id', runId)
 }

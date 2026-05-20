@@ -1,11 +1,17 @@
 // GET status of a single ingestion run. Polled by the UI during long runs.
+// Auth-gated with the same paths as the parent /api/discoveries/ingest so the
+// run history doesn't leak when basic auth is on.
 
 import { type NextRequest } from 'next/server'
 import { getSupabaseAdmin, isSupabaseAdminConfigured } from '@/lib/supabase'
+import { isIngestAuthorized } from '@/lib/auth'
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ runId: string }> }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ runId: string }> }) {
   if (!isSupabaseAdminConfigured()) {
     return Response.json({ error: 'Supabase not configured' }, { status: 503 })
+  }
+  if (!(await isIngestAuthorized(request))) {
+    return Response.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   const { runId } = await params
