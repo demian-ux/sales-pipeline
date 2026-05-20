@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { headers } from 'next/headers'
 import './globals.css'
 import Sidebar from '@/components/layout/Sidebar'
 
@@ -7,11 +8,22 @@ export const metadata: Metadata = {
   description: 'Relationship intelligence for Oaki Studio',
 }
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+// Routes that render outside the app shell (no sidebar). Match by prefix.
+const NO_SHELL_PREFIXES = ['/login']
+
+function isNoShell(pathname: string): boolean {
+  return NO_SHELL_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + '/'))
+}
+
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const headerStore = await headers()
+  const pathname = headerStore.get('x-pathname') ?? ''
+  const showSidebar = !isNoShell(pathname)
+
   return (
     <html lang="en">
       <body style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
-        <Sidebar />
+        {showSidebar && <Sidebar />}
         <main style={{ flex: 1, overflow: 'auto', minHeight: '100vh' }}>
           {children}
         </main>

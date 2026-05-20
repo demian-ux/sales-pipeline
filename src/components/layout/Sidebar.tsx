@@ -1,14 +1,16 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
+import { useState } from 'react'
 
-// Nav groups with cleaner ASCII-safe icons
+// Nav groups with cleaner ASCII-safe icons.
+// Note: /strategic-map page file still exists but is hidden from nav per
+// Phase 4 cleanup (the feature is deprioritized — see audit-summary.md).
 const NAV_GROUPS = [
   {
     items: [
       { href: '/',              label: 'Today',          icon: '·' },
-      { href: '/strategic-map', label: 'Strategic Map',  icon: '·' },
     ],
   },
   {
@@ -46,6 +48,18 @@ const NAV_GROUPS = [
 
 export default function Sidebar() {
   const pathname = usePathname()
+  const router = useRouter()
+  const [loggingOut, setLoggingOut] = useState(false)
+
+  async function handleLogout() {
+    setLoggingOut(true)
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' })
+    } finally {
+      router.push('/login')
+      router.refresh()
+    }
+  }
 
   return (
     <aside style={{
@@ -151,10 +165,32 @@ export default function Sidebar() {
         padding: '12px 16px',
         borderTop: '1px solid var(--border-subtle)',
         flexShrink: 0,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 8,
       }}>
-        <div style={{ fontSize: 10, color: 'var(--text-faint)', letterSpacing: '0.02em' }}>
+        <div style={{ fontSize: 10, color: 'var(--text-faint)', letterSpacing: '0.02em', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           demian@oaki.studio
         </div>
+        <button
+          onClick={handleLogout}
+          disabled={loggingOut}
+          title="Log out"
+          style={{
+            fontSize: 10,
+            color: 'var(--text-faint)',
+            background: 'transparent',
+            border: 'none',
+            padding: 0,
+            cursor: loggingOut ? 'default' : 'pointer',
+            letterSpacing: '0.06em',
+            textTransform: 'uppercase',
+            flexShrink: 0,
+          }}
+        >
+          {loggingOut ? '…' : 'Log out'}
+        </button>
       </div>
     </aside>
   )
