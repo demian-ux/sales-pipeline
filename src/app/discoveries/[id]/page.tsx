@@ -5,7 +5,7 @@ import { getSupabaseAdmin, isSupabaseAdminConfigured } from '@/lib/supabase'
 import DiscoveryScoreBadge from '@/components/discoveries/DiscoveryScoreBadge'
 import StatusUpdater from '@/components/discoveries/StatusUpdater'
 import GenerateOutreach from '@/components/discoveries/GenerateOutreach'
-import PromoteButton from '@/components/discoveries/PromoteButton'
+import FirmsFinder from '@/components/discoveries/FirmsFinder'
 import { IconArrowLeft, IconExternalLink } from '@/components/ui/icons'
 import type { Discovery, DiscoverySector } from '@/lib/types'
 
@@ -124,6 +124,17 @@ export default async function DiscoveryDetailPage({ params }: { params: Promise<
         </div>
       </div>
 
+      {/* Firms finder — full width, drives the main action on this page:
+          turn the article into Companies + Opportunities */}
+      <Section title="Firms — promote to Opportunity">
+        <FirmsFinder
+          discoveryId={d.id}
+          discoveryTitle={d.title}
+          sourceUrl={d.source_url}
+          alreadyPromotedOpportunityId={d.promoted_to_opportunity_id}
+        />
+      </Section>
+
       {/* Two-column body */}
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 18 }}>
         {/* Left — analysis */}
@@ -188,8 +199,6 @@ export default async function DiscoveryDetailPage({ params }: { params: Promise<
 
         {/* Right — metadata */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <PromoteButton discoveryId={d.id} alreadyPromotedOpportunityId={d.promoted_to_opportunity_id} />
-
           {/* Score breakdown */}
           <Panel title="Score breakdown">
             <ScoreBar label="Opportunity Clarity" value={d.score_opportunity_clarity} weight={35} />

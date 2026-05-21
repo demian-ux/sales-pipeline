@@ -1,3 +1,10 @@
+// DEPRECATED — the lead-picker promote flow. Replaced by FirmsFinder
+// (Discovery → prospect firms → bulk-promote to Companies + Opportunities).
+// Kept dormant for one release cycle in case we need to roll back to the
+// old "attach Discovery to existing Lead" workflow. Safe to delete once
+// the firms flow is proven in production. Reference: /api/discoveries/[id]/promote
+// is the matching API endpoint, also kept dormant.
+
 'use client'
 
 import { useEffect, useState } from 'react'
