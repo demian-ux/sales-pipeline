@@ -1,18 +1,22 @@
 import type { ResearchFinding } from '../types'
 import { mockResearchFindings } from '../mock-data'
-import { USE_MOCK, readTab, appendRow, rowsToObjects, withFallback } from './client'
+import { USE_MOCK, readTab, appendRowByMap, rowsToObjects, withFallback } from './client'
 import { sessionCache } from './cache'
 
 const TAB = 'Research_Findings'
 
-const COLUMNS = [
+export const RESEARCH_COLUMNS = [
   'finding_id', 'company_id', 'lead_id', 'source_type', 'source_url',
   'research_summary', 'design_observations', 'market_positioning',
   'visual_identity_notes', 'signals_detected', 'created_at',
 ] as const
 
-function findingToRow(f: ResearchFinding): string[] {
-  return COLUMNS.map((col) => String(f[col as keyof ResearchFinding] ?? ''))
+function findingToMap(f: ResearchFinding): Record<string, string> {
+  const map: Record<string, string> = {}
+  for (const col of RESEARCH_COLUMNS) {
+    map[col] = String(f[col as keyof ResearchFinding] ?? '')
+  }
+  return map
 }
 
 export async function getResearchFindings(): Promise<ResearchFinding[]> {
@@ -32,5 +36,5 @@ export async function saveResearchFinding(finding: ResearchFinding): Promise<voi
     sessionCache.research.unshift(finding)
     return
   }
-  await appendRow(TAB, findingToRow(finding))
+  await appendRowByMap(TAB, findingToMap(finding), RESEARCH_COLUMNS)
 }

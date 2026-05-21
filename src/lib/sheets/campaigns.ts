@@ -1,10 +1,10 @@
 import type { Campaign, CampaignChannel } from '../types'
 import { mockCampaigns } from '../mock-data'
-import { USE_MOCK, readTab, appendRow, updateRow, rowsToObjects, withFallback } from './client'
+import { USE_MOCK, readTab, appendRowByMap, updateRow, rowsToObjects, withFallback } from './client'
 
 const TAB = 'Campaigns'
 
-const COLUMNS = [
+export const CAMPAIGN_COLUMNS = [
   'campaign_id', 'name', 'description', 'target_segment', 'location',
   'project_types', 'offer', 'pain_point', 'cta', 'channels', 'cadence',
   'status', 'owner', 'notes', 'created_at', 'updated_at',
@@ -24,11 +24,16 @@ function safeParseChannels(val?: string): CampaignChannel[] {
   }
 }
 
-function campaignToRow(c: Campaign): string[] {
-  return COLUMNS.map((col) => {
-    if (col === 'channels') return JSON.stringify(c.channels)
-    return String(c[col as keyof Campaign] ?? '')
-  })
+function campaignToMap(c: Campaign): Record<string, string> {
+  const map: Record<string, string> = {}
+  for (const col of CAMPAIGN_COLUMNS) {
+    if (col === 'channels') {
+      map[col] = JSON.stringify(c.channels)
+    } else {
+      map[col] = String(c[col as keyof Campaign] ?? '')
+    }
+  }
+  return map
 }
 
 export async function getCampaigns(): Promise<Campaign[]> {
@@ -57,5 +62,5 @@ export async function updateCampaign(campaignId: string, updates: Partial<Campai
 
 export async function createCampaign(campaign: Campaign): Promise<void> {
   if (USE_MOCK) return
-  await appendRow(TAB, campaignToRow(campaign))
+  await appendRowByMap(TAB, campaignToMap(campaign), CAMPAIGN_COLUMNS)
 }

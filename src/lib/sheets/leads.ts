@@ -1,11 +1,11 @@
 import type { Lead } from '../types'
 import { mockLeads } from '../mock-data'
-import { USE_MOCK, readTab, appendRow, updateRow, rowsToObjects, withFallback } from './client'
+import { USE_MOCK, readTab, appendRowByMap, updateRow, rowsToObjects, withFallback } from './client'
 import { sessionCache } from './cache'
 
 const TAB = 'Leads'
 
-const COLUMNS = [
+export const LEAD_COLUMNS = [
   'lead_id', 'company_id', 'campaign_id', 'first_name', 'last_name', 'full_name',
   'email', 'linkedin_url', 'linkedin_connection_status', 'linkedin_dm_status',
   'linkedin_warmth', 'last_linkedin_touch_date', 'linkedin_notes',
@@ -17,8 +17,12 @@ const COLUMNS = [
   'created_at', 'updated_at',
 ] as const
 
-function leadToRow(lead: Lead): string[] {
-  return COLUMNS.map((col) => String(lead[col as keyof Lead] ?? ''))
+function leadToMap(lead: Lead): Record<string, string> {
+  const map: Record<string, string> = {}
+  for (const col of LEAD_COLUMNS) {
+    map[col] = String(lead[col as keyof Lead] ?? '')
+  }
+  return map
 }
 
 export async function getLeads(): Promise<Lead[]> {
@@ -54,7 +58,7 @@ export async function createLead(lead: Lead): Promise<void> {
     sessionCache.leads.unshift(lead)
     return
   }
-  await appendRow(TAB, leadToRow(lead))
+  await appendRowByMap(TAB, leadToMap(lead), LEAD_COLUMNS)
 }
 
 export async function updateLead(leadId: string, updates: Partial<Lead>): Promise<void> {

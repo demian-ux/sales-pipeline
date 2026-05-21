@@ -1,18 +1,23 @@
 import type { Opportunity } from '../types'
 import { mockOpportunities } from '../mock-data'
-import { USE_MOCK, readTab, appendRow, updateRow, rowsToObjects, withFallback } from './client'
+import { USE_MOCK, readTab, appendRowByMap, updateRow, rowsToObjects, withFallback } from './client'
 import { sessionCache } from './cache'
 
 const TAB = 'Opportunities'
 
-const COLUMNS = [
+export const OPPORTUNITY_COLUMNS = [
   'opportunity_id', 'company_id', 'lead_id', 'campaign_id', 'opportunity_type',
   'source', 'summary', 'why_now', 'recommended_action', 'urgency', 'confidence',
+  'discovered_from_id', 'discovered_from_url',
   'status', 'created_at', 'updated_at',
 ] as const
 
-function oppToRow(opp: Opportunity): string[] {
-  return COLUMNS.map((col) => String(opp[col as keyof Opportunity] ?? ''))
+function oppToMap(opp: Opportunity): Record<string, string> {
+  const map: Record<string, string> = {}
+  for (const col of OPPORTUNITY_COLUMNS) {
+    map[col] = String(opp[col as keyof Opportunity] ?? '')
+  }
+  return map
 }
 
 export async function getOpportunities(): Promise<Opportunity[]> {
@@ -41,7 +46,7 @@ export async function createOpportunity(opp: Opportunity): Promise<void> {
     sessionCache.opportunities.unshift(opp)
     return
   }
-  await appendRow(TAB, oppToRow(opp))
+  await appendRowByMap(TAB, oppToMap(opp), OPPORTUNITY_COLUMNS)
 }
 
 export async function updateOpportunity(oppId: string, updates: Partial<Opportunity>): Promise<void> {

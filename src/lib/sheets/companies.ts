@@ -1,11 +1,11 @@
 import type { Company } from '../types'
 import { mockCompanies } from '../mock-data'
-import { USE_MOCK, readTab, appendRow, rowsToObjects, withFallback } from './client'
+import { USE_MOCK, readTab, appendRowByMap, rowsToObjects, withFallback } from './client'
 import { sessionCache } from './cache'
 
 const TAB = 'Companies'
 
-const COLUMNS = [
+export const COMPANY_COLUMNS = [
   'company_id', 'company_name', 'website', 'linkedin_company_url', 'industry',
   'location', 'company_size', 'project_type', 'ideal_client_fit', 'fit_reason',
   'design_quality_score', 'visual_identity_score', 'brand_positioning',
@@ -13,8 +13,12 @@ const COLUMNS = [
   'notes', 'created_at', 'updated_at',
 ] as const
 
-function companyToRow(company: Company): string[] {
-  return COLUMNS.map((col) => String(company[col as keyof Company] ?? ''))
+function companyToMap(company: Company): Record<string, string> {
+  const map: Record<string, string> = {}
+  for (const col of COMPANY_COLUMNS) {
+    map[col] = String(company[col as keyof Company] ?? '')
+  }
+  return map
 }
 
 export async function getCompanies(): Promise<Company[]> {
@@ -34,5 +38,5 @@ export async function createCompany(company: Company): Promise<void> {
     sessionCache.companies.unshift(company)
     return
   }
-  await appendRow(TAB, companyToRow(company))
+  await appendRowByMap(TAB, companyToMap(company), COMPANY_COLUMNS)
 }

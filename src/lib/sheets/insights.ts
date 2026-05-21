@@ -1,36 +1,36 @@
 import type { AIInsight } from '../types'
 import { mockAIInsights } from '../mock-data'
-import { USE_MOCK, readTab, appendRow, rowsToObjects, withFallback } from './client'
+import { USE_MOCK, readTab, appendRowByMap, rowsToObjects, withFallback } from './client'
 import { sessionCache } from './cache'
 
 const TAB = 'AI_Insights'
 
-const COLUMNS = [
+export const INSIGHT_COLUMNS = [
   'insight_id', 'lead_id', 'company_id', 'opportunity_id', 'summary', 'why_now',
   'intent_level', 'recommended_next_action', 'suggested_email', 'suggested_linkedin_dm',
   'discovery_questions', 'objections', 'opportunities', 'risk_level', 'confidence',
   'created_at',
 ] as const
 
-function insightToRow(i: AIInsight): string[] {
-  return [
-    i.insight_id,
-    i.lead_id,
-    i.company_id,
-    i.opportunity_id ?? '',
-    i.summary,
-    i.why_now,
-    i.intent_level,
-    i.recommended_next_action,
-    i.suggested_email ?? '',
-    i.suggested_linkedin_dm ?? '',
-    JSON.stringify(i.discovery_questions),
-    JSON.stringify(i.objections),
-    JSON.stringify(i.opportunities),
-    i.risk_level,
-    String(i.confidence),
-    i.created_at,
-  ]
+function insightToMap(i: AIInsight): Record<string, string> {
+  return {
+    insight_id: i.insight_id,
+    lead_id: i.lead_id,
+    company_id: i.company_id,
+    opportunity_id: i.opportunity_id ?? '',
+    summary: i.summary,
+    why_now: i.why_now,
+    intent_level: i.intent_level,
+    recommended_next_action: i.recommended_next_action,
+    suggested_email: i.suggested_email ?? '',
+    suggested_linkedin_dm: i.suggested_linkedin_dm ?? '',
+    discovery_questions: JSON.stringify(i.discovery_questions),
+    objections: JSON.stringify(i.objections),
+    opportunities: JSON.stringify(i.opportunities),
+    risk_level: i.risk_level,
+    confidence: String(i.confidence),
+    created_at: i.created_at,
+  }
 }
 
 function parseInsight(raw: Record<string, string>): AIInsight {
@@ -65,5 +65,5 @@ export async function saveAIInsight(insight: AIInsight): Promise<void> {
     sessionCache.insights.unshift(insight)
     return
   }
-  await appendRow(TAB, insightToRow(insight))
+  await appendRowByMap(TAB, insightToMap(insight), INSIGHT_COLUMNS)
 }

@@ -110,6 +110,34 @@ export async function appendRow(tabName: string, values: string[]): Promise<void
   }
 }
 
+// Appends a row to a sheet, aligning the values to whatever headers actually
+// exist in row 1. Use this for entity writes (createLead, createCompany, …)
+// — it's robust to the user having reordered columns or renamed headers in
+// the sheet. The previous positional approach would silently misalign data.
+//
+// If the sheet has no header row, we write `canonicalHeaders` to row 1 first
+// so the data row lands in the right place and future reads work.
+//
+// Fields in `valueMap` that don't match any header in the sheet are silently
+// dropped (intentional — the user may have intentionally removed columns).
+export async function appendRowByMap(
+  tabName: string,
+  valueMap: Record<string, string>,
+  canonicalHeaders: readonly string[],
+): Promise<void> {
+  const existing = await readTab(tabName)
+  let headers = existing[0]
+
+  // Empty sheet (no header row, or all-blank row 1) — bootstrap with canonical headers
+  if (!headers || headers.length === 0 || headers.every((h) => !h.trim())) {
+    headers = [...canonicalHeaders]
+    await appendRow(tabName, headers)
+  }
+
+  const row = headers.map((h) => valueMap[h.trim()] ?? '')
+  await appendRow(tabName, row)
+}
+
 // Runs `fn` and falls back to `fallback` on any SheetsError, logging the reason
 // and marking Sheets as degraded so the UI can surface a banner.
 export async function withFallback<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
