@@ -84,8 +84,9 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
           {lead.email && (
             <a
               href={`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(lead.email)}`}
-              target="_blank"
+              target="oaki-gmail-compose"
               rel="noopener noreferrer"
+              title="Opens Gmail compose. Subsequent Email clicks reuse the same tab."
               style={{ fontSize: 12, color: 'var(--text-faint)', background: 'var(--surface-2)', padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)' }}>
               Email ↗
             </a>
