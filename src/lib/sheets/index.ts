@@ -1,10 +1,11 @@
 export { USE_MOCK } from './client'
 
 export { getLeads, getLeadById, createLead, updateLead, deleteLead, bulkDeleteLeads, bulkAssignCampaign } from './leads'
-export { getCompanies, getCompanyById, createCompany } from './companies'
+export { getCompanies, getCompanyById, createCompany, findOrCreateCompanyByName } from './companies'
 export {
   getOpportunities,
   getOpportunitiesForLead,
+  getOpenUnclaimedOpportunitiesForCompany,
   createOpportunity,
   updateOpportunity,
 } from './opportunities'

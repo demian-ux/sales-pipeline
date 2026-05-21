@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getLeads, getCompanies, createLead, createCompany } from '@/lib/sheets'
-import type { ApolloImportRow, ApolloImportResult, Lead, Company } from '@/lib/types'
+import {
+  getLeads,
+  getCompanies,
+  createLead,
+  createCompany,
+  getOpportunities,
+  updateOpportunity,
+} from '@/lib/sheets'
+import type { ApolloImportRow, ApolloImportResult, Lead, Company, Opportunity } from '@/lib/types'
 
 function normalize(s?: string): string {
   return (s ?? '').toLowerCase().trim()
@@ -42,12 +49,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No rows provided' }, { status: 400 })
     }
 
-    const [existingLeads, existingCompanies] = await Promise.all([
+    const [existingLeads, existingCompanies, existingOpportunities] = await Promise.all([
       getLeads(),
       getCompanies(),
+      getOpportunities(),
     ])
 
     const companyMap = new Map(existingCompanies.map((c) => [normalize(c.company_name), c]))
+    // Track which Company-level Opportunities have been claimed during this
+    // import so a single unclaimed opp doesn't get attached to multiple new
+    // leads at the same company.
+    const claimedOppIds = new Set<string>()
+    const autoAttached: { lead_id: string; opportunity_id: string }[] = []
     const results: ApolloImportRow[] = []
 
     for (const row of rows) {
@@ -129,12 +142,36 @@ export async function POST(req: NextRequest) {
         }
         await createLead(newLead)
         summary.created_leads++
+
+        // Auto-attach: if exactly one open unclaimed Company-Opportunity
+        // exists for this Lead's company, hook it up. Skip if 0 or >1 to
+        // avoid silently wrong attachments (the user can attach manually
+        // from the Lead detail page).
+        const unclaimed: Opportunity[] = existingOpportunities.filter(
+          (o) =>
+            !claimedOppIds.has(o.opportunity_id) &&
+            o.company_id === companyId &&
+            !o.lead_id &&
+            o.status === 'Open',
+        )
+        if (unclaimed.length === 1) {
+          try {
+            await updateOpportunity(unclaimed[0].opportunity_id, {
+              lead_id: leadId,
+              updated_at: now,
+            })
+            claimedOppIds.add(unclaimed[0].opportunity_id)
+            autoAttached.push({ lead_id: leadId, opportunity_id: unclaimed[0].opportunity_id })
+          } catch (err) {
+            summary.errors.push(`Auto-attach opportunity for ${row.first_name} ${row.last_name}: ${err instanceof Error ? err.message : 'Unknown error'}`)
+          }
+        }
       } catch (err) {
         summary.errors.push(`${row.first_name} ${row.last_name}: ${err instanceof Error ? err.message : 'Unknown error'}`)
       }
     }
 
-    return NextResponse.json({ summary })
+    return NextResponse.json({ summary, auto_attached: autoAttached })
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Import failed' },

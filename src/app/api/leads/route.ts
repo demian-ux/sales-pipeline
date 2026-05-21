@@ -15,6 +15,10 @@ export async function GET() {
     const companyMap = new Map(companies.map((c) => [c.company_id, c]))
     const oppMap = new Map<string, typeof opportunities[0]>()
     opportunities.forEach((o) => {
+      // Skip Company-level opps when building a lead-keyed map; they show
+      // on every Lead at the same Company via the broadened filter in
+      // getOpportunitiesForLead, not via this enrichment path.
+      if (!o.lead_id) return
       const existing = oppMap.get(o.lead_id)
       if (!existing || new Date(o.created_at) > new Date(existing.created_at)) {
         oppMap.set(o.lead_id, o)

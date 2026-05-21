@@ -15,7 +15,7 @@ export async function GET() {
 
     const enriched = opportunities.map((opp) => ({
       ...opp,
-      lead: leadMap.get(opp.lead_id),
+      lead: opp.lead_id ? leadMap.get(opp.lead_id) : undefined,
       company: companyMap.get(opp.company_id),
     }))
 

@@ -148,7 +148,7 @@ function buildTimeline(
   }
 
   for (const o of opps) {
-    const lead = leadMap.get(o.lead_id)
+    const lead = o.lead_id ? leadMap.get(o.lead_id) : undefined
     events.push({
       id: o.opportunity_id,
       type: 'opportunity',

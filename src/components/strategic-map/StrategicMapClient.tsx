@@ -287,11 +287,12 @@ function OpportunityBoardTab({
               {groups[key]
                 .sort((a, b) => Number(b.confidence) - Number(a.confidence))
                 .map((opp) => {
-                  const lead = leadMap[opp.lead_id]
+                  const lead = opp.lead_id ? leadMap[opp.lead_id] : undefined
+                  const oppHref = opp.lead_id ? `/leads/${opp.lead_id}` : `/companies/${opp.company_id}`
                   return (
                     <Link
                       key={opp.opportunity_id}
-                      href={`/leads/${opp.lead_id}`}
+                      href={oppHref}
                       style={{ padding: '8px 14px', display: 'block', borderBottom: '1px solid var(--border-subtle)' }}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>

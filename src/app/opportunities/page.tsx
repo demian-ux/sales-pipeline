@@ -36,10 +36,11 @@ export default async function OpportunitiesPage() {
           <GroupHeader label="Open" count={open.length} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {open.map((opp) => {
-              const lead = leadMap.get(opp.lead_id)
+              const lead = opp.lead_id ? leadMap.get(opp.lead_id) : undefined
               const company = companyMap.get(opp.company_id)
+              const href = opp.lead_id ? `/leads/${opp.lead_id}` : `/companies/${opp.company_id}`
               return (
-                <Link key={opp.opportunity_id} href={`/leads/${opp.lead_id}`}>
+                <Link key={opp.opportunity_id} href={href}>
                   <OppCard opp={opp} lead={lead} company={company} />
                 </Link>
               )
@@ -53,10 +54,11 @@ export default async function OpportunitiesPage() {
           <GroupHeader label="Actioned" count={actioned.length} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {actioned.map((opp) => {
-              const lead = leadMap.get(opp.lead_id)
+              const lead = opp.lead_id ? leadMap.get(opp.lead_id) : undefined
               const company = companyMap.get(opp.company_id)
+              const href = opp.lead_id ? `/leads/${opp.lead_id}` : `/companies/${opp.company_id}`
               return (
-                <Link key={opp.opportunity_id} href={`/leads/${opp.lead_id}`}>
+                <Link key={opp.opportunity_id} href={href}>
                   <OppCard opp={opp} lead={lead} company={company} muted />
                 </Link>
               )

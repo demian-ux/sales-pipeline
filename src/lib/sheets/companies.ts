@@ -40,3 +40,33 @@ export async function createCompany(company: Company): Promise<void> {
   }
   await appendRowByMap(TAB, companyToMap(company), COMPANY_COLUMNS)
 }
+
+// Case-insensitive name match. Returns the existing Company if one already
+// exists with the same name, otherwise creates a new one populated from
+// the optional hints (website, country/location, notes, etc.) and returns
+// that. Used by the Discovery firms-promotion flow + Apollo import.
+export async function findOrCreateCompanyByName(
+  name: string,
+  hints: Partial<Omit<Company, 'company_id' | 'company_name' | 'created_at' | 'updated_at'>> = {},
+): Promise<{ company: Company; wasNew: boolean }> {
+  const normalized = name.trim().toLowerCase()
+  if (!normalized) {
+    throw new Error('Company name is required')
+  }
+
+  const existing = (await getCompanies()).find((c) => c.company_name.trim().toLowerCase() === normalized)
+  if (existing) {
+    return { company: existing, wasNew: false }
+  }
+
+  const nowIso = new Date().toISOString()
+  const company: Company = {
+    company_id: `co_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    company_name: name.trim(),
+    created_at: nowIso,
+    updated_at: nowIso,
+    ...hints,
+  }
+  await createCompany(company)
+  return { company, wasNew: true }
+}

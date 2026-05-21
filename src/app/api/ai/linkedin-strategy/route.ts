@@ -25,7 +25,7 @@ export async function POST(req: Request) {
       getCompanyById(lead.company_id),
       getResearchForLead(lead_id),
       getInteractionsForLead(lead_id),
-      getOpportunitiesForLead(lead_id),
+      getOpportunitiesForLead(lead_id, lead.company_id),
     ])
 
     const leadThreads = sessionCache.threads[lead_id] ?? []

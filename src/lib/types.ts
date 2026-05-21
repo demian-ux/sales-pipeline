@@ -127,7 +127,12 @@ export interface Company {
 export interface Opportunity {
   opportunity_id: string
   company_id: string
-  lead_id: string
+  // Optional — when empty, the Opportunity is Company-level (not yet attached
+  // to a specific contact). Shows on every Lead at the same Company until
+  // someone attaches it explicitly. See docs/execution-plan or AGENTS.md for
+  // the rationale (Discovery → Firm flow can create opportunities before
+  // Apollo brings in contacts).
+  lead_id?: string
   campaign_id?: string
   opportunity_type: string
   source?: string

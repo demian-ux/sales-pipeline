@@ -179,8 +179,8 @@ function sortOpportunities(opps: Opportunity[], leadMap: Map<string, Lead>): Opp
     if (urgencyDiff !== 0) return urgencyDiff
     const confDiff = Number(b.confidence) - Number(a.confidence)
     if (confDiff !== 0) return confDiff
-    const aPri = Number(leadMap.get(a.lead_id)?.priority_score) || 0
-    const bPri = Number(leadMap.get(b.lead_id)?.priority_score) || 0
+    const aPri = a.lead_id ? Number(leadMap.get(a.lead_id)?.priority_score) || 0 : 0
+    const bPri = b.lead_id ? Number(leadMap.get(b.lead_id)?.priority_score) || 0 : 0
     if (aPri !== bPri) return bPri - aPri
     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   })
@@ -303,7 +303,7 @@ export default async function TodayPage() {
           emptyLabel="No open opportunities"
         >
           {openOpps.slice(0, 6).map((opp) => (
-            <OppCard key={opp.opportunity_id} opp={opp} lead={leadMap.get(opp.lead_id)} />
+            <OppCard key={opp.opportunity_id} opp={opp} lead={opp.lead_id ? leadMap.get(opp.lead_id) : undefined} />
           ))}
         </Section>
 

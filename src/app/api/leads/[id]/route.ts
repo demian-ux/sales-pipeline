@@ -22,7 +22,7 @@ export async function GET(
 
     const [company, opportunities, interactions, insights, research] = await Promise.all([
       getCompanyById(lead.company_id),
-      getOpportunitiesForLead(id),
+      getOpportunitiesForLead(id, lead.company_id),
       getInteractionsForLead(id),
       getInsightsForLead(id),
       getResearchForLead(id),

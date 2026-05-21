@@ -36,9 +36,24 @@ export async function getOpportunities(): Promise<Opportunity[]> {
   return opps.map((o) => ({ ...o, confidence: Number(o.confidence) }))
 }
 
-export async function getOpportunitiesForLead(leadId: string): Promise<Opportunity[]> {
+// Returns opportunities for a Lead. With `companyId` supplied, also includes
+// Company-level Opportunities (lead_id empty) for that company — these show
+// on every Lead at the company until one is explicitly attached. Without
+// `companyId`, behaviour matches the original strict lead_id match.
+export async function getOpportunitiesForLead(leadId: string, companyId?: string): Promise<Opportunity[]> {
   const opps = await getOpportunities()
-  return opps.filter((o) => o.lead_id === leadId)
+  return opps.filter((o) => {
+    if (o.lead_id === leadId) return true
+    if (companyId && o.company_id === companyId && !o.lead_id) return true
+    return false
+  })
+}
+
+// Returns open Opportunities at a Company that aren't yet attached to a Lead.
+// Used by the Apollo importer for auto-attach-on-import.
+export async function getOpenUnclaimedOpportunitiesForCompany(companyId: string): Promise<Opportunity[]> {
+  const opps = await getOpportunities()
+  return opps.filter((o) => o.company_id === companyId && !o.lead_id && o.status === 'Open')
 }
 
 export async function createOpportunity(opp: Opportunity): Promise<void> {
