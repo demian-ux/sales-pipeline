@@ -46,17 +46,17 @@ export async function getOpportunities(): Promise<Opportunity[]> {
   return opps.map((o) => ({ ...o, confidence: Number(o.confidence) }))
 }
 
-// Returns opportunities for a Lead. With `companyId` supplied, also includes
-// Company-level Opportunities (lead_id empty) for that company — these show
-// on every Lead at the company until one is explicitly attached. Without
-// `companyId`, behaviour matches the original strict lead_id match.
+// Returns every Opportunity at the Lead's Company — attached to this Lead,
+// attached to a sibling contact, or Company-level (no lead_id). Opportunities
+// are Company-scoped concerns; `lead_id` denotes the primary contact, not
+// who gets to see the row. Without `companyId`, falls back to strict
+// lead_id match (kept for callers that don't have a Company in hand).
 export async function getOpportunitiesForLead(leadId: string, companyId?: string): Promise<Opportunity[]> {
   const opps = await getOpportunities()
-  return opps.filter((o) => {
-    if (o.lead_id === leadId) return true
-    if (companyId && o.company_id === companyId && !o.lead_id) return true
-    return false
-  })
+  if (companyId) {
+    return opps.filter((o) => o.company_id === companyId)
+  }
+  return opps.filter((o) => o.lead_id === leadId)
 }
 
 // Returns open Opportunities at a Company that aren't yet attached to a Lead.
