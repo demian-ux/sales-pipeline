@@ -12,7 +12,24 @@ import { classifyArticle } from '@/lib/prompts/discoveries/classify'
 import { analyzeArticle } from '@/lib/prompts/discoveries/analyze'
 import { computeDiscoveryScore, scoreToTier } from './scoring'
 import { fetchRSSFeed, type RawArticleFromRSS } from './rss'
+import { resolveGoogleNewsUrl, isGoogleNewsUrl } from './googleNewsResolver'
 import type { DiscoverySignalTier } from '@/lib/types'
+
+/**
+ * Resolves a Google News redirect URL, swallowing any resolution error and
+ * returning the original URL as a fallback. We never want a Google News
+ * decoding failure to drop an otherwise good discovery — the downstream
+ * find-firms UI now surfaces the error clearly if Jina later fails.
+ */
+async function resolveSourceUrlSafe(url: string): Promise<string> {
+  if (!isGoogleNewsUrl(url)) return url
+  try {
+    return await resolveGoogleNewsUrl(url)
+  } catch (err) {
+    console.warn(`[ingest] Google News URL resolve failed for ${url}: ${err instanceof Error ? err.message : err}`)
+    return url
+  }
+}
 
 interface Source {
   name: string
@@ -269,11 +286,17 @@ async function processArticle(article: RawArticleFromRSS): Promise<ProcessResult
     return 'archived'
   }
 
+  // Resolve Google News redirect URLs to their publisher URL before storing.
+  // The Find-firms / outreach flows downstream both feed source_url to Jina
+  // Reader, which gets HTTP 451 on news.google.com URLs. Resolving here means
+  // every freshly ingested Discovery has a clean URL out of the gate.
+  const resolvedUrl = await resolveSourceUrlSafe(article.link)
+
   const { error } = await supabase.from('discoveries').insert({
     title: analysis.title || article.title,
     date_published: article.pubDate ? safeIsoDate(article.pubDate) : null,
     source: article.sourceName,
-    source_url: article.link,
+    source_url: resolvedUrl,
     source_type: 'rss',
 
     region: analysis.region,

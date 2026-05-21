@@ -6,6 +6,7 @@ import DiscoveryScoreBadge from '@/components/discoveries/DiscoveryScoreBadge'
 import StatusUpdater from '@/components/discoveries/StatusUpdater'
 import GenerateOutreach from '@/components/discoveries/GenerateOutreach'
 import { IconArrowLeft, IconExternalLink, IconCheck } from '@/components/ui/icons'
+import { isGoogleNewsUrl, resolveGoogleNewsUrl } from '@/lib/discoveries/googleNewsResolver'
 import type { Discovery, DiscoverySector } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -68,6 +69,32 @@ export default async function DiscoveryDetailPage({ params }: { params: Promise<
 
   if (error || !data) notFound()
   const d = data as Discovery & { promoted_to_opportunity_id?: string | null }
+
+  // Self-heal Google News redirect URLs left over from older ingest runs.
+  // Jina Reader returns HTTP 451 on news.google.com URLs, so the find-firms
+  // flow dead-ends without this. We resolve once on first view, persist back,
+  // and every subsequent view uses the cached publisher URL. Failures are
+  // silent — the find-firms UI will surface them clearly if Jina later fails.
+  if (isGoogleNewsUrl(d.source_url)) {
+    try {
+      const resolved = await resolveGoogleNewsUrl(d.source_url)
+      if (resolved !== d.source_url) {
+        const { error: updateErr } = await getSupabaseAdmin()
+          .from('discoveries')
+          .update({ source_url: resolved })
+          .eq('id', d.id)
+        // Unique-constraint violation = another discovery already has this
+        // resolved URL (same article surfaced via two GNews queries). Use the
+        // resolved URL in-memory for this render anyway so find-firms works.
+        if (updateErr && updateErr.code !== '23505') {
+          console.warn(`[discovery/${d.id}] persist resolved URL failed: ${updateErr.message}`)
+        }
+        d.source_url = resolved
+      }
+    } catch (err) {
+      console.warn(`[discovery/${d.id}] Google News resolve failed: ${err instanceof Error ? err.message : err}`)
+    }
+  }
 
   const location = [d.city, d.country].filter(Boolean).join(', ')
   const pubDate = d.date_published ? format(new Date(d.date_published), 'dd MMM yyyy') : null

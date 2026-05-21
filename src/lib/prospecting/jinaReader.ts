@@ -4,6 +4,7 @@
 
 import { env } from '@/lib/env'
 import { assertSafePublicHttpUrl } from './safeUrl'
+import { isGoogleNewsUrl, resolveGoogleNewsUrl } from '@/lib/discoveries/googleNewsResolver'
 
 const MIN_ARTICLE_CHARS = 500
 
@@ -25,7 +26,22 @@ export class ArticleFetchError extends Error {
 }
 
 export async function fetchArticleTextWithJina(rawUrl: string): Promise<string> {
-  const parsed = assertSafePublicHttpUrl(rawUrl)
+  // Defense-in-depth: ingest + the Discovery page both pre-resolve Google News
+  // URLs, but if any other path lands here with one, Jina would return HTTP
+  // 451. Resolve transparently so this function is robust regardless of caller.
+  let inputUrl = rawUrl
+  if (isGoogleNewsUrl(rawUrl)) {
+    try {
+      inputUrl = await resolveGoogleNewsUrl(rawUrl)
+    } catch (err) {
+      throw new ArticleFetchError(
+        `Could not resolve Google News redirect URL: ${err instanceof Error ? err.message : String(err)}`,
+        'GNEWS_RESOLVE_FAILED',
+      )
+    }
+  }
+
+  const parsed = assertSafePublicHttpUrl(inputUrl)
 
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), env.JINA_TIMEOUT_MS)
