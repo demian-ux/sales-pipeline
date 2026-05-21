@@ -35,6 +35,41 @@ export class SheetsError extends Error {
   }
 }
 
+// ─── Status tracking ───────────────────────────────────────────────────────
+// Module-level so the layout can ask "are Sheets healthy?" without making its
+// own API call. State is per-serverless-instance (Vercel doesn't share it),
+// which is acceptable noise — any failing instance flips the banner on, any
+// successful call flips it off.
+
+interface SheetsStatus {
+  mode: 'live' | 'mock' | 'degraded'
+  lastError: string | null
+  lastErrorAt: number | null
+}
+
+let lastError: { message: string; at: number } | null = null
+const STATUS_FRESH_MS = 10 * 60 * 1000 // forget errors older than 10 min
+
+export function markSheetsError(message: string): void {
+  lastError = { message, at: Date.now() }
+}
+
+export function clearSheetsError(): void {
+  lastError = null
+}
+
+export function getSheetsStatus(): SheetsStatus {
+  if (USE_MOCK) {
+    return { mode: 'mock', lastError: null, lastErrorAt: null }
+  }
+  if (lastError && Date.now() - lastError.at < STATUS_FRESH_MS) {
+    return { mode: 'degraded', lastError: lastError.message, lastErrorAt: lastError.at }
+  }
+  // Auto-clear stale errors (assume recovery if no recent call has failed)
+  if (lastError) lastError = null
+  return { mode: 'live', lastError: null, lastErrorAt: null }
+}
+
 export async function readTab(tabName: string): Promise<string[][]> {
   const sheets = await getSheets()
   try {
@@ -42,6 +77,7 @@ export async function readTab(tabName: string): Promise<string[][]> {
       spreadsheetId: SHEET_ID!,
       range: `${tabName}!A:ZZ`,
     })
+    clearSheetsError()
     return (res.data.values as string[][]) ?? []
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e)
@@ -60,21 +96,29 @@ export async function readTab(tabName: string): Promise<string[][]> {
 
 export async function appendRow(tabName: string, values: string[]): Promise<void> {
   const sheets = await getSheets()
-  await sheets.spreadsheets.values.append({
-    spreadsheetId: SHEET_ID!,
-    range: `${tabName}!A1`,
-    valueInputOption: 'RAW',
-    requestBody: { values: [values] },
-  })
+  try {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID!,
+      range: `${tabName}!A1`,
+      valueInputOption: 'RAW',
+      requestBody: { values: [values] },
+    })
+    clearSheetsError()
+  } catch (e) {
+    markSheetsError(e instanceof Error ? e.message : String(e))
+    throw e
+  }
 }
 
-// Runs `fn` and falls back to `fallback` on any SheetsError, logging the reason.
+// Runs `fn` and falls back to `fallback` on any SheetsError, logging the reason
+// and marking Sheets as degraded so the UI can surface a banner.
 export async function withFallback<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
   try {
     return await fn()
   } catch (e) {
     if (e instanceof SheetsError) {
       console.warn(`[Sheets] Falling back to mock data: ${e.message}`)
+      markSheetsError(e.message)
       return fallback
     }
     throw e
@@ -83,12 +127,18 @@ export async function withFallback<T>(fn: () => Promise<T>, fallback: T): Promis
 
 export async function updateRow(tabName: string, rowIndex: number, values: string[]): Promise<void> {
   const sheets = await getSheets()
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: SHEET_ID!,
-    range: `${tabName}!A${rowIndex}`,
-    valueInputOption: 'RAW',
-    requestBody: { values: [values] },
-  })
+  try {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID!,
+      range: `${tabName}!A${rowIndex}`,
+      valueInputOption: 'RAW',
+      requestBody: { values: [values] },
+    })
+    clearSheetsError()
+  } catch (e) {
+    markSheetsError(e instanceof Error ? e.message : String(e))
+    throw e
+  }
 }
 
 export function rowsToObjects<T>(rows: string[][]): T[] {

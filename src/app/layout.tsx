@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { headers } from 'next/headers'
 import './globals.css'
 import Sidebar from '@/components/layout/Sidebar'
+import SheetsStatusBanner from '@/components/layout/SheetsStatusBanner'
 
 export const metadata: Metadata = {
   title: 'Oaki Relations',
@@ -24,8 +25,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang="en">
       <body style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
         {showSidebar && <Sidebar />}
-        <main style={{ flex: 1, overflow: 'auto', minHeight: '100vh' }}>
-          {children}
+        <main style={{ flex: 1, overflow: 'auto', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+          {showSidebar && <SheetsStatusBanner />}
+          <div style={{ flex: 1, minHeight: 0 }}>
+            {children}
+          </div>
         </main>
       </body>
     </html>
