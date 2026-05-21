@@ -2,6 +2,7 @@
 /* eslint-disable react/no-unescaped-entities */
 
 import { useState } from 'react'
+import { OPP_TYPES } from '@/lib/constants/opportunity-types'
 
 interface Props {
   leadId: string
@@ -66,7 +67,7 @@ function AnalyzeButton({ leadId }: { leadId: string }) {
       </button>
       {error && <div style={{ marginTop: 8, fontSize: 12, color: 'var(--red)' }}>{error}</div>}
       <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-faint)' }}>
-        Generates why-now signal, suggested email, LinkedIn DM, and discovery questions.
+        Generates the strategic assessment and discovery questions. Email and LinkedIn drafts are separate buttons in the analysis card.
       </div>
     </div>
   )
@@ -100,12 +101,6 @@ type OppFormState = {
   urgency: 'Low' | 'Medium' | 'High'
   confidence: string
 }
-
-const OPP_TYPES = [
-  'New project', 'Press', 'Event follow-up', 'Past client rekindling',
-  'Anchor client check-in', 'Competition', 'Market expansion',
-  'Brand refresh', 'Manual research', 'Other',
-]
 
 function ResearchForm({ leadId, companyId }: { leadId: string; companyId: string }) {
   const [open, setOpen] = useState(false)

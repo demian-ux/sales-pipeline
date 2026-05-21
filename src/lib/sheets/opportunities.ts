@@ -1,6 +1,16 @@
 import type { Opportunity } from '../types'
 import { mockOpportunities } from '../mock-data'
-import { USE_MOCK, readTab, appendRowByMap, updateRow, rowsToObjects, withFallback } from './client'
+import {
+  USE_MOCK,
+  readTab,
+  appendRowByMap,
+  updateRow,
+  rowsToObjects,
+  withFallback,
+  deleteRowsAt,
+  batchUpdateCells,
+  columnIndexToLetter,
+} from './client'
 import { sessionCache } from './cache'
 
 const TAB = 'Opportunities'
@@ -84,4 +94,62 @@ export async function updateOpportunity(oppId: string, updates: Partial<Opportun
     if (colIndex >= 0) updated[colIndex] = String(val ?? '')
   })
   await updateRow(TAB, rowIndex + 1, updated)
+}
+
+export async function deleteOpportunity(oppId: string): Promise<boolean> {
+  if (USE_MOCK) {
+    const before = sessionCache.opportunities.length
+    sessionCache.opportunities = sessionCache.opportunities.filter((o) => o.opportunity_id !== oppId)
+    delete sessionCache.opportunityUpdates[oppId]
+    return sessionCache.opportunities.length < before
+  }
+  const rows = await readTab(TAB)
+  const rowIndex = rows.findIndex((r) => r[0] === oppId)
+  if (rowIndex < 1) return false
+  await deleteRowsAt(TAB, [rowIndex])
+  return true
+}
+
+// Clear the campaign_id cell on every Opportunity row that references the
+// given campaign. Used by the campaign-delete cascade. One batchUpdate.
+export async function clearOpportunityCampaign(campaignId: string): Promise<{ updated: number }> {
+  const nowIso = new Date().toISOString()
+
+  if (USE_MOCK) {
+    let touched = 0
+    for (const o of sessionCache.opportunities) {
+      if (o.campaign_id === campaignId) {
+        sessionCache.opportunityUpdates[o.opportunity_id] = {
+          ...(sessionCache.opportunityUpdates[o.opportunity_id] ?? {}),
+          campaign_id: undefined,
+          updated_at: nowIso,
+        }
+        touched++
+      }
+    }
+    return { updated: touched }
+  }
+
+  const rows = await readTab(TAB)
+  if (rows.length < 2) return { updated: 0 }
+  const headers = rows[0]
+  const campaignColIdx = headers.indexOf('campaign_id')
+  if (campaignColIdx < 0) return { updated: 0 }
+  const updatedAtColIdx = headers.indexOf('updated_at')
+
+  const updates: { tab: string; row: number; col: string; value: string }[] = []
+  let matched = 0
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i][campaignColIdx] !== campaignId) continue
+    matched++
+    const sheetRow = i + 1
+    updates.push({ tab: TAB, row: sheetRow, col: columnIndexToLetter(campaignColIdx), value: '' })
+    if (updatedAtColIdx >= 0) {
+      updates.push({ tab: TAB, row: sheetRow, col: columnIndexToLetter(updatedAtColIdx), value: nowIso })
+    }
+  }
+  if (updates.length > 0) {
+    await batchUpdateCells(updates)
+  }
+  return { updated: matched }
 }

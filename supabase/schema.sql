@@ -256,6 +256,87 @@ alter table app_secrets enable row level security;
 -- No policies are defined — anon/auth roles get zero access. Only service_role bypasses RLS.
 
 -- ============================================================================
+-- TASKS — manual tasks for the Dashboard's Today card.
+-- Auto-derived signals (overdue follow-ups, stalled proposals, waiting Gmail
+-- threads) are computed on read and not stored here. Snoozed signals live in
+-- the `snoozed_signals` blob under app_secrets, not in this table.
+-- ============================================================================
+create table if not exists tasks (
+  id            uuid primary key default uuid_generate_v4(),
+  title         text not null,
+  body          text,
+  due_date      date,
+  link_type     text,          -- 'lead' | 'opportunity' | 'discovery' | 'candidate' | 'conversation' | null
+  link_id       text,
+  status        text not null default 'open',   -- 'open' | 'done' | 'snoozed'
+  snoozed_until date,
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now(),
+  completed_at  timestamptz
+);
+
+create index if not exists idx_tasks_status   on tasks(status);
+create index if not exists idx_tasks_due_date on tasks(due_date);
+
+-- ============================================================================
+-- FIRM_CANDIDATES — persisted prospecting results.
+-- Previously ephemeral (request-scoped). Each prospecting run upserts its
+-- firms here; status transitions: 'new' → 'promoted' | 'dismissed'.
+-- The unique index on (name, source_article_url) handles re-runs from the
+-- same article without duplicating candidates.
+-- ============================================================================
+create table if not exists firm_candidates (
+  id                          uuid primary key default uuid_generate_v4(),
+  candidate_id                text not null unique,           -- preserves the original synthesized string ID
+  name                        text not null,
+  country                     text,
+  project_type                text,
+  reference_project           text,
+  website                     text,
+  score                       integer,                         -- 0-100
+  source_article_url          text not null,
+  source_discovery_id         uuid references discoveries(id) on delete set null,
+  status                      text not null default 'new',    -- 'new' | 'dismissed' | 'promoted'
+  promoted_to_company_id      text,                            -- Sheets company_id after promotion
+  promoted_to_opportunity_id  text,
+  discovered_at               timestamptz not null default now(),
+  updated_at                  timestamptz not null default now()
+);
+
+create index if not exists idx_firm_candidates_status on firm_candidates(status);
+create index if not exists idx_firm_candidates_score  on firm_candidates(score desc);
+create unique index if not exists idx_firm_candidates_name_article
+  on firm_candidates(name, source_article_url);
+
+-- ============================================================================
+-- EMAIL_DRAFTS / LINKEDIN_DRAFTS — Claude-generated outreach copy per Lead.
+-- One row per (lead_id) per type; rerunning the Draft action upserts the
+-- existing row. Lead detail page reads these and falls back to legacy
+-- AIInsight.suggested_email / suggested_linkedin_dm when these are empty.
+-- ============================================================================
+create table if not exists email_drafts (
+  id          uuid primary key default uuid_generate_v4(),
+  lead_id     text not null unique,
+  company_id  text not null,
+  content     text not null,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+
+create index if not exists idx_email_drafts_lead on email_drafts(lead_id);
+
+create table if not exists linkedin_drafts (
+  id          uuid primary key default uuid_generate_v4(),
+  lead_id     text not null unique,
+  company_id  text not null,
+  content     text not null,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+
+create index if not exists idx_linkedin_drafts_lead on linkedin_drafts(lead_id);
+
+-- ============================================================================
 -- SEED: trusted RSS sources (ported from Opportunity Terminal)
 -- Re-running this updates `active` and `sort_order` for existing rows.
 -- ============================================================================

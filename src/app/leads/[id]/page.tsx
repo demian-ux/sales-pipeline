@@ -4,13 +4,14 @@ import {
   getOpportunitiesForLead,
   getInteractionsForLead,
   getInsightsForLead,
-  getResearchForLead,
 } from '@/lib/sheets'
+import { getEmailDraftForLead, getLinkedInDraftForLead } from '@/lib/drafts'
 import { relativeDate, stageVariant, tempVariant, urgencyVariant, scoreColor } from '@/lib/utils'
 import Badge from '@/components/ui/Badge'
 import LeadActions from '@/components/leads/LeadActions'
 import LeadEditForm from '@/components/leads/LeadEditForm'
-import AddOpportunityForm from '@/components/leads/AddOpportunityForm'
+import AttachOpportunityDropdown from '@/components/leads/AttachOpportunityDropdown'
+import DraftButton from '@/components/leads/DraftButton'
 import LinkedInPanel from '@/components/leads/LinkedInPanel'
 import CopyButton from '@/components/ui/CopyButton'
 import OppStatusButton from '@/components/today/OppStatusButton'
@@ -24,17 +25,22 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
   const lead = await getLeadById(id)
   if (!lead) notFound()
 
-  const [company, opportunities, interactions, insights, research] = await Promise.all([
+  const [company, opportunities, interactions, insights, emailDraft, linkedinDraft] = await Promise.all([
     getCompanyById(lead.company_id),
     getOpportunitiesForLead(id, lead.company_id),
     getInteractionsForLead(id),
     getInsightsForLead(id),
-    getResearchForLead(id),
+    getEmailDraftForLead(id),
+    getLinkedInDraftForLead(id),
   ])
 
   const latestInsight = [...insights].sort(
     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   )[0]
+
+  // Drafts take precedence over legacy insight.suggested_email / suggested_linkedin_dm
+  const emailContent = emailDraft?.content ?? latestInsight?.suggested_email ?? null
+  const linkedinContent = linkedinDraft?.content ?? latestInsight?.suggested_linkedin_dm ?? null
 
   const openOpps = opportunities.filter((o) => o.status === 'Open' || o.status === 'In Progress')
   const closedOpps = opportunities.filter((o) => o.status !== 'Open' && o.status !== 'In Progress')
@@ -89,74 +95,110 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
           {/* Latest AI Insight */}
-          {latestInsight ? (
-            <Section title="AI Analysis">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-                <div style={{ fontSize: 12, color: 'var(--text-faint)' }}>
-                  Generated {relativeDate(latestInsight.created_at)}
-                </div>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <Badge
-                    label={`${latestInsight.confidence}%`}
-                    variant={latestInsight.confidence >= 80 ? 'green' : latestInsight.confidence >= 60 ? 'yellow' : 'muted'}
-                  />
-                  <Badge
-                    label={latestInsight.intent_level}
-                    variant={latestInsight.intent_level === 'high' ? 'green' : latestInsight.intent_level === 'medium' ? 'yellow' : 'muted'}
-                  />
-                </div>
-              </div>
-
-              <div style={{ fontSize: 13, color: 'var(--text)', marginBottom: 12 }}>{latestInsight.summary}</div>
-
-              <WhyNowBlock text={latestInsight.why_now} />
-
-              <div style={{ marginTop: 10, fontSize: 12, color: 'var(--accent)' }}>
-                → {latestInsight.recommended_next_action}
-              </div>
-
-              {latestInsight.suggested_email && (
-                <div style={{ marginTop: 14 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                    <div style={{ fontSize: 11, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Suggested email</div>
-                    <CopyButton text={latestInsight.suggested_email} label="Copy email" />
+          <Section title="AI Analysis">
+            {latestInsight ? (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-faint)' }}>
+                    Generated {relativeDate(latestInsight.created_at)}
                   </div>
-                  <pre style={{ fontFamily: 'inherit', fontSize: 12, color: 'var(--text-muted)', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 6, padding: '12px 14px', whiteSpace: 'pre-wrap', margin: 0, lineHeight: 1.6 }}>
-                    {latestInsight.suggested_email}
-                  </pre>
-                </div>
-              )}
-
-              {latestInsight.suggested_linkedin_dm && (
-                <div style={{ marginTop: 12 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                    <div style={{ fontSize: 11, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>LinkedIn DM</div>
-                    <CopyButton text={latestInsight.suggested_linkedin_dm} label="Copy DM" />
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <Badge
+                      label={`${latestInsight.confidence}%`}
+                      variant={latestInsight.confidence >= 80 ? 'green' : latestInsight.confidence >= 60 ? 'yellow' : 'muted'}
+                    />
+                    <Badge
+                      label={latestInsight.intent_level}
+                      variant={latestInsight.intent_level === 'high' ? 'green' : latestInsight.intent_level === 'medium' ? 'yellow' : 'muted'}
+                    />
+                    <DraftButton leadId={lead.lead_id} kind="email"    hasInsight={true} hasExistingDraft={!!emailContent} />
+                    <DraftButton leadId={lead.lead_id} kind="linkedin" hasInsight={true} hasExistingDraft={!!linkedinContent} />
                   </div>
-                  <pre style={{ fontFamily: 'inherit', fontSize: 12, color: 'var(--text-muted)', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 6, padding: '12px 14px', whiteSpace: 'pre-wrap', margin: 0, lineHeight: 1.6 }}>
-                    {latestInsight.suggested_linkedin_dm}
-                  </pre>
                 </div>
-              )}
 
-              {latestInsight.discovery_questions.length > 0 && (
-                <div style={{ marginTop: 14 }}>
-                  <div style={{ fontSize: 11, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Discovery questions</div>
-                  <ul style={{ margin: 0, paddingLeft: 16, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    {latestInsight.discovery_questions.map((q, i) => (
-                      <li key={i} style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>{q}</li>
-                    ))}
-                  </ul>
+                <div style={{ fontSize: 13, color: 'var(--text)', marginBottom: 12 }}>{latestInsight.summary}</div>
+
+                <WhyNowBlock text={latestInsight.why_now} />
+
+                <div style={{ marginTop: 10, fontSize: 12, color: 'var(--accent)' }}>
+                  → {latestInsight.recommended_next_action}
                 </div>
-              )}
-            </Section>
-          ) : (
-            <Section title="AI Analysis">
-              <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 12 }}>
-                No analysis yet. Add research findings and run analysis to get why-now signals, a suggested email, and discovery questions.
-              </div>
-            </Section>
-          )}
+
+                {emailContent && (
+                  <div style={{ marginTop: 14 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <div style={{ fontSize: 11, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                        Email draft
+                        {emailDraft && <span style={{ marginLeft: 6, opacity: 0.7, textTransform: 'none', letterSpacing: 0 }}>· {relativeDate(emailDraft.updated_at)}</span>}
+                      </div>
+                      <CopyButton text={emailContent} label="Copy email" />
+                    </div>
+                    <pre style={{ fontFamily: 'inherit', fontSize: 12, color: 'var(--text-muted)', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 6, padding: '12px 14px', whiteSpace: 'pre-wrap', margin: 0, lineHeight: 1.6 }}>
+                      {emailContent}
+                    </pre>
+                  </div>
+                )}
+
+                {linkedinContent && (
+                  <div style={{ marginTop: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <div style={{ fontSize: 11, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                        LinkedIn DM
+                        {linkedinDraft && <span style={{ marginLeft: 6, opacity: 0.7, textTransform: 'none', letterSpacing: 0 }}>· {relativeDate(linkedinDraft.updated_at)}</span>}
+                      </div>
+                      <CopyButton text={linkedinContent} label="Copy DM" />
+                    </div>
+                    <pre style={{ fontFamily: 'inherit', fontSize: 12, color: 'var(--text-muted)', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 6, padding: '12px 14px', whiteSpace: 'pre-wrap', margin: 0, lineHeight: 1.6 }}>
+                      {linkedinContent}
+                    </pre>
+                  </div>
+                )}
+
+                {latestInsight.discovery_questions.length > 0 && (
+                  <div style={{ marginTop: 14 }}>
+                    <div style={{ fontSize: 11, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Discovery questions</div>
+                    <ul style={{ margin: 0, paddingLeft: 16, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      {latestInsight.discovery_questions.map((q, i) => (
+                        <li key={i} style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>{q}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 12 }}>
+                  No analysis yet. Run &quot;Analyze — why now?&quot; in the sidebar to generate the strategic assessment, then use the draft buttons here to generate outreach copy.
+                </div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <DraftButton leadId={lead.lead_id} kind="email"    hasInsight={false} hasExistingDraft={!!emailContent} />
+                  <DraftButton leadId={lead.lead_id} kind="linkedin" hasInsight={false} hasExistingDraft={!!linkedinContent} />
+                </div>
+                {emailContent && (
+                  <div style={{ marginTop: 14 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <div style={{ fontSize: 11, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Email draft</div>
+                      <CopyButton text={emailContent} label="Copy email" />
+                    </div>
+                    <pre style={{ fontFamily: 'inherit', fontSize: 12, color: 'var(--text-muted)', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 6, padding: '12px 14px', whiteSpace: 'pre-wrap', margin: 0, lineHeight: 1.6 }}>
+                      {emailContent}
+                    </pre>
+                  </div>
+                )}
+                {linkedinContent && (
+                  <div style={{ marginTop: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <div style={{ fontSize: 11, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>LinkedIn DM</div>
+                      <CopyButton text={linkedinContent} label="Copy DM" />
+                    </div>
+                    <pre style={{ fontFamily: 'inherit', fontSize: 12, color: 'var(--text-muted)', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 6, padding: '12px 14px', whiteSpace: 'pre-wrap', margin: 0, lineHeight: 1.6 }}>
+                      {linkedinContent}
+                    </pre>
+                  </div>
+                )}
+              </>
+            )}
+          </Section>
 
           {/* Opportunities */}
           <Section title={`Opportunities${opportunities.length > 0 ? ` · ${opportunities.length}` : ''}`}>
@@ -201,55 +243,11 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                 ))}
               </div>
             )}
-            <AddOpportunityForm leadId={lead.lead_id} companyId={lead.company_id} />
-          </Section>
-
-          {/* Research Findings */}
-          <Section title="Research Findings">
-            {research.length === 0 && (
-              <div style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 12 }}>No research yet.</div>
-            )}
-            {research.map((f) => (
-              <div key={f.finding_id} style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 6, padding: '12px 14px', marginBottom: 8 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                  <span style={{ fontSize: 11, color: 'var(--text-faint)', background: 'var(--surface-3)', padding: '2px 6px', borderRadius: 4 }}>{f.source_type}</span>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    {f.source_url && (
-                      <a href={f.source_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: 'var(--text-faint)' }}>
-                        Source ↗
-                      </a>
-                    )}
-                    <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>{relativeDate(f.created_at)}</span>
-                  </div>
-                </div>
-                <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.5, marginBottom: 6 }}>{f.research_summary}</div>
-                {f.signals_detected && (
-                  <div style={{ fontSize: 11, color: 'var(--accent)', marginBottom: 4 }}>Signals: {f.signals_detected}</div>
-                )}
-                {(f.design_observations || f.visual_identity_notes || f.market_positioning) && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 6, paddingTop: 6, borderTop: '1px solid var(--border-subtle)' }}>
-                    {f.design_observations && (
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                        <span style={{ color: 'var(--text-faint)' }}>Design: </span>{f.design_observations}
-                      </div>
-                    )}
-                    {f.visual_identity_notes && (
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                        <span style={{ color: 'var(--text-faint)' }}>Identity: </span>{f.visual_identity_notes}
-                      </div>
-                    )}
-                    {f.market_positioning && (
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                        <span style={{ color: 'var(--text-faint)' }}>Positioning: </span>{f.market_positioning}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
-
-            {/* Research input form */}
-            <LeadActions leadId={lead.lead_id} companyId={lead.company_id} tab="research" />
+            <AttachOpportunityDropdown
+              currentLeadId={lead.lead_id}
+              currentLeadName={lead.full_name}
+              excludeOppIds={opportunities.map((o) => o.opportunity_id)}
+            />
           </Section>
 
           {/* Interaction History */}

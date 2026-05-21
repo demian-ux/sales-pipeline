@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
-import { updateOpportunity } from '@/lib/sheets'
+import { updateOpportunity, deleteOpportunity } from '@/lib/sheets'
 import type { Opportunity } from '@/lib/types'
 
-const ALLOWED_FIELDS: (keyof Opportunity)[] = ['status', 'urgency', 'confidence', 'recommended_action']
+const ALLOWED_FIELDS: (keyof Opportunity)[] = ['status', 'urgency', 'confidence', 'recommended_action', 'lead_id']
 
 export async function PATCH(
   req: Request,
@@ -29,5 +29,22 @@ export async function PATCH(
   } catch (err) {
     console.error('PATCH /api/opportunities/[id] error:', err)
     return NextResponse.json({ error: 'Failed to update opportunity' }, { status: 500 })
+  }
+}
+
+export async function DELETE(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params
+    const deleted = await deleteOpportunity(id)
+    if (!deleted) {
+      return NextResponse.json({ error: 'Opportunity not found' }, { status: 404 })
+    }
+    return NextResponse.json({ ok: true })
+  } catch (err) {
+    console.error('DELETE /api/opportunities/[id] error:', err)
+    return NextResponse.json({ error: 'Failed to delete opportunity' }, { status: 500 })
   }
 }

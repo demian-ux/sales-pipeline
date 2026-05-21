@@ -7,6 +7,8 @@
 // lib/prompts/* directly, and this file can be deleted.
 
 export { analyzeLeadWhyNow } from '@/lib/prompts/lead/analyze-why-now'
+export { generateEmailDraft } from '@/lib/prompts/lead/generate-email'
+export { generateLinkedInDraft } from '@/lib/prompts/lead/generate-linkedin-dm'
 export { prepareMeetingPrep } from '@/lib/prompts/lead/prepare-meeting-prep'
 export { recommendLinkedInStrategy } from '@/lib/prompts/lead/recommend-linkedin-strategy'
 export { prioritizeStakeholders } from '@/lib/prompts/lead/prioritize-stakeholders'

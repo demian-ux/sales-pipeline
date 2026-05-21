@@ -178,3 +178,48 @@ export async function bulkAssignCampaign(
   await batchUpdateCells(updates)
   return { updated: matched }
 }
+
+// Clear the campaign_id cell on every Lead row that references the given
+// campaign. Used by the campaign-delete cascade. Same pattern as
+// bulkAssignCampaign — one batchUpdate, no full row rewrites.
+export async function clearLeadCampaign(campaignId: string): Promise<{ updated: number }> {
+  const nowIso = new Date().toISOString()
+
+  if (USE_MOCK) {
+    let touched = 0
+    for (const l of sessionCache.leads) {
+      if (l.campaign_id === campaignId) {
+        sessionCache.leadUpdates[l.lead_id] = {
+          ...(sessionCache.leadUpdates[l.lead_id] ?? {}),
+          campaign_id: undefined,
+          updated_at: nowIso,
+        }
+        touched++
+      }
+    }
+    return { updated: touched }
+  }
+
+  const rows = await readTab(TAB)
+  if (rows.length < 2) return { updated: 0 }
+  const headers = rows[0]
+  const campaignColIdx = headers.indexOf('campaign_id')
+  if (campaignColIdx < 0) return { updated: 0 }
+  const updatedAtColIdx = headers.indexOf('updated_at')
+
+  const updates: { tab: string; row: number; col: string; value: string }[] = []
+  let matched = 0
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i][campaignColIdx] !== campaignId) continue
+    matched++
+    const sheetRow = i + 1
+    updates.push({ tab: TAB, row: sheetRow, col: columnIndexToLetter(campaignColIdx), value: '' })
+    if (updatedAtColIdx >= 0) {
+      updates.push({ tab: TAB, row: sheetRow, col: columnIndexToLetter(updatedAtColIdx), value: nowIso })
+    }
+  }
+  if (updates.length > 0) {
+    await batchUpdateCells(updates)
+  }
+  return { updated: matched }
+}

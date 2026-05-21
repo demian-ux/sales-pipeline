@@ -5,6 +5,7 @@
 import { type NextRequest } from 'next/server'
 import { z } from 'zod'
 import { createCompany } from '@/lib/sheets'
+import { markCandidatePromoted } from '@/lib/prospecting/persistence'
 import type { Company } from '@/lib/types'
 
 const BodySchema = z.object({
@@ -68,6 +69,12 @@ export async function POST(request: NextRequest) {
 
   try {
     await createCompany(company)
+    // Flip the persisted candidate row to 'promoted' (silent no-op when
+    // Supabase isn't configured or the candidate was never persisted).
+    await markCandidatePromoted(
+      { name: firm.name, source_article_url },
+      { company_id: companyId },
+    )
     return Response.json({ company_id: companyId })
   } catch (err) {
     console.error('[prospecting/promote] createCompany error:', err)

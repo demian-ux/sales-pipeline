@@ -10,14 +10,13 @@ import { useState } from 'react'
 const NAV_GROUPS = [
   {
     items: [
-      { href: '/',              label: 'Today',          icon: '·' },
+      { href: '/',              label: 'Dashboard',      icon: '·' },
     ],
   },
   {
     label: 'People',
     items: [
       { href: '/relationships', label: 'Relationships',  icon: '·' },
-      { href: '/leads/new',     label: '+ New lead',     icon: '·' },
       { href: '/conversations', label: 'Conversations',  icon: '·' },
     ],
   },
@@ -25,7 +24,6 @@ const NAV_GROUPS = [
     label: 'Pipeline',
     items: [
       { href: '/opportunities', label: 'Opportunities',  icon: '·' },
-      { href: '/pipeline',      label: 'Pipeline',       icon: '·' },
       { href: '/campaigns',     label: 'Campaigns',      icon: '·' },
     ],
   },
@@ -34,8 +32,6 @@ const NAV_GROUPS = [
     items: [
       { href: '/discoveries',   label: 'Discoveries',    icon: '·' },
       { href: '/research',      label: 'Research',       icon: '·' },
-      { href: '/draft-queue',   label: 'Draft Queue',    icon: '·' },
-      { href: '/insights',      label: 'AI Insights',    icon: '·' },
     ],
   },
   {

@@ -1,6 +1,6 @@
 import type { Campaign, CampaignChannel } from '../types'
 import { mockCampaigns } from '../mock-data'
-import { USE_MOCK, readTab, appendRowByMap, updateRow, rowsToObjects, withFallback } from './client'
+import { USE_MOCK, readTab, appendRowByMap, updateRow, rowsToObjects, withFallback, deleteRowsAt } from './client'
 
 const TAB = 'Campaigns'
 
@@ -63,4 +63,13 @@ export async function updateCampaign(campaignId: string, updates: Partial<Campai
 export async function createCampaign(campaign: Campaign): Promise<void> {
   if (USE_MOCK) return
   await appendRowByMap(TAB, campaignToMap(campaign), CAMPAIGN_COLUMNS)
+}
+
+export async function deleteCampaign(campaignId: string): Promise<boolean> {
+  if (USE_MOCK) return false  // campaigns are static in mock mode
+  const rows = await readTab(TAB)
+  const rowIndex = rows.findIndex((r) => r[0] === campaignId)
+  if (rowIndex < 1) return false
+  await deleteRowsAt(TAB, [rowIndex])
+  return true
 }

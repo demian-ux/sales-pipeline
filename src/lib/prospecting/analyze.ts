@@ -8,6 +8,7 @@ import { fetchArticleTextWithJina } from './jinaReader'
 import { discoverCandidateSources } from './tavily'
 import { extractArticleMetadata } from '@/lib/prompts/prospecting/extract-metadata'
 import { selectProspectingFirms } from '@/lib/prompts/prospecting/select-firms'
+import { persistFirmCandidates } from './persistence'
 import { estimateProspectingCost, type ClaudeUsage, type CostEstimate } from './costEstimate'
 import type { ProspectingResult } from '@/lib/types'
 
@@ -27,7 +28,10 @@ export interface ProspectingResponse {
   meta: ProspectingMeta
 }
 
-export async function runProspectingAnalysis(sourceUrl: string): Promise<ProspectingResponse> {
+export async function runProspectingAnalysis(
+  sourceUrl: string,
+  options: { sourceDiscoveryId?: string } = {},
+): Promise<ProspectingResponse> {
   const startedAt = Date.now()
 
   // 1. Pull cleaned article text via Jina
@@ -46,6 +50,10 @@ export async function runProspectingAnalysis(sourceUrl: string): Promise<Prospec
     article: extraction.article,
     candidateSources,
   })
+
+  // 5. Persist firm candidates to Supabase (silent no-op if not configured).
+  // The Dashboard's "High-importance Candidates" card reads from this table.
+  await persistFirmCandidates(selection.result.firms, { sourceDiscoveryId: options.sourceDiscoveryId })
 
   const durationMs = Date.now() - startedAt
   const tavilyResults = candidateSources.reduce((sum, s) => sum + s.results.length, 0)

@@ -33,6 +33,22 @@ export type PipelineStage =
   | 'Nurture'
   | 'Dormant'
 
+// Canonical display order for pipeline stages. Used by the Relationships
+// page (group-by stage), the Campaigns page (stage breakdown), and anywhere
+// else that needs a consistent ordering.
+export const STAGE_ORDER: PipelineStage[] = [
+  'New Lead',
+  'Contacted',
+  'Replied',
+  'Discovery',
+  'Proposal Sent',
+  'Negotiation',
+  'Won',
+  'Nurture',
+  'Dormant',
+  'Lost',
+]
+
 export type LeadStatus = 'Active' | 'Inactive' | 'Archived'
 export type RelationshipTemperature = 'Hot' | 'Warm' | 'Cool' | 'Cold'
 export type UrgencyLevel = 'High' | 'Medium' | 'Low'
@@ -144,7 +160,7 @@ export interface Opportunity {
   // Provenance: set when an Opportunity is promoted from a Discovery (market signal)
   discovered_from_id?: string
   discovered_from_url?: string
-  status: 'Open' | 'In Progress' | 'Contacted' | 'Snoozed' | 'Closed' | 'Dismissed'
+  status: 'Open' | 'In Progress' | 'Contacted' | 'Snoozed' | 'Closed' | 'Dismissed' | 'Archived'
   created_at: string
   updated_at: string
 }
@@ -197,18 +213,29 @@ export interface AIInsight {
   created_at: string
 }
 
+// Analyze — why now? Email and LinkedIn DM are produced by separate prompts
+// (generate-email, generate-linkedin-dm) and persisted to their own Supabase
+// tables. The legacy AIInsight.suggested_email / suggested_linkedin_dm fields
+// remain (optional) for backward compatibility with rows created before the
+// split, but the analyze prompt no longer fills them.
 export interface LeadAnalysisOutput {
   summary: string
   why_now: string
   intent_level: IntentLevel
   recommended_next_action: string
-  suggested_email: string
-  suggested_linkedin_dm: string
   discovery_questions: string[]
   objections: string[]
   opportunities: string[]
   risk_level: RiskLevel
   confidence: number
+}
+
+export interface EmailDraftOutput {
+  email: string
+}
+
+export interface LinkedInDraftOutput {
+  dm: string
 }
 
 export interface MeetingPrepOutput {
@@ -500,3 +527,105 @@ export interface ProspectingResult {
 // ever imports back from lib/types. As of Phase 1 it doesn't, so this is safe.
 
 export type { ParsedThread as Thread, ConversationAnalysis as ThreadAnalysis } from './gmail/types'
+
+// ============================================================================
+// Dashboard — tasks, drafts, persisted candidates, layout, snoozed signals
+// ============================================================================
+// All five live in Supabase (tasks/firm_candidates/email_drafts/linkedin_drafts
+// in their own tables; dashboard_layout + snoozed_signals as JSONB blobs in
+// app_secrets). See supabase/schema.sql.
+
+export type TaskStatus = 'open' | 'done' | 'snoozed'
+export type TaskLinkType =
+  | 'lead'
+  | 'opportunity'
+  | 'discovery'
+  | 'candidate'
+  | 'conversation'
+
+export interface Task {
+  id: string
+  title: string
+  body?: string | null
+  due_date?: string | null      // ISO date 'YYYY-MM-DD'
+  link_type?: TaskLinkType | null
+  link_id?: string | null
+  status: TaskStatus
+  snoozed_until?: string | null  // ISO date
+  created_at: string
+  updated_at: string
+  completed_at?: string | null
+}
+
+// Persisted FirmCandidate row (the in-memory FirmCandidate above is ephemeral,
+// used by /api/prospecting responses; this is the Supabase shape).
+export type FirmCandidateStatus = 'new' | 'dismissed' | 'promoted'
+
+export interface FirmCandidateRow {
+  id: string
+  candidate_id: string
+  name: string
+  country?: string | null
+  project_type?: string | null
+  reference_project?: string | null
+  website?: string | null
+  score?: number | null
+  source_article_url: string
+  source_discovery_id?: string | null
+  status: FirmCandidateStatus
+  promoted_to_company_id?: string | null
+  promoted_to_opportunity_id?: string | null
+  discovered_at: string
+  updated_at: string
+}
+
+export interface EmailDraft {
+  id: string
+  lead_id: string
+  company_id: string
+  content: string
+  created_at: string
+  updated_at: string
+}
+
+export interface LinkedInDraft {
+  id: string
+  lead_id: string
+  company_id: string
+  content: string
+  created_at: string
+  updated_at: string
+}
+
+// Persisted in app_secrets under key 'dashboard_layout'. Cards not in the
+// array are treated as hidden (defaults filled in by the server route when
+// no row exists yet).
+export type DashboardCardId =
+  | 'today'
+  | 'opportunities'
+  | 'attention'
+  | 'conversations'
+  | 'discoveries'
+  | 'candidates'
+
+export interface DashboardLayoutEntry {
+  id: DashboardCardId
+  visible: boolean
+}
+
+export interface DashboardLayout {
+  cards: DashboardLayoutEntry[]
+}
+
+// Persisted in app_secrets under key 'snoozed_signals'. Each entry hides
+// one auto-signal from the Today queue until snoozed_until passes. The
+// signal_key encodes type + natural ID, e.g. 'thread:abc123',
+// 'stalled_proposal:opp_xyz', 'overdue_followup:lead_123'.
+export interface SnoozedSignal {
+  signal_key: string
+  snoozed_until: string  // ISO timestamp
+}
+
+export interface SnoozedSignalsBlob {
+  signals: SnoozedSignal[]
+}

@@ -15,6 +15,7 @@ import { type NextRequest } from 'next/server'
 import { z } from 'zod'
 import { getSupabaseAdmin, isSupabaseAdminConfigured } from '@/lib/supabase'
 import { findOrCreateCompanyByName, createOpportunity } from '@/lib/sheets'
+import { markCandidatePromoted } from '@/lib/prospecting/persistence'
 import type { Opportunity, UrgencyLevel } from '@/lib/types'
 
 function urgencyFromScore(score: number | null | undefined): UrgencyLevel {
@@ -121,6 +122,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         updated_at: nowIso,
       }
       await createOpportunity(opportunity)
+
+      // Flip the persisted candidate row (if any) to 'promoted' with the
+      // new company + opportunity IDs. Silent no-op when the candidate was
+      // never persisted (e.g. promoting a firm extracted before Phase 1).
+      await markCandidatePromoted(
+        { name: firm.name, source_article_url: firm.source_article_url },
+        { company_id: company.company_id, opportunity_id: opportunityId },
+      )
 
       results.push({
         firm_name: firm.name,
