@@ -82,7 +82,10 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
             </a>
           )}
           {lead.email && (
-            <a href={`mailto:${lead.email}`}
+            <a
+              href={`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(lead.email)}`}
+              target="_blank"
+              rel="noopener noreferrer"
               style={{ fontSize: 12, color: 'var(--text-faint)', background: 'var(--surface-2)', padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)' }}>
               Email ↗
             </a>
