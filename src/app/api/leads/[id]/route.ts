@@ -7,6 +7,7 @@ import {
   getInsightsForLead,
   getResearchForLead,
   updateLead,
+  deleteLead,
 } from '@/lib/sheets'
 import type { Lead } from '@/lib/types'
 
@@ -38,6 +39,7 @@ const EDITABLE_FIELDS: (keyof Lead)[] = [
   'pipeline_stage',
   'relationship_temperature',
   'lead_status',
+  'campaign_id',
   'next_action',
   'next_followup_date',
   'known_pain_points',
@@ -85,5 +87,17 @@ export async function PATCH(
   } catch (err) {
     console.error('PATCH /api/leads/[id] error:', err)
     return NextResponse.json({ error: 'Failed to update lead' }, { status: 500 })
+  }
+}
+
+export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await params
+    const ok = await deleteLead(id)
+    if (!ok) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
+    return NextResponse.json({ deleted: true })
+  } catch (err) {
+    console.error('DELETE /api/leads/[id] error:', err)
+    return NextResponse.json({ error: 'Failed to delete lead' }, { status: 500 })
   }
 }

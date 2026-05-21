@@ -169,6 +169,100 @@ export async function updateRow(tabName: string, rowIndex: number, values: strin
   }
 }
 
+// ─── Bulk + delete primitives ──────────────────────────────────────────────
+
+// 0-based column index → A1 letter (A, B, …, Z, AA, AB, …).
+export function columnIndexToLetter(zeroBasedIndex: number): string {
+  let s = ''
+  let n = zeroBasedIndex + 1
+  while (n > 0) {
+    const r = (n - 1) % 26
+    s = String.fromCharCode(65 + r) + s
+    n = Math.floor((n - 1) / 26)
+  }
+  return s
+}
+
+// Sheet GIDs are needed for batchUpdate row deletion. Cache so we don't
+// re-fetch metadata per call. Per-serverless-instance state — fine for
+// single-user; would re-fetch on cold starts.
+let sheetIdCache: Record<string, number> | null = null
+
+export async function getSheetIdForTab(tabName: string): Promise<number> {
+  if (sheetIdCache && tabName in sheetIdCache) return sheetIdCache[tabName]
+  const sheets = await getSheets()
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID! })
+  sheetIdCache = {}
+  for (const s of meta.data.sheets ?? []) {
+    const title = s.properties?.title
+    const sid = s.properties?.sheetId
+    if (title && sid !== null && sid !== undefined) sheetIdCache[title] = sid
+  }
+  if (!(tabName in sheetIdCache)) {
+    throw new SheetsError(`Sheet tab "${tabName}" not found`, 'tab_missing')
+  }
+  return sheetIdCache[tabName]
+}
+
+// Delete N rows in one batchUpdate. `sheetRowIndices0` is 0-based row indices
+// in our `rows` array (where rows[0] = header row = sheet row 1, rows[1] =
+// first data row = sheet row 2, …). The API uses the SAME 0-based indexing
+// for deleteDimension.startIndex.
+//
+// Sorts descending internally so deleting row 5 doesn't shift row 8 to row 7.
+export async function deleteRowsAt(tabName: string, sheetRowIndices0: number[]): Promise<void> {
+  if (sheetRowIndices0.length === 0) return
+  const sheets = await getSheets()
+  const sheetId = await getSheetIdForTab(tabName)
+  const sorted = [...sheetRowIndices0].sort((a, b) => b - a)
+  try {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: SHEET_ID!,
+      requestBody: {
+        requests: sorted.map((idx) => ({
+          deleteDimension: {
+            range: { sheetId, dimension: 'ROWS', startIndex: idx, endIndex: idx + 1 },
+          },
+        })),
+      },
+    })
+    clearSheetsError()
+  } catch (e) {
+    markSheetsError(e instanceof Error ? e.message : String(e))
+    throw e
+  }
+}
+
+// Bulk single-cell updates in one HTTP call. `row` is 1-based (the literal
+// sheet row number); `col` is the A1 letter.
+export interface CellUpdate {
+  tab: string
+  row: number
+  col: string
+  value: string
+}
+
+export async function batchUpdateCells(updates: CellUpdate[]): Promise<void> {
+  if (updates.length === 0) return
+  const sheets = await getSheets()
+  try {
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: SHEET_ID!,
+      requestBody: {
+        valueInputOption: 'RAW',
+        data: updates.map((u) => ({
+          range: `${u.tab}!${u.col}${u.row}`,
+          values: [[u.value]],
+        })),
+      },
+    })
+    clearSheetsError()
+  } catch (e) {
+    markSheetsError(e instanceof Error ? e.message : String(e))
+    throw e
+  }
+}
+
 export function rowsToObjects<T>(rows: string[][]): T[] {
   if (rows.length < 2) return []
   const [headers, ...dataRows] = rows
