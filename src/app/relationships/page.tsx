@@ -91,11 +91,11 @@ export default async function RelationshipsPage() {
                         <div style={{ fontSize: 11, color: 'var(--text-faint)' }}>{lead.title}</div>
                       </div>
                       <div style={{ fontSize: 12 }}>
-                        <span
-                          style={{ color: 'var(--text-muted)' }}
-                          onClick={(e) => { e.preventDefault(); window.location.href = `/companies/${lead.company_id}` }}
-                          title="View company"
-                        >
+                        {/* Plain text — clicking the row navigates to the lead.
+                            Server Components can't pass an onClick to a child,
+                            which was 500ing this page. To navigate to the
+                            company directly, do it from the lead detail. */}
+                        <span style={{ color: 'var(--text-muted)' }}>
                           {lead.company_name}
                         </span>
                       </div>

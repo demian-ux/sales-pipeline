@@ -82,7 +82,10 @@ function mapRows(headers: string[], rows: string[][], fieldMap: Record<string, k
     .map((row) => {
       const mapped: Partial<ApolloImportRow> = {}
       headers.forEach((h, i) => {
-        const field = fieldMap[h.toLowerCase().trim()]
+        // fieldMap is keyed by the original header (set via autoMap[header]
+        // and the select dropdowns). Looking up by `h.toLowerCase().trim()`
+        // here used to always miss → every row became empty → 0 valid rows.
+        const field = fieldMap[h]
         if (field) (mapped as Record<string, string>)[field] = row[i] ?? ''
       })
       return mapped as ApolloImportRow

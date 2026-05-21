@@ -17,6 +17,7 @@ const NAV_GROUPS = [
     label: 'People',
     items: [
       { href: '/relationships', label: 'Relationships',  icon: '·' },
+      { href: '/leads/new',     label: '+ New lead',     icon: '·' },
       { href: '/conversations', label: 'Conversations',  icon: '·' },
     ],
   },
