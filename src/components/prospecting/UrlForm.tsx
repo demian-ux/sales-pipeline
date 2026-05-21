@@ -6,10 +6,13 @@ import { IconLoader } from '@/components/ui/icons'
 interface Props {
   onSubmit: (url: string) => void
   isLoading: boolean
+  // Optional initial value — used when the page is entered from elsewhere
+  // (e.g. a Discovery card) with the URL pre-supplied via query param.
+  initialUrl?: string
 }
 
-export default function UrlForm({ onSubmit, isLoading }: Props) {
-  const [url, setUrl] = useState('')
+export default function UrlForm({ onSubmit, isLoading, initialUrl = '' }: Props) {
+  const [url, setUrl] = useState(initialUrl)
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault()

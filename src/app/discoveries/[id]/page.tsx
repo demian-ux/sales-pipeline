@@ -5,8 +5,7 @@ import { getSupabaseAdmin, isSupabaseAdminConfigured } from '@/lib/supabase'
 import DiscoveryScoreBadge from '@/components/discoveries/DiscoveryScoreBadge'
 import StatusUpdater from '@/components/discoveries/StatusUpdater'
 import GenerateOutreach from '@/components/discoveries/GenerateOutreach'
-import FirmsFinder from '@/components/discoveries/FirmsFinder'
-import { IconArrowLeft, IconExternalLink } from '@/components/ui/icons'
+import { IconArrowLeft, IconExternalLink, IconCheck } from '@/components/ui/icons'
 import type { Discovery, DiscoverySector } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -124,12 +123,15 @@ export default async function DiscoveryDetailPage({ params }: { params: Promise<
         </div>
       </div>
 
-      {/* Firms finder — full width, drives the main action on this page:
-          turn the article into Companies + Opportunities */}
+      {/* Firms finder — hands off to the import/prospecting page (same proven
+          pipeline as the standalone Import flow). The page reads ?url= and
+          ?discoveryId= from the query string, auto-runs the analysis, and
+          shows a "Promote N to Opportunity" button that posts back to
+          /api/discoveries/[id]/promote-firms so the resulting Opportunities
+          get attached to this Discovery. */}
       <Section title="Firms — promote to Opportunity">
-        <FirmsFinder
+        <FindFirmsLink
           discoveryId={d.id}
-          discoveryTitle={d.title}
           sourceUrl={d.source_url}
           alreadyPromotedOpportunityId={d.promoted_to_opportunity_id}
         />
@@ -267,6 +269,66 @@ function Section({ title, children }: { title: string; children: React.ReactNode
         {title}
       </h2>
       {children}
+    </div>
+  )
+}
+
+// Hands off to /import/prospecting with the article URL pre-filled. That page
+// auto-runs the pipeline and (because ?discoveryId is present) shows a
+// Promote-to-Opportunity action that attaches the resulting Opportunities back
+// to this Discovery. Keeping this as a server component (plain Link, no client
+// JS) since the actual interactive work lives on the destination page.
+function FindFirmsLink({
+  discoveryId,
+  sourceUrl,
+  alreadyPromotedOpportunityId,
+}: {
+  discoveryId: string
+  sourceUrl: string
+  alreadyPromotedOpportunityId?: string | null
+}) {
+  const href = `/import/prospecting?url=${encodeURIComponent(sourceUrl)}&discoveryId=${encodeURIComponent(discoveryId)}`
+  return (
+    <div style={{
+      padding: 16,
+      border: '1px solid var(--border)',
+      borderRadius: 'var(--r-md)',
+      background: 'var(--surface)',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 10,
+    }}>
+      {alreadyPromotedOpportunityId && (
+        <div style={{ fontSize: 12, color: 'var(--green)', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <IconCheck size={12} /> Already promoted from this Discovery. You can find more firms to attach.
+        </div>
+      )}
+      <Link
+        href={href}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 6,
+          padding: '10px 18px',
+          borderRadius: 'var(--r-sm)',
+          border: '1px solid var(--accent)',
+          background: 'var(--accent)',
+          color: '#000',
+          fontSize: 13,
+          fontWeight: 600,
+          textDecoration: 'none',
+          alignSelf: 'flex-start',
+        }}
+      >
+        Find candidate firms →
+      </Link>
+      <p style={{ fontSize: 11, color: 'var(--text-faint)', margin: 0, lineHeight: 1.6 }}>
+        Opens the Prospecting flow with this article&apos;s URL pre-loaded. Runs Jina → Claude → Tavily →
+        Claude (≈30–60 s). Pick the keepers and click &ldquo;Promote to Opportunity&rdquo; — each becomes a
+        Company in your Sheet plus a Company-level Opportunity attached to this Discovery. Apollo
+        imports of contacts at those companies will auto-attach.
+      </p>
     </div>
   )
 }

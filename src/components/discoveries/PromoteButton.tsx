@@ -1,9 +1,13 @@
-// DEPRECATED — the lead-picker promote flow. Replaced by FirmsFinder
-// (Discovery → prospect firms → bulk-promote to Companies + Opportunities).
+// DEPRECATED — the lead-picker promote flow. Replaced by the unified import
+// flow: /discoveries/[id] now links to /import/prospecting?url=…&discoveryId=…
+// which runs the proven Prospecting pipeline and bulk-promotes selected firms
+// to Companies + Opportunities (attached to this Discovery) via
+// /api/discoveries/[id]/promote-firms.
+//
 // Kept dormant for one release cycle in case we need to roll back to the
-// old "attach Discovery to existing Lead" workflow. Safe to delete once
-// the firms flow is proven in production. Reference: /api/discoveries/[id]/promote
-// is the matching API endpoint, also kept dormant.
+// old "attach Discovery to existing Lead" workflow. Safe to delete once the
+// new flow is proven in production. Matching dormant API endpoint:
+// /api/discoveries/[id]/promote.
 
 'use client'
 
