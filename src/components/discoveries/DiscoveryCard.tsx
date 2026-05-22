@@ -1,9 +1,7 @@
-'use client'
-
 import Link from 'next/link'
-import { formatDistanceToNow } from 'date-fns'
-import DiscoveryScoreBadge from './DiscoveryScoreBadge'
-import { scoreToTier, tierLabel } from '@/lib/discoveries/scoring'
+import { format } from 'date-fns'
+import { ScoreBlock, StatusBadge, Pill } from '@/components/ui/primitives'
+import { Icon } from '@/components/ui/icons'
 import type { Discovery, DiscoverySector } from '@/lib/types'
 
 interface DiscoveryCardProps {
@@ -28,126 +26,88 @@ const OPPORTUNITY_TYPE_LABELS: Record<string, string> = {
   trend:   'Strategic Trend',
 }
 
+// Signal tier derived from the 0–100 discovery score, per the design handoff.
+function signalTier(score: number): { label: string; tone: 'ok' | 'warn' | 'info' } {
+  if (score >= 85) return { label: 'Strong signal', tone: 'ok' }
+  if (score >= 75) return { label: 'Solid signal', tone: 'warn' }
+  return { label: 'Watch', tone: 'info' }
+}
+
 export default function DiscoveryCard({ discovery: d }: DiscoveryCardProps) {
-  const location = [d.city, d.country].filter(Boolean).join(', ')
-  const timeAgo = d.date_published
-    ? formatDistanceToNow(new Date(d.date_published), { addSuffix: true })
-    : null
-  const tier = scoreToTier(d.discovery_score)
+  const tier = signalTier(d.discovery_score)
+
+  const rawDate = d.date_published || d.created_at
+  let added: string | null = null
+  if (rawDate) {
+    const dt = new Date(rawDate)
+    if (!Number.isNaN(dt.getTime())) added = format(dt, 'MMM d')
+  }
+
+  const types = (d.opportunity_type ?? [])
+    .map((t) => OPPORTUNITY_TYPE_LABELS[t] ?? t)
+    .join(' · ')
 
   return (
-    <Link href={`/discoveries/${d.id}`} style={{ display: 'block', textDecoration: 'none' }}>
-      <div
-        className="card-clickable"
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 10,
-          padding: 14,
-          borderRadius: 'var(--r-md)',
-          border: '1px solid var(--border)',
-          background: 'var(--surface)',
-          opacity: d.status === 'archived' ? 0.45 : 1,
-        }}
-      >
-        {/* Title row */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-          <h3 style={{
-            flex: 1,
-            fontSize: 13,
-            fontWeight: 500,
-            lineHeight: 1.4,
-            color: 'var(--text)',
-            margin: 0,
-            display: '-webkit-box',
-            WebkitBoxOrient: 'vertical',
-            WebkitLineClamp: 2,
-            overflow: 'hidden',
-          }}>
+    <div
+      className="card card-hover"
+      style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}
+    >
+      {/* Header — title + source / score */}
+      <div className="between" style={{ alignItems: 'flex-start' }}>
+        <div className="col" style={{ gap: 4, minWidth: 0, flex: 1 }}>
+          <Link
+            href={`/discoveries/${d.id}`}
+            className="ink"
+            style={{
+              fontSize: 14,
+              fontWeight: 500,
+              letterSpacing: '-0.012em',
+              lineHeight: 1.35,
+              textWrap: 'pretty',
+            }}
+          >
             {d.title}
-          </h3>
-          <DiscoveryScoreBadge score={d.discovery_score} size="sm" />
+          </Link>
+          <div className="row" style={{ gap: 10, flexWrap: 'wrap', marginTop: 6 }}>
+            <span className="micro" style={{ color: 'var(--ink-2)' }}>{d.source}</span>
+            {added && <span className="ink-3" style={{ fontSize: 11 }}>· {added}</span>}
+          </div>
         </div>
+        <ScoreBlock value={d.discovery_score} />
+      </div>
 
-        {/* Meta */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text-faint)' }}>
-          <span style={{
-            fontWeight: 500,
-            color: 'var(--text-muted)',
-            maxWidth: 120,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}>
-            {d.source}
-          </span>
-          {timeAgo && (<><Dot />{timeAgo}</>)}
-          {location && (<><Dot /><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{location}</span></>)}
+      {/* Signal tier + facets */}
+      <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+        <StatusBadge tone={tier.tone}>{tier.label}</StatusBadge>
+        <Pill>{SECTOR_LABELS[d.sector] ?? d.sector}</Pill>
+        {d.region && <Pill>{d.region}</Pill>}
+        {d.city && <Pill>{d.city}</Pill>}
+      </div>
+
+      {/* Summary */}
+      {d.brief_summary && (
+        <div className="ink-2" style={{ fontSize: 12.5, lineHeight: 1.6, maxWidth: '64ch' }}>
+          {d.brief_summary}
         </div>
+      )}
 
-        {/* Summary */}
-        {d.brief_summary && (
-          <p style={{
-            fontSize: 12,
-            lineHeight: 1.6,
-            color: 'var(--text-muted)',
-            margin: 0,
-            display: '-webkit-box',
-            WebkitBoxOrient: 'vertical',
-            WebkitLineClamp: 2,
-            overflow: 'hidden',
-          }}>
-            {d.brief_summary}
-          </p>
-        )}
-
-        {/* Tags */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
-          {tier !== 'archive' && (
-            <Tag tone={tier === 'strong_opportunity' ? 'green' : 'accent'}>{tierLabel(tier)}</Tag>
-          )}
-          {d.sector && <Tag>{SECTOR_LABELS[d.sector] ?? d.sector}</Tag>}
-          {(d.opportunity_type ?? []).slice(0, 2).map((t) => (
-            <Tag key={t} tone="blue">{OPPORTUNITY_TYPE_LABELS[t] ?? t}</Tag>
-          ))}
-          {d.status === 'saved' && (
-            <Tag tone="accent" style={{ marginLeft: 'auto' }}>Saved</Tag>
-          )}
+      {/* Footer — type + actions */}
+      <div className="between" style={{ marginTop: 4 }}>
+        <span className="ink-3" style={{ fontSize: 11.5 }}>{types || '—'}</span>
+        <div className="row" style={{ gap: 6 }}>
+          <a
+            className="btn btn-xs btn-ghost"
+            href={d.source_url}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <Icon name="external" size={11} /> Source
+          </a>
+          <Link className="btn btn-xs" href={`/discoveries/${d.id}`}>
+            Convert to opportunity <Icon name="arrow" size={10} />
+          </Link>
         </div>
       </div>
-    </Link>
-  )
-}
-
-function Dot() {
-  return <span style={{ color: 'var(--text-faint)', userSelect: 'none' }}>·</span>
-}
-
-function Tag({
-  children,
-  tone = 'default',
-  style,
-}: {
-  children: React.ReactNode
-  tone?: 'default' | 'green' | 'accent' | 'blue'
-  style?: React.CSSProperties
-}) {
-  const tones: Record<string, React.CSSProperties> = {
-    default: { color: 'var(--text-muted)', background: 'transparent', border: '1px solid var(--border)' },
-    green:   { color: 'var(--green)',      background: 'var(--green-dim)', border: '1px solid rgba(76,175,134,0.2)' },
-    accent:  { color: 'var(--accent)',     background: 'var(--accent-dim)', border: '1px solid rgba(200,169,110,0.2)' },
-    blue:    { color: 'var(--blue)',       background: 'var(--blue-dim)',   border: '1px solid rgba(92,142,212,0.2)' },
-  }
-  return (
-    <span style={{
-      fontSize: 10,
-      padding: '2px 6px',
-      borderRadius: 'var(--r-xs)',
-      fontWeight: 500,
-      ...tones[tone],
-      ...style,
-    }}>
-      {children}
-    </span>
+    </div>
   )
 }

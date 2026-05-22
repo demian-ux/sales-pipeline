@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import Link from 'next/link'
-import { IconLoader, IconX } from '@/components/ui/icons'
-import type { Lead, Opportunity, Task, SnoozedSignal, Thread } from '@/lib/types'
+import { Icon } from '@/components/ui/icons'
+import type { Lead, Task, SnoozedSignal, Thread } from '@/lib/types'
 
 type AutoKind = 'conversation_waiting' | 'stalled_proposal' | 'overdue_followup'
 type Severity = 'critical' | 'high' | 'medium'
@@ -15,7 +15,7 @@ interface AutoSignal {
   title: string
   subtitle?: string
   reason: string
-  effective_due: Date          // sort key
+  effective_due: Date
   severity: Severity
   open_href: string
 }
@@ -31,23 +31,31 @@ type QueueItem = AutoSignal | ManualSignal
 
 interface Props {
   leads: Lead[]
-  opportunities: Opportunity[]
   threads: Thread[]
   initialSnoozedSignals: SnoozedSignal[]
 }
 
 const SEVERITY_RANK: Record<Severity, number> = { critical: 0, high: 1, medium: 2 }
+const SEVERITY_COLOR: Record<Severity, string> = {
+  critical: 'var(--risk)',
+  high:     'var(--warn)',
+  medium:   'var(--info)',
+}
+const AUTO_LABEL: Record<AutoKind, string> = {
+  conversation_waiting: 'Awaiting reply',
+  stalled_proposal:     'Stalled proposal',
+  overdue_followup:     'Overdue follow-up',
+}
 
 function daysBetween(a: Date, b: Date): number {
   return Math.floor((a.getTime() - b.getTime()) / 86_400_000)
 }
 
 function tomorrowIso24h(): string {
-  const t = new Date(Date.now() + 24 * 60 * 60 * 1000)
-  return t.toISOString()
+  return new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
 }
 
-export default function TodayCard({ leads, opportunities, threads, initialSnoozedSignals }: Props) {
+export default function TodayCard({ leads, threads, initialSnoozedSignals }: Props) {
   const [tasks, setTasks] = useState<Task[]>([])
   const [snoozed, setSnoozed] = useState<SnoozedSignal[]>(initialSnoozedSignals)
   const [loadingTasks, setLoadingTasks] = useState(true)
@@ -55,7 +63,6 @@ export default function TodayCard({ leads, opportunities, threads, initialSnooze
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  // Form state
   const [formTitle, setFormTitle] = useState('')
   const [formDue, setFormDue] = useState('')
   const [creating, setCreating] = useState(false)
@@ -75,13 +82,11 @@ export default function TodayCard({ leads, opportunities, threads, initialSnooze
 
   const snoozedKeys = useMemo(() => new Set(snoozed.map((s) => s.signal_key)), [snoozed])
 
-  // ── Auto signals ────────────────────────────────────────────────────────
   const autoSignals = useMemo<AutoSignal[]>(() => {
     const out: AutoSignal[] = []
     const now = new Date()
     const leadMap = new Map(leads.map((l) => [l.lead_id, l]))
 
-    // 1. Gmail threads waiting for us
     for (const t of threads) {
       if (t.inferred_state !== 'waiting_for_us') continue
       const key = `conversation:${t.thread_id}`
@@ -105,7 +110,6 @@ export default function TodayCard({ leads, opportunities, threads, initialSnooze
       })
     }
 
-    // 2. Stalled proposals: Proposal Sent + 21d+ since last touch
     for (const l of leads) {
       if (l.pipeline_stage !== 'Proposal Sent') continue
       if (!l.last_touch_date) continue
@@ -127,12 +131,11 @@ export default function TodayCard({ leads, opportunities, threads, initialSnooze
       })
     }
 
-    // 3. Overdue follow-ups: next_followup_date past
     for (const l of leads) {
       if (!l.next_followup_date) continue
       const due = new Date(l.next_followup_date)
       const daysOverdue = daysBetween(now, due)
-      if (daysOverdue < 0) continue  // not yet due
+      if (daysOverdue < 0) continue
       const key = `overdue_followup:${l.lead_id}`
       if (snoozedKeys.has(key)) continue
       out.push({
@@ -149,9 +152,8 @@ export default function TodayCard({ leads, opportunities, threads, initialSnooze
     }
 
     return out
-  }, [leads, threads, snoozedKeys, opportunities])
+  }, [leads, threads, snoozedKeys])
 
-  // ── Manual tasks ─────────────────────────────────────────────────────────
   const manualSignals = useMemo<ManualSignal[]>(() => {
     return tasks
       .filter((t) => t.status === 'open' || (t.status === 'snoozed' && t.snoozed_until && new Date(t.snoozed_until) <= new Date()))
@@ -163,11 +165,9 @@ export default function TodayCard({ leads, opportunities, threads, initialSnooze
       }))
   }, [tasks])
 
-  // ── Merged + sorted queue ────────────────────────────────────────────────
   const queue = useMemo<QueueItem[]>(() => {
     const all: QueueItem[] = [...autoSignals, ...manualSignals]
     return all.sort((a, b) => {
-      // Items with no due date sink to the bottom
       if (!a.effective_due && b.effective_due) return 1
       if (a.effective_due && !b.effective_due) return -1
       if (a.effective_due && b.effective_due) {
@@ -178,7 +178,6 @@ export default function TodayCard({ leads, opportunities, threads, initialSnooze
     })
   }, [autoSignals, manualSignals])
 
-  // ── Metric row counts ────────────────────────────────────────────────────
   const metrics = useMemo(() => {
     let overdue = 0, waiting = 0, stalled = 0
     for (const a of autoSignals) {
@@ -189,16 +188,14 @@ export default function TodayCard({ leads, opportunities, threads, initialSnooze
     return { overdue, waiting, stalled, manual: manualSignals.length }
   }, [autoSignals, manualSignals])
 
-  // ── Actions ──────────────────────────────────────────────────────────────
   async function snoozeAuto(key: string) {
     setBusyKey(key)
     setError(null)
     try {
-      const snoozedUntil = tomorrowIso24h()
       const res = await fetch('/api/snoozed-signals', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ signal_key: key, snoozed_until: snoozedUntil }),
+        body: JSON.stringify({ signal_key: key, snoozed_until: tomorrowIso24h() }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Snooze failed')
@@ -256,10 +253,7 @@ export default function TodayCard({ leads, opportunities, threads, initialSnooze
       const res = await fetch('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: formTitle.trim(),
-          due_date: formDue || undefined,
-        }),
+        body: JSON.stringify({ title: formTitle.trim(), due_date: formDue || undefined }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Create failed')
@@ -275,149 +269,90 @@ export default function TodayCard({ leads, opportunities, threads, initialSnooze
   }
 
   return (
-    <CardShell title="Today" count={queue.length}>
-      {/* Metric row */}
-      <div style={{
-        display: 'flex',
-        gap: 16,
-        fontSize: 11,
-        color: 'var(--text-faint)',
-        padding: '8px 14px',
-        background: 'var(--surface-2)',
-        border: '1px solid var(--border-subtle)',
-        borderRadius: 6,
-        marginBottom: 10,
-        flexWrap: 'wrap',
-      }}>
-        <Metric label="overdue"  count={metrics.overdue}  color="var(--red)" />
-        <Metric label="waiting"  count={metrics.waiting}  color="var(--accent)" />
-        <Metric label="stalled"  count={metrics.stalled}  color="var(--yellow)" />
-        <Metric label="manual"   count={metrics.manual} />
+    <div className="card">
+      <div className="card-head">
+        <div className="card-head-title">
+          <span className="card-head-name">Today</span>
+          <span className="card-head-count">{queue.length} ITEMS</span>
+        </div>
+        <div className="card-head-actions">
+          <button className="btn btn-sm" onClick={() => setShowForm((v) => !v)}>
+            <Icon name="plus" size={11} /> Add task
+          </button>
+        </div>
       </div>
 
-      {/* Add task form */}
-      {!showForm ? (
-        <button
-          onClick={() => setShowForm(true)}
-          style={{
-            fontSize: 12,
-            padding: '6px 12px',
-            background: 'transparent',
-            border: '1px dashed var(--border)',
-            borderRadius: 6,
-            color: 'var(--text-faint)',
-            cursor: 'pointer',
-            width: '100%',
-            textAlign: 'left',
-            marginBottom: 10,
-          }}
-        >
-          + Add task
-        </button>
-      ) : (
+      {/* Counter strip */}
+      <div className="counter-strip">
+        <Counter n={metrics.overdue} l="Overdue" tone="risk" />
+        <Counter n={metrics.waiting} l="Waiting" tone="warn" />
+        <Counter n={metrics.stalled} l="Stalled" tone="warn" />
+        <Counter n={metrics.manual} l="Manual" tone="info" />
+      </div>
+
+      {/* Quick-add */}
+      {showForm && (
         <form
           onSubmit={createTask}
           style={{
+            padding: '14px 20px',
+            borderBottom: '1px solid var(--line-subtle)',
             display: 'flex',
-            gap: 6,
-            marginBottom: 10,
-            padding: 8,
-            background: 'var(--surface-2)',
-            border: '1px solid var(--border)',
-            borderRadius: 6,
+            gap: 8,
+            alignItems: 'center',
             flexWrap: 'wrap',
           }}
         >
           <input
-            type="text"
-            autoFocus
-            placeholder="Task title"
+            className="input"
+            style={{ flex: '1 1 200px' }}
+            placeholder="A short note for future-you."
             value={formTitle}
             onChange={(e) => setFormTitle(e.target.value)}
-            style={{
-              flex: '1 1 200px',
-              minWidth: 160,
-              fontSize: 12,
-              padding: '6px 10px',
-              background: 'var(--surface)',
-              border: '1px solid var(--border)',
-              borderRadius: 5,
-              color: 'var(--text)',
-              outline: 'none',
-            }}
+            autoFocus
           />
           <input
+            className="input"
             type="date"
+            style={{ width: 150, colorScheme: 'dark' }}
             value={formDue}
             onChange={(e) => setFormDue(e.target.value)}
-            style={{
-              fontSize: 12,
-              padding: '6px 10px',
-              background: 'var(--surface)',
-              border: '1px solid var(--border)',
-              borderRadius: 5,
-              color: 'var(--text)',
-              colorScheme: 'dark',
-              outline: 'none',
-            }}
           />
-          <button
-            type="submit"
-            disabled={creating || !formTitle.trim()}
-            style={{
-              fontSize: 12,
-              padding: '6px 12px',
-              borderRadius: 5,
-              background: 'var(--accent)',
-              color: '#000',
-              border: 'none',
-              fontWeight: 600,
-              cursor: creating || !formTitle.trim() ? 'default' : 'pointer',
-              opacity: creating || !formTitle.trim() ? 0.5 : 1,
-            }}
-          >
-            {creating ? '…' : 'Add'}
+          <button className="btn btn-primary btn-sm" type="submit" disabled={creating || !formTitle.trim()}>
+            {creating ? 'Saving…' : 'Save'}
           </button>
           <button
+            className="btn btn-ghost btn-sm"
             type="button"
             onClick={() => { setShowForm(false); setFormTitle(''); setFormDue('') }}
-            style={{
-              fontSize: 12,
-              padding: '6px 10px',
-              background: 'transparent',
-              border: '1px solid var(--border)',
-              borderRadius: 5,
-              color: 'var(--text-faint)',
-              cursor: 'pointer',
-            }}
           >
-            <IconX size={11} />
+            Cancel
           </button>
         </form>
       )}
 
       {error && (
-        <div style={{ marginBottom: 10, fontSize: 11, color: 'var(--red)', padding: '6px 10px', background: 'rgba(224,92,92,0.08)', border: '1px solid rgba(224,92,92,0.2)', borderRadius: 5 }}>
-          {error}
+        <div style={{ padding: '10px 20px', borderBottom: '1px solid var(--line-subtle)' }}>
+          <span className="risk" style={{ fontSize: 11.5 }}>{error}</span>
         </div>
       )}
 
       {/* Queue */}
       {loadingTasks && queue.length === 0 ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: 16, fontSize: 12, color: 'var(--text-faint)' }}>
-          <IconLoader size={12} /> Loading…
-        </div>
+        <div className="ink-3" style={{ padding: '20px', fontSize: 12 }}>Loading…</div>
       ) : queue.length === 0 ? (
-        <div style={{ padding: '20px 16px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, color: 'var(--text-faint)', textAlign: 'center' }}>
-          Nothing on the queue. Add a task above, or check Attention for slower-rolling concerns.
+        <div className="empty">
+          <div className="empty-title">Nothing on the queue.</div>
+          Add a task above, or check Attention for slower-rolling concerns.
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {queue.map((item) =>
+        <div>
+          {queue.map((item, i) =>
             item.kind === 'auto' ? (
               <AutoRow
                 key={item.signal_key}
                 item={item}
+                last={i === queue.length - 1}
                 busy={busyKey === item.signal_key}
                 onSnooze={() => snoozeAuto(item.signal_key)}
               />
@@ -425,144 +360,122 @@ export default function TodayCard({ leads, opportunities, threads, initialSnooze
               <ManualRow
                 key={item.task.id}
                 item={item}
+                last={i === queue.length - 1}
                 busy={busyKey === `task:${item.task.id}`}
                 onDone={() => patchTask(item.task.id, { status: 'done' })}
-                onSnooze={() => patchTask(item.task.id, { status: 'snoozed', snoozed_until: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10) })}
+                onSnooze={() => patchTask(item.task.id, { status: 'snoozed', snoozed_until: new Date(Date.now() + 86_400_000).toISOString().slice(0, 10) })}
                 onDelete={() => deleteTask(item.task.id)}
               />
             ),
           )}
         </div>
       )}
-    </CardShell>
+    </div>
   )
 }
 
-function Metric({ label, count, color }: { label: string; count: number; color?: string }) {
-  if (count === 0) {
-    return (
-      <span style={{ opacity: 0.5 }}>
-        <strong style={{ color: 'var(--text-muted)' }}>0</strong> {label}
-      </span>
-    )
-  }
+function Counter({ n, l, tone }: { n: number; l: string; tone: 'risk' | 'warn' | 'info' }) {
   return (
-    <span>
-      <strong style={{ color: color ?? 'var(--text)', fontWeight: 600 }}>{count}</strong> {label}
-    </span>
+    <div className={`counter ${n === 0 ? 'zero' : tone}`}>
+      <span className="counter-n">{String(n).padStart(2, '0')}</span>
+      <span className="counter-l">{l}</span>
+    </div>
   )
 }
 
-function AutoRow({ item, busy, onSnooze }: { item: AutoSignal; busy: boolean; onSnooze: () => void }) {
-  const severityColor =
-    item.severity === 'critical' ? 'var(--red)'
-    : item.severity === 'high' ? 'var(--yellow)'
-    : 'var(--text-faint)'
-
+function SevBar({ color }: { color: string }) {
   return (
-    <div style={{
-      background: 'var(--surface)',
-      border: '1px solid var(--border)',
-      borderRadius: 8,
-      padding: '10px 14px',
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'flex-start',
-      gap: 12,
-      opacity: busy ? 0.5 : 1,
-    }}>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
-          <span style={{ fontSize: 13, fontWeight: 500 }}>{item.title}</span>
-          {item.subtitle && (
-            <span style={{ fontSize: 11, color: 'var(--text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {item.subtitle}
-            </span>
-          )}
+    <span
+      style={{
+        position: 'absolute',
+        left: 8,
+        top: 14,
+        bottom: 14,
+        width: 2,
+        borderRadius: 2,
+        background: color,
+      }}
+    />
+  )
+}
+
+const ROW_STYLE: React.CSSProperties = {
+  position: 'relative',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 16,
+  padding: '12px 20px 12px 22px',
+}
+
+function AutoRow({
+  item, last, busy, onSnooze,
+}: {
+  item: AutoSignal
+  last: boolean
+  busy: boolean
+  onSnooze: () => void
+}) {
+  const color = SEVERITY_COLOR[item.severity]
+  return (
+    <div style={{ ...ROW_STYLE, borderBottom: last ? 'none' : '1px solid var(--line-subtle)', opacity: busy ? 0.5 : 1 }}>
+      <SevBar color={color} />
+      <div className="col" style={{ gap: 4, minWidth: 0, flex: 1 }}>
+        <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
+          <span className="ink" style={{ fontSize: 13, fontWeight: 500 }}>{item.title}</span>
+          {item.subtitle && <span className="ink-3" style={{ fontSize: 12 }}>· {item.subtitle}</span>}
         </div>
-        <div style={{ fontSize: 11, color: severityColor }}>{item.reason}</div>
+        <div className="row" style={{ gap: 8 }}>
+          <span className="micro" style={{ color }}>{AUTO_LABEL[item.type]}</span>
+          <span className="ink-3" style={{ fontSize: 11.5 }}>{item.reason}</span>
+        </div>
       </div>
-      <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
-        <button
-          type="button"
-          onClick={onSnooze}
-          disabled={busy}
-          style={{ fontSize: 11, padding: '4px 10px', background: 'transparent', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--text-faint)', cursor: busy ? 'default' : 'pointer' }}
-        >
-          Snooze 24h
+      <div className="row" style={{ gap: 6, flexShrink: 0 }}>
+        <button className="btn btn-xs btn-ghost" onClick={onSnooze} disabled={busy}>
+          <Icon name="snooze" size={11} /> Snooze 24h
         </button>
-        <Link
-          href={item.open_href}
-          style={{ fontSize: 11, color: 'var(--accent)', background: 'var(--accent-dim)', padding: '4px 10px', borderRadius: 5, border: '1px solid rgba(200,169,110,0.25)' }}
-        >
-          Open →
+        <Link className="btn btn-xs" href={item.open_href}>
+          Open <Icon name="arrow" size={10} />
         </Link>
       </div>
     </div>
   )
 }
 
-function ManualRow({ item, busy, onDone, onSnooze, onDelete }: { item: ManualSignal; busy: boolean; onDone: () => void; onSnooze: () => void; onDelete: () => void }) {
-  const overdue = item.effective_due && item.effective_due.getTime() < Date.now()
-
+function ManualRow({
+  item, last, busy, onDone, onSnooze, onDelete,
+}: {
+  item: ManualSignal
+  last: boolean
+  busy: boolean
+  onDone: () => void
+  onSnooze: () => void
+  onDelete: () => void
+}) {
+  const due = item.task.due_date
+    ? new Date(item.task.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    : null
   return (
-    <div style={{
-      background: 'var(--surface)',
-      border: '1px solid var(--border)',
-      borderRadius: 8,
-      padding: '10px 14px',
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      gap: 12,
-      opacity: busy ? 0.5 : 1,
-    }}>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 13, color: 'var(--text)' }}>{item.task.title}</span>
-          <span style={{ fontSize: 10, color: 'var(--text-faint)', background: 'var(--surface-2)', padding: '1px 6px', borderRadius: 4, border: '1px solid var(--border-subtle)' }}>
-            task
-          </span>
+    <div style={{ ...ROW_STYLE, borderBottom: last ? 'none' : '1px solid var(--line-subtle)', opacity: busy ? 0.5 : 1 }}>
+      <SevBar color="var(--accent)" />
+      <div className="col" style={{ gap: 4, minWidth: 0, flex: 1 }}>
+        <div className="row" style={{ gap: 10 }}>
+          <span className="ink" style={{ fontSize: 13, letterSpacing: 'var(--t-tight)' }}>{item.task.title}</span>
+          <span className="badge-pill" style={{ fontSize: 9.5 }}>TASK</span>
         </div>
-        {item.task.due_date && (
-          <div style={{ fontSize: 11, color: overdue ? 'var(--red)' : 'var(--text-faint)', marginTop: 2 }}>
-            Due {new Date(item.task.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-          </div>
-        )}
+        <span className="micro" style={{ color: 'var(--ink-3)' }}>{due ? `Due ${due}` : 'No date'}</span>
       </div>
-      <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-        <button type="button" onClick={onDone}   disabled={busy} style={btnStyle('var(--green)')}>Done</button>
-        <button type="button" onClick={onSnooze} disabled={busy} style={btnStyle()}>Snooze</button>
-        <button type="button" onClick={onDelete} disabled={busy} style={btnStyle('var(--red)')}>×</button>
+      <div className="row" style={{ gap: 6, flexShrink: 0 }}>
+        <button className="btn btn-xs btn-ghost" onClick={onDone} disabled={busy}>
+          <Icon name="check" size={11} /> Done
+        </button>
+        <button className="btn btn-xs btn-ghost" onClick={onSnooze} disabled={busy}>
+          <Icon name="snooze" size={11} />
+        </button>
+        <button className="btn btn-xs btn-ghost" onClick={onDelete} disabled={busy}>
+          <Icon name="x" size={11} />
+        </button>
       </div>
     </div>
-  )
-}
-
-function btnStyle(color?: string): React.CSSProperties {
-  return {
-    fontSize: 11,
-    padding: '4px 10px',
-    background: 'transparent',
-    border: `1px solid ${color ? color === 'var(--red)' ? 'rgba(224,92,92,0.3)' : color === 'var(--green)' ? 'rgba(76,175,134,0.3)' : 'var(--border)' : 'var(--border)'}`,
-    borderRadius: 5,
-    color: color ?? 'var(--text-faint)',
-    cursor: 'pointer',
-  }
-}
-
-function CardShell({ title, count, children }: { title: string; count?: number; children: React.ReactNode }) {
-  return (
-    <section>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-        <h2 style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0 }}>
-          {title}
-          {typeof count === 'number' && count > 0 && (
-            <span style={{ marginLeft: 6, fontWeight: 400, color: 'var(--text-faint)' }}>{count}</span>
-          )}
-        </h2>
-      </div>
-      {children}
-    </section>
   )
 }

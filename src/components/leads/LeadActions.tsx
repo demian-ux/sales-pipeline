@@ -3,6 +3,7 @@
 
 import { useState } from 'react'
 import { OPP_TYPES } from '@/lib/constants/opportunity-types'
+import { Icon } from '@/components/ui/icons'
 
 interface Props {
   leadId: string
@@ -43,32 +44,22 @@ function AnalyzeButton({ leadId }: { leadId: string }) {
   }
 
   return (
-    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '14px 16px' }}>
-      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
-        Claude Analysis
+    <div className="card card-pad">
+      <div className="micro" style={{ marginBottom: 10 }}>Analysis</div>
+      <div className="ink-2" style={{ fontSize: 12, lineHeight: 1.5, marginBottom: 12 }}>
+        Generates the strategic assessment, why-now signal, and discovery questions. Email and LinkedIn
+        drafts are separate, in the analysis card.
       </div>
       <button
+        className="btn btn-primary"
+        style={{ width: '100%' }}
         onClick={handleAnalyze}
         disabled={loading || done}
-        style={{
-          width: '100%',
-          padding: '8px 12px',
-          background: done ? 'var(--green-dim)' : 'var(--accent-dim)',
-          color: done ? 'var(--green)' : 'var(--accent)',
-          border: `1px solid ${done ? 'rgba(76,175,134,0.3)' : 'rgba(200,169,110,0.3)'}`,
-          borderRadius: 6,
-          fontSize: 13,
-          cursor: loading || done ? 'default' : 'pointer',
-          fontWeight: 500,
-          transition: 'all 0.15s',
-        }}
       >
-        {done ? 'Analysis ready — reloading…' : loading ? 'Analyzing…' : 'Analyze — Why now?'}
+        <Icon name="sparkle" size={12} />
+        {done ? 'Ready — reloading…' : loading ? 'Analyzing…' : 'Analyze — why now?'}
       </button>
-      {error && <div style={{ marginTop: 8, fontSize: 12, color: 'var(--red)' }}>{error}</div>}
-      <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-faint)' }}>
-        Generates the strategic assessment and discovery questions. Email and LinkedIn drafts are separate buttons in the analysis card.
-      </div>
+      {error && <div className="risk" style={{ marginTop: 8, fontSize: 12 }}>{error}</div>}
     </div>
   )
 }

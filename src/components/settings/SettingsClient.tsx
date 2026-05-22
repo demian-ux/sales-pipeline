@@ -1,169 +1,72 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import type { Campaign, CampaignChannel, CampaignCadence } from '@/lib/types'
+import { useState, useEffect, type ReactNode } from 'react'
+import { StatusBadge } from '@/components/ui/primitives'
+import { Icon } from '@/components/ui/icons'
 
-const CHANNELS: CampaignChannel[] = ['Email', 'LinkedIn', 'Letter', 'Phone']
-const CADENCES: CampaignCadence[] = ['Daily', 'Twice weekly', 'Weekly', 'Bi-weekly', 'Monthly', 'Quarterly']
+// ── Section nav ──────────────────────────────────────────────────────────
+
+const SECTIONS = [
+  { key: 'connections',   label: 'Connections',    count: 3 as number | null },
+  { key: 'profile',       label: 'Profile',        count: null },
+  { key: 'ai',            label: 'AI & voice',     count: null },
+  { key: 'scoring',       label: 'Scoring',        count: null },
+  { key: 'notifications', label: 'Notifications',  count: null },
+  { key: 'data',          label: 'Data & export', count: null },
+] as const
+
+type SectionKey = (typeof SECTIONS)[number]['key']
+
+export default function SettingsClient() {
+  const [section, setSection] = useState<SectionKey>('connections')
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: 32, alignItems: 'flex-start' }}>
+      <aside className="col" style={{ gap: 2, position: 'sticky', top: 20 }}>
+        {SECTIONS.map((s) => (
+          <button
+            key={s.key}
+            className={`settings-nav ${section === s.key ? 'active' : ''}`}
+            onClick={() => setSection(s.key)}
+          >
+            <span>{s.label}</span>
+            {s.count != null && (
+              <span className="mono" style={{ fontSize: 10, color: 'var(--ink-3)' }}>
+                {String(s.count).padStart(2, '0')}
+              </span>
+            )}
+          </button>
+        ))}
+      </aside>
+
+      <div className="col" style={{ gap: 18, minWidth: 0 }}>
+        {section === 'connections'   && <ConnectionsSection />}
+        {section === 'profile'       && <ProfileSection />}
+        {section === 'ai'            && <AIVoiceSection />}
+        {section === 'scoring'       && <ScoringSection />}
+        {section === 'notifications' && <NotificationsSection />}
+        {section === 'data'          && <DataSection />}
+      </div>
+    </div>
+  )
+}
+
+// ── Connections (live) ───────────────────────────────────────────────────
+
+type ConnStatus = 'checking' | 'connected' | 'error' | 'not_configured'
 
 interface StatusResult {
   anthropic: { status: 'connected' | 'error' | 'not_configured'; key_preview: string; error?: string }
-  google_sheets: { status: 'connected' | 'error' | 'not_configured'; spreadsheet_id: string | null; key_preview: string; error?: string }
+  google_sheets: {
+    status: 'connected' | 'error' | 'not_configured'
+    spreadsheet_id: string | null
+    key_preview: string
+    error?: string
+  }
   mock_mode: boolean
 }
 
-interface Props {
-  campaigns: Campaign[]
-}
-
-export default function SettingsClient({ campaigns }: Props) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-      <ConnectionsPanel />
-      <GmailPanel />
-      <CampaignsPanel campaigns={campaigns} />
-      <PreferencesPanel />
-    </div>
-  )
-}
-
-// ─── Connections ─────────────────────────────────────────────────────────────
-
-function ConnectionsPanel() {
-  const [status, setStatus] = useState<StatusResult | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [tested, setTested] = useState(false)
-
-  async function checkStatus() {
-    setLoading(true)
-    try {
-      const res = await fetch('/api/settings/status')
-      setStatus(await res.json())
-      setTested(true)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <Panel title="Connections" description="API keys and integration status. Keys are read from .env.local — never exposed in the browser.">
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-
-        <ConnectionRow
-          name="Anthropic (Claude API)"
-          description="Required for Why now? analysis, Discovery Prep, and message drafting."
-          envVar="ANTHROPIC_API_KEY"
-          status={status?.anthropic}
-          preview={status?.anthropic.key_preview}
-        />
-
-        <ConnectionRow
-          name="Google Sheets"
-          description="Source of truth for leads, companies, opportunities, and interactions."
-          envVar="GOOGLE_SHEETS_SPREADSHEET_ID + GOOGLE_SERVICE_ACCOUNT_KEY"
-          status={status?.google_sheets}
-          preview={status?.google_sheets.key_preview}
-          extra={status?.google_sheets.spreadsheet_id ? (
-            <span style={{ fontSize: 11, color: 'var(--text-faint)', fontFamily: 'monospace' }}>
-              ID: {status.google_sheets.spreadsheet_id}
-            </span>
-          ) : null}
-        />
-
-        {status?.mock_mode && (
-          <div style={{ background: 'var(--yellow-dim)', border: '1px solid rgba(212,168,67,0.25)', borderRadius: 6, padding: '10px 14px', fontSize: 12, color: 'var(--yellow)', lineHeight: 1.5 }}>
-            Running in mock mode — Google Sheets is not connected. Data is stored in memory and resets on server restart.
-            Add <code style={{ fontSize: 11, background: 'rgba(212,168,67,0.15)', padding: '1px 5px', borderRadius: 3 }}>GOOGLE_SHEETS_SPREADSHEET_ID</code> and a valid{' '}
-            <code style={{ fontSize: 11, background: 'rgba(212,168,67,0.15)', padding: '1px 5px', borderRadius: 3 }}>GOOGLE_SERVICE_ACCOUNT_KEY</code> to <code style={{ fontSize: 11, background: 'rgba(212,168,67,0.15)', padding: '1px 5px', borderRadius: 3 }}>.env.local</code> to enable persistence.
-          </div>
-        )}
-
-        <div style={{ paddingTop: 4 }}>
-          <button
-            onClick={checkStatus}
-            disabled={loading}
-            style={{
-              padding: '7px 16px',
-              background: tested && !loading ? 'var(--surface-2)' : 'var(--accent-dim)',
-              color: tested && !loading ? 'var(--text-muted)' : 'var(--accent)',
-              border: `1px solid ${tested && !loading ? 'var(--border)' : 'rgba(200,169,110,0.3)'}`,
-              borderRadius: 6,
-              fontSize: 12,
-              fontWeight: 500,
-              cursor: loading ? 'default' : 'pointer',
-            }}
-          >
-            {loading ? 'Testing connections…' : tested ? 'Re-test connections' : 'Test connections'}
-          </button>
-        </div>
-      </div>
-    </Panel>
-  )
-}
-
-function ConnectionRow({
-  name,
-  description,
-  envVar,
-  status,
-  preview,
-  extra,
-}: {
-  name: string
-  description: string
-  envVar: string
-  status?: { status: 'connected' | 'error' | 'not_configured'; error?: string }
-  preview?: string
-  extra?: React.ReactNode
-}) {
-  const dot = status
-    ? status.status === 'connected' ? '●'
-      : status.status === 'error' ? '●'
-      : '○'
-    : '○'
-  const dotColor = status
-    ? status.status === 'connected' ? 'var(--green)'
-      : status.status === 'error' ? 'var(--red)'
-      : 'var(--text-faint)'
-    : 'var(--text-faint)'
-
-  const statusLabel = status
-    ? status.status === 'connected' ? 'Connected'
-      : status.status === 'error' ? 'Error'
-      : 'Not configured'
-    : 'Not tested'
-
-  return (
-    <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 16px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
-        <div>
-          <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 2 }}>{name}</div>
-          <div style={{ fontSize: 11, color: 'var(--text-faint)' }}>{description}</div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, marginLeft: 16 }}>
-          <span style={{ fontSize: 10, color: dotColor }}>{dot}</span>
-          <span style={{ fontSize: 12, color: dotColor, fontWeight: 500 }}>{statusLabel}</span>
-        </div>
-      </div>
-      <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <code style={{ fontSize: 11, color: 'var(--text-faint)', background: 'var(--surface-3)', padding: '2px 6px', borderRadius: 4 }}>
-          {envVar}
-        </code>
-        {preview && (
-          <span style={{ fontSize: 11, color: 'var(--text-faint)', fontFamily: 'monospace' }}>{preview}</span>
-        )}
-        {extra}
-      </div>
-      {status?.error && (
-        <div style={{ marginTop: 8, fontSize: 11, color: 'var(--red)', lineHeight: 1.5 }}>{status.error}</div>
-      )}
-    </div>
-  )
-}
-
-// ─── Gmail ───────────────────────────────────────────────────────────────────
-
-type GmailStatus = {
+interface GmailStatus {
   configured: boolean
   connected: boolean
   has_refresh_token: boolean
@@ -171,407 +74,443 @@ type GmailStatus = {
   analysis_count: number
 }
 
-function GmailPanel() {
-  const [status, setStatus] = useState<GmailStatus | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [disconnecting, setDisconnecting] = useState(false)
+const STATUS_META: Record<ConnStatus, { tone: 'ok' | 'warn' | 'risk' | 'info'; label: string }> = {
+  checking:       { tone: 'info', label: 'Checking…' },
+  connected:      { tone: 'ok',   label: 'Connected' },
+  error:          { tone: 'risk', label: 'Error' },
+  not_configured: { tone: 'info', label: 'Not connected' },
+}
 
-  // Read ?gmail= param on mount to show toast
-  const [toast, setToast] = useState<string | null>(() => {
+function ConnectionsSection() {
+  const [status, setStatus] = useState<StatusResult | null>(null)
+  const [gmail, setGmail] = useState<GmailStatus | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [disconnecting, setDisconnecting] = useState(false)
+  const [toast] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null
-    const params = new URLSearchParams(window.location.search)
-    const gmailParam = params.get('gmail')
-    if (gmailParam === 'connected') return 'Gmail connected successfully.'
-    if (gmailParam === 'denied') return 'Gmail connection was denied.'
-    if (gmailParam === 'error') return 'Gmail connection failed - check OAuth credentials.'
+    const g = new URLSearchParams(window.location.search).get('gmail')
+    if (g === 'connected') return 'Gmail connected.'
+    if (g === 'denied') return 'Gmail connection was denied.'
+    if (g === 'error') return 'Gmail connection failed — check OAuth credentials.'
     return null
   })
 
+  // First statement is an await, so every setState lands after the microtask
+  // — no synchronous state writes when this runs inside the mount effect.
+  async function fetchStatuses() {
+    const [s, g] = await Promise.all([
+      fetch('/api/settings/status').then((r) => r.json()).catch(() => null),
+      fetch('/api/gmail/status').then((r) => r.json()).catch(() => null),
+    ])
+    setStatus(s)
+    setGmail(g)
+    setLoading(false)
+  }
+
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const gmailParam = params.get('gmail')
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (gmailParam === 'error') setToast('Gmail connection failed — check OAuth credentials.')
-    if (gmailParam) {
-      // Clean the URL
-      const url = new URL(window.location.href)
+    // Strip the ?gmail= callback param so a refresh doesn't re-toast.
+    const url = new URL(window.location.href)
+    if (url.searchParams.has('gmail')) {
       url.searchParams.delete('gmail')
       window.history.replaceState({}, '', url.toString())
     }
-    checkStatus()
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- mount fetch; setState only fires post-await
+    fetchStatuses()
   }, [])
 
-  async function checkStatus() {
+  function retest() {
     setLoading(true)
-    try {
-      const res = await fetch('/api/gmail/status')
-      setStatus(await res.json())
-    } finally {
-      setLoading(false)
-    }
+    fetchStatuses()
   }
 
-  async function disconnect() {
+  async function disconnectGmail() {
     setDisconnecting(true)
     try {
       await fetch('/api/gmail/auth', { method: 'DELETE' })
-      await checkStatus()
+      await fetchStatuses()
     } finally {
       setDisconnecting(false)
     }
   }
 
-  const dot = status?.connected ? '●' : '○'
-  const dotColor = status?.connected ? 'var(--green)' : 'var(--text-faint)'
+  const claude: ConnStatus = loading ? 'checking' : status?.anthropic.status ?? 'not_configured'
+  const sheets: ConnStatus = loading ? 'checking' : status?.google_sheets.status ?? 'not_configured'
+  const gmailConn: ConnStatus = loading ? 'checking' : gmail?.connected ? 'connected' : 'not_configured'
+  const connected = [claude, sheets, gmailConn].filter((s) => s === 'connected').length
 
   return (
-    <Panel title="Gmail" description="Read-only access to your conversations with leads. Oaki Relations never sends email automatically.">
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-
-        {toast && (
-          <div style={{
-            padding: '10px 14px',
-            background: toast.includes('successfully') ? 'var(--green-dim)' : 'rgba(224,92,92,0.08)',
-            border: `1px solid ${toast.includes('successfully') ? 'rgba(76,175,134,0.3)' : 'rgba(224,92,92,0.2)'}`,
-            borderRadius: 6,
-            fontSize: 12,
-            color: toast.includes('successfully') ? 'var(--green)' : 'var(--red)',
-          }}>
-            {toast}
-          </div>
-        )}
-
-        <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 16px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 2 }}>Gmail OAuth</div>
-              <div style={{ fontSize: 11, color: 'var(--text-faint)' }}>
-                {!status ? 'Checking…' : !status.configured ? 'GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET not set' : status.connected ? `${status.thread_count} threads synced · ${status.analysis_count} analyzed` : 'Not connected'}
-              </div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-              {!loading && <span style={{ fontSize: 10, color: dotColor }}>{dot}</span>}
-              <span style={{ fontSize: 12, color: dotColor, fontWeight: 500 }}>
-                {loading ? '…' : status?.connected ? 'Connected' : 'Not connected'}
-              </span>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <code style={{ fontSize: 11, color: 'var(--text-faint)', background: 'var(--surface-3)', padding: '2px 6px', borderRadius: 4 }}>
-              GOOGLE_OAUTH_CLIENT_ID
-            </code>
-            <code style={{ fontSize: 11, color: 'var(--text-faint)', background: 'var(--surface-3)', padding: '2px 6px', borderRadius: 4 }}>
-              GOOGLE_OAUTH_CLIENT_SECRET
-            </code>
-          </div>
+    <>
+      {toast && (
+        <div
+          className="card card-pad-sm"
+          style={{ borderColor: 'var(--accent-line)', fontSize: 12, color: 'var(--ink-2)' }}
+        >
+          {toast}
         </div>
+      )}
 
-        {status && !status.configured && (
-          <div style={{ fontSize: 12, color: 'var(--text-faint)', lineHeight: 1.6 }}>
-            To enable Gmail sync, create an OAuth 2.0 client in Google Cloud Console, add{' '}
-            <code style={{ fontSize: 11, background: 'var(--surface-2)', padding: '1px 5px', borderRadius: 3 }}>http://localhost:3000/api/gmail/callback</code>{' '}
-            as an authorized redirect URI, then add the credentials to <code style={{ fontSize: 11, background: 'var(--surface-2)', padding: '1px 5px', borderRadius: 3 }}>.env.local</code>.
+      <div className="card">
+        <div className="card-head">
+          <div className="card-head-title">
+            <span className="card-head-name">Connections</span>
+            <span className="card-head-count">
+              {connected} CONNECTED · {3 - connected} TO SET UP
+            </span>
           </div>
-        )}
-
-        <div style={{ display: 'flex', gap: 8 }}>
-          {status?.configured && !status.connected && (
-            <a
-              href="/api/gmail/auth"
-              style={{
-                display: 'inline-block',
-                padding: '7px 16px',
-                background: 'var(--accent-dim)',
-                color: 'var(--accent)',
-                border: '1px solid rgba(200,169,110,0.3)',
-                borderRadius: 6,
-                fontSize: 12,
-                fontWeight: 500,
-                textDecoration: 'none',
-              }}
-            >
-              Connect Gmail →
-            </a>
-          )}
-          {status?.connected && (
-            <button
-              onClick={disconnect}
-              disabled={disconnecting}
-              style={{ ...ghostBtn, fontSize: 12 }}
-            >
-              {disconnecting ? 'Disconnecting…' : 'Disconnect'}
-            </button>
-          )}
-          <button onClick={checkStatus} disabled={loading} style={{ ...ghostBtn, fontSize: 12 }}>
-            {loading ? '…' : 'Refresh'}
+          <button className="btn btn-sm" onClick={retest} disabled={loading}>
+            {loading ? 'Checking…' : 'Re-test'}
           </button>
         </div>
-      </div>
-    </Panel>
-  )
-}
-
-// ─── Campaigns ───────────────────────────────────────────────────────────────
-
-function CampaignsPanel({ campaigns }: { campaigns: Campaign[] }) {
-  const [editing, setEditing] = useState<string | null>(null)
-  const [local, setLocal] = useState<Campaign[]>(campaigns)
-  const [saving, setSaving] = useState<string | null>(null)
-  const [saved, setSaved] = useState<string | null>(null)
-
-  function updateCampaign(id: string, patch: Partial<Campaign>) {
-    setLocal((prev) => prev.map((c) => c.campaign_id === id ? { ...c, ...patch } : c))
-    setSaved(null)
-  }
-
-  async function saveCampaign(id: string) {
-    setSaving(id)
-    // In mock mode there's no persist endpoint yet — simulate save
-    await new Promise((r) => setTimeout(r, 400))
-    setSaving(null)
-    setSaved(id)
-    setEditing(null)
-    setTimeout(() => setSaved(null), 2000)
-  }
-
-  return (
-    <Panel title="Campaigns" description="Configure each campaign's target, channels, cadence, and CTA. Changes take effect immediately in mock mode.">
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {local.map((campaign) => {
-          const isEditing = editing === campaign.campaign_id
-          const isSaving = saving === campaign.campaign_id
-          const isSaved = saved === campaign.campaign_id
-
-          return (
-            <div key={campaign.campaign_id} style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
-              {/* Header */}
-              <div
-                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 16px', cursor: 'pointer' }}
-                onClick={() => !isEditing && setEditing(isEditing ? null : campaign.campaign_id)}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span style={{ fontSize: 13, fontWeight: 500 }}>{campaign.name}</span>
-                  <StatusBadge status={campaign.status} />
-                  <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>{campaign.channels.join(' · ')} · {campaign.cadence}</span>
-                </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  {isSaved && <span style={{ fontSize: 11, color: 'var(--green)' }}>Saved</span>}
-                  {!isEditing && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setEditing(campaign.campaign_id) }}
-                      style={ghostBtn}
-                    >
-                      Edit
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Edit form */}
-              {isEditing && (
-                <div style={{ borderTop: '1px solid var(--border-subtle)', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                    <Field label="Name">
-                      <input value={campaign.name} onChange={(e) => updateCampaign(campaign.campaign_id, { name: e.target.value })} style={inputSt} />
-                    </Field>
-                    <Field label="Status">
-                      <select value={campaign.status} onChange={(e) => updateCampaign(campaign.campaign_id, { status: e.target.value as Campaign['status'] })} style={inputSt}>
-                        <option value="Active">Active</option>
-                        <option value="Paused">Paused</option>
-                        <option value="Archived">Archived</option>
-                      </select>
-                    </Field>
-                  </div>
-
-                  <Field label="Description">
-                    <textarea value={campaign.description} onChange={(e) => updateCampaign(campaign.campaign_id, { description: e.target.value })} rows={2} style={{ ...inputSt, resize: 'vertical', lineHeight: 1.5 }} />
-                  </Field>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                    <Field label="Target segment">
-                      <input value={campaign.target_segment} onChange={(e) => updateCampaign(campaign.campaign_id, { target_segment: e.target.value })} style={inputSt} />
-                    </Field>
-                    <Field label="Location">
-                      <input value={campaign.location ?? ''} onChange={(e) => updateCampaign(campaign.campaign_id, { location: e.target.value })} placeholder="e.g. New York, Miami" style={inputSt} />
-                    </Field>
-                    <Field label="CTA">
-                      <input value={campaign.cta} onChange={(e) => updateCampaign(campaign.campaign_id, { cta: e.target.value })} style={inputSt} />
-                    </Field>
-                    <Field label="Cadence">
-                      <select value={campaign.cadence} onChange={(e) => updateCampaign(campaign.campaign_id, { cadence: e.target.value as CampaignCadence })} style={inputSt}>
-                        {CADENCES.map((c) => <option key={c} value={c}>{c}</option>)}
-                      </select>
-                    </Field>
-                  </div>
-
-                  <Field label="Channels">
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      {CHANNELS.map((ch) => {
-                        const active = campaign.channels.includes(ch)
-                        return (
-                          <button
-                            key={ch}
-                            type="button"
-                            onClick={() => updateCampaign(campaign.campaign_id, {
-                              channels: active
-                                ? campaign.channels.filter((c) => c !== ch)
-                                : [...campaign.channels, ch],
-                            })}
-                            style={{
-                              padding: '4px 12px',
-                              borderRadius: 6,
-                              fontSize: 12,
-                              cursor: 'pointer',
-                              border: `1px solid ${active ? 'rgba(200,169,110,0.4)' : 'var(--border)'}`,
-                              background: active ? 'var(--accent-dim)' : 'transparent',
-                              color: active ? 'var(--accent)' : 'var(--text-faint)',
-                              fontWeight: active ? 500 : 400,
-                            }}
-                          >
-                            {ch}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </Field>
-
-                  <Field label="Pain point">
-                    <input value={campaign.pain_point ?? ''} onChange={(e) => updateCampaign(campaign.campaign_id, { pain_point: e.target.value })} placeholder="What problem does this campaign address?" style={inputSt} />
-                  </Field>
-
-                  <Field label="Notes">
-                    <textarea value={campaign.notes ?? ''} onChange={(e) => updateCampaign(campaign.campaign_id, { notes: e.target.value })} rows={2} style={{ ...inputSt, resize: 'vertical', lineHeight: 1.5 }} />
-                  </Field>
-
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button
-                      onClick={() => saveCampaign(campaign.campaign_id)}
-                      disabled={isSaving}
-                      style={{ ...ghostBtn, background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid rgba(200,169,110,0.3)', padding: '7px 16px' }}
-                    >
-                      {isSaving ? 'Saving…' : 'Save campaign'}
-                    </button>
-                    <button onClick={() => { setEditing(null); setLocal(campaigns) }} style={{ ...ghostBtn, padding: '7px 12px' }}>
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )
-        })}
-      </div>
-    </Panel>
-  )
-}
-
-// ─── App Preferences ─────────────────────────────────────────────────────────
-
-function PreferencesPanel() {
-  const [prefs, setPrefs] = useState({
-    owner: 'Demian',
-    default_stage: 'New Lead',
-    contact_rule: 'Research-based only — contact when there is a real signal, not on schedule.',
-  })
-  const [saved, setSaved] = useState(false)
-
-  function save() {
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
-  }
-
-  return (
-    <Panel title="Preferences" description="App-level defaults and contact rules.">
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          <Field label="Default owner">
-            <input value={prefs.owner} onChange={(e) => setPrefs((p) => ({ ...p, owner: e.target.value }))} style={inputSt} />
-          </Field>
-          <Field label="Default pipeline stage for new leads">
-            <select value={prefs.default_stage} onChange={(e) => setPrefs((p) => ({ ...p, default_stage: e.target.value }))} style={inputSt}>
-              {['New Lead', 'Contacted', 'Nurture'].map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </Field>
-        </div>
-
-        <Field label="Contact rule">
-          <textarea
-            value={prefs.contact_rule}
-            onChange={(e) => setPrefs((p) => ({ ...p, contact_rule: e.target.value }))}
-            rows={2}
-            style={{ ...inputSt, resize: 'vertical', lineHeight: 1.5, color: 'var(--text-muted)' }}
+        <div>
+          <ConnectionRow
+            name="Claude"
+            detail={status?.anthropic.error ?? status?.anthropic.key_preview ?? 'Anthropic API · analysis + drafting'}
+            status={claude}
           />
-        </Field>
-
-        <div style={{ paddingTop: 4, display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button
-            onClick={save}
-            style={{ ...ghostBtn, background: saved ? 'var(--green-dim)' : 'var(--surface-2)', color: saved ? 'var(--green)' : 'var(--text-muted)', padding: '7px 16px', border: '1px solid var(--border)' }}
-          >
-            {saved ? 'Saved' : 'Save preferences'}
-          </button>
+          <ConnectionRow
+            name="Google Sheets"
+            detail={
+              status?.google_sheets.spreadsheet_id
+                ? `Sheet ID ${status.google_sheets.spreadsheet_id}`
+                : status?.google_sheets.error ?? 'Leads, companies, opportunities, interactions'
+            }
+            status={sheets}
+            action={{ label: 'Schema check', href: '/settings/sheets' }}
+          />
+          <ConnectionRow
+            name="Gmail"
+            detail={
+              gmail?.connected
+                ? `${gmail.thread_count} threads synced · ${gmail.analysis_count} analyzed`
+                : gmail?.configured
+                  ? 'OAuth configured — not connected'
+                  : 'OAuth credentials not set'
+            }
+            status={gmailConn}
+            action={
+              gmail?.connected
+                ? { label: disconnecting ? 'Disconnecting…' : 'Disconnect', onClick: disconnectGmail }
+                : gmail?.configured
+                  ? { label: 'Connect', href: '/api/gmail/auth' }
+                  : undefined
+            }
+            last
+          />
         </div>
       </div>
-    </Panel>
+
+      {status?.mock_mode && (
+        <div className="card card-pad" style={{ borderColor: 'var(--warn-line)', background: 'var(--warn-bg)' }}>
+          <div className="warn" style={{ fontSize: 12.5, fontWeight: 500, marginBottom: 4 }}>
+            Running in mock mode.
+          </div>
+          <div className="ink-2" style={{ fontSize: 12, lineHeight: 1.6 }}>
+            Google Sheets isn&apos;t connected — data lives in memory and resets on restart. Set{' '}
+            <span className="mono">GOOGLE_SHEET_ID</span>, <span className="mono">GOOGLE_CLIENT_EMAIL</span>,
+            and <span className="mono">GOOGLE_PRIVATE_KEY</span> to enable persistence.
+          </div>
+        </div>
+      )}
+
+      <div className="card card-pad-lg">
+        <div className="row" style={{ gap: 10, marginBottom: 10 }}>
+          <Icon name="sparkle" size={12} style={{ color: 'var(--accent)' }} />
+          <span className="micro" style={{ color: 'var(--accent)' }}>Claude API</span>
+        </div>
+        <div className="col" style={{ gap: 6 }}>
+          <span className="ink" style={{ fontSize: 13.5, fontWeight: 500 }}>API key — never shown.</span>
+          <span className="ink-2" style={{ fontSize: 12.5, lineHeight: 1.55, maxWidth: '62ch' }}>
+            Read from the server environment. All analysis runs server-side — no drafts ever leave the studio
+            without you pressing send.
+          </span>
+        </div>
+      </div>
+    </>
   )
 }
 
-// ─── Shared UI ────────────────────────────────────────────────────────────────
+interface ConnAction {
+  label: string
+  href?: string
+  onClick?: () => void
+}
 
-function Panel({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
+function ConnectionRow({
+  name,
+  detail,
+  status,
+  action,
+  last,
+}: {
+  name: string
+  detail: string
+  status: ConnStatus
+  action?: ConnAction
+  last?: boolean
+}) {
+  const meta = STATUS_META[status]
   return (
-    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
-      <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-subtle)' }}>
-        <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 3 }}>{title}</div>
-        <div style={{ fontSize: 12, color: 'var(--text-faint)' }}>{description}</div>
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '24px minmax(0, 1fr) auto auto',
+        gap: 16,
+        alignItems: 'center',
+        padding: '14px 22px',
+        borderBottom: last ? 'none' : '1px solid var(--line-subtle)',
+      }}
+    >
+      <span
+        style={{
+          width: 24,
+          height: 24,
+          borderRadius: 'var(--r-xs)',
+          background: 'var(--surface-2)',
+          border: '1px solid var(--line)',
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: 10,
+          fontWeight: 500,
+          color: 'var(--ink-2)',
+          letterSpacing: '0.04em',
+        }}
+      >
+        {name[0].toUpperCase()}
+      </span>
+      <div className="col" style={{ gap: 3, minWidth: 0 }}>
+        <span className="ink truncate" style={{ fontSize: 13, fontWeight: 500 }}>{name}</span>
+        <span className="ink-3 truncate" style={{ fontSize: 11.5 }}>{detail}</span>
       </div>
-      <div style={{ padding: '16px 20px' }}>
-        {children}
+      <StatusBadge tone={meta.tone}>{meta.label}</StatusBadge>
+      {action ? (
+        action.href ? (
+          <a className="btn btn-xs" href={action.href}>
+            {action.label} <Icon name="arrow" size={10} />
+          </a>
+        ) : (
+          <button className="btn btn-xs" onClick={action.onClick}>
+            {action.label}
+          </button>
+        )
+      ) : (
+        <span />
+      )}
+    </div>
+  )
+}
+
+// ── Profile (static) ─────────────────────────────────────────────────────
+
+function ProfileSection() {
+  return (
+    <div className="card">
+      <div className="card-head">
+        <div className="card-head-title">
+          <span className="card-head-name">Profile</span>
+        </div>
+      </div>
+      <div>
+        <Setting label="Name" help="As it appears in email drafts and signatures.">
+          <span className="ink" style={{ fontSize: 12.5 }}>Demian Oki</span>
+        </Setting>
+        <Setting label="Studio" help="Used in the from-name of outbound mail Claude drafts.">
+          <span className="ink" style={{ fontSize: 12.5 }}>Oaki Studio · Buenos Aires</span>
+        </Setting>
+        <Setting label="Email" help="Source of truth for sender identity.">
+          <span className="ink" style={{ fontSize: 12.5 }}>demian@oaki.studio</span>
+        </Setting>
+        <Setting label="Timezone" help="Affects 'today' rollover and due-date strings.">
+          <span className="ink" style={{ fontSize: 12.5 }}>America/Argentina/Buenos_Aires (-03:00)</span>
+        </Setting>
+        <Setting label="Workday cutoff" help="Determines what counts as overdue.">
+          <span className="ink" style={{ fontSize: 12.5 }}>18:00 local</span>
+        </Setting>
       </div>
     </div>
   )
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+// ── AI & voice (static) ──────────────────────────────────────────────────
+
+function AIVoiceSection() {
   return (
-    <div>
-      <div style={{ fontSize: 10, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>{label}</div>
-      {children}
+    <>
+      <div className="card">
+        <div className="card-head">
+          <div className="card-head-title"><span className="card-head-name">Drafting</span></div>
+        </div>
+        <div>
+          <Setting label="Voice samples" help="Claude reads recent sent mail to match your register.">
+            <span className="ink" style={{ fontSize: 12.5 }}>Recent sent mail</span>
+          </Setting>
+          <Setting label="Register" help="Calibrate how warm or terse drafts read by default.">
+            <div className="seg">
+              <span className="seg-btn">Terse</span>
+              <span className="seg-btn active">Calm</span>
+              <span className="seg-btn">Warm</span>
+            </div>
+          </Setting>
+          <Setting label="Sign-off" help="The exact string at the end of drafts.">
+            <span className="ink mono" style={{ fontSize: 12.5 }}>— D.</span>
+          </Setting>
+          <Setting label="Auto-send" help="Off. Always off. Drafts never leave without you pressing send.">
+            <span className="micro" style={{ color: 'var(--ink-2)' }}>OFF — PERMANENT</span>
+          </Setting>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-head">
+          <div className="card-head-title"><span className="card-head-name">Analysis</span></div>
+        </div>
+        <div>
+          <Setting label="Cadence" help="How often Claude re-analyzes a lead without you asking.">
+            <span className="ink" style={{ fontSize: 12.5 }}>Manual + on new signal</span>
+          </Setting>
+          <Setting label="Confidence floor" help="Drafts below this are flagged, not surfaced.">
+            <span className="ink" style={{ fontSize: 12.5 }}>70%</span>
+          </Setting>
+        </div>
+      </div>
+    </>
+  )
+}
+
+// ── Scoring (static) ─────────────────────────────────────────────────────
+
+function ScoringSection() {
+  return (
+    <div className="card">
+      <div className="card-head">
+        <div className="card-head-title"><span className="card-head-name">Score weights</span></div>
+        <span className="micro" style={{ color: 'var(--ink-3)' }}>SUM EQUALS 100</span>
+      </div>
+      <div>
+        <Setting label="Taste fit" help="How aligned their work is with what Oaki does well.">
+          <StaticSlider value={30} />
+        </Setting>
+        <Setting label="Business fit" help="Project type, budget, repeat potential.">
+          <StaticSlider value={25} />
+        </Setting>
+        <Setting label="Relationship" help="Trust + cadence. Heavier for past clients.">
+          <StaticSlider value={20} />
+        </Setting>
+        <Setting label="Opportunity strength" help="Quality and timeliness of the current signal.">
+          <StaticSlider value={25} />
+        </Setting>
+      </div>
     </div>
   )
 }
 
-function StatusBadge({ status }: { status: Campaign['status'] }) {
+function StaticSlider({ value }: { value: number }) {
   return (
-    <span style={{
-      fontSize: 10, padding: '2px 7px', borderRadius: 4, fontWeight: 500,
-      background: status === 'Active' ? 'var(--green-dim)' : status === 'Paused' ? 'var(--yellow-dim)' : 'var(--surface-3)',
-      color: status === 'Active' ? 'var(--green)' : status === 'Paused' ? 'var(--yellow)' : 'var(--text-faint)',
-    }}>
-      {status}
+    <div className="row" style={{ gap: 12, minWidth: 240 }}>
+      <div style={{ position: 'relative', width: 180, height: 4, background: 'var(--surface-3)', borderRadius: 2 }}>
+        <div
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: `${value}%`,
+            background: 'var(--accent)',
+            borderRadius: 2,
+          }}
+        />
+        <div
+          style={{
+            position: 'absolute',
+            left: `calc(${value}% - 6px)`,
+            top: -4,
+            width: 12,
+            height: 12,
+            borderRadius: '50%',
+            background: 'var(--accent)',
+            border: '2px solid var(--bg)',
+          }}
+        />
+      </div>
+      <span className="mono" style={{ fontSize: 12, color: 'var(--ink)', minWidth: 28, textAlign: 'right' }}>
+        {value}%
+      </span>
+    </div>
+  )
+}
+
+// ── Notifications (static) ───────────────────────────────────────────────
+
+function NotificationsSection() {
+  return (
+    <div className="card">
+      <div className="card-head">
+        <div className="card-head-title"><span className="card-head-name">Surface what, where</span></div>
+      </div>
+      <div>
+        <Setting label="Overdue follow-ups" help="More than N days since last touch in Discovery+.">
+          <NotifValue value="10 days" on />
+        </Setting>
+        <Setting label="Stalled proposals" help="No reply N days after sending a proposal.">
+          <NotifValue value="14 days" on />
+        </Setting>
+        <Setting label="Dormant past clients" help="No contact in N days with a 'won' lead.">
+          <NotifValue value="120 days" on />
+        </Setting>
+        <Setting label="High-importance discoveries" help="Surface on the dashboard when score is at or above the threshold.">
+          <NotifValue value="≥ 78" on />
+        </Setting>
+        <Setting label="Daily digest email" help="One email each morning with today's queue.">
+          <StaticToggle />
+        </Setting>
+      </div>
+    </div>
+  )
+}
+
+function NotifValue({ value, on }: { value: string; on?: boolean }) {
+  return (
+    <span className="row" style={{ gap: 10 }}>
+      <span className="mono" style={{ fontSize: 12.5, color: 'var(--ink)' }}>{value}</span>
+      <StaticToggle on={on} />
     </span>
   )
 }
 
-const inputSt: React.CSSProperties = {
-  width: '100%',
-  background: 'var(--surface)',
-  border: '1px solid var(--border)',
-  borderRadius: 6,
-  padding: '6px 10px',
-  color: 'var(--text)',
-  fontSize: 12,
-  outline: 'none',
-  boxSizing: 'border-box',
+function StaticToggle({ on }: { on?: boolean }) {
+  return <span className={`toggle ${on ? 'on' : ''}`} />
 }
 
-const ghostBtn: React.CSSProperties = {
-  padding: '5px 10px',
-  background: 'transparent',
-  border: '1px solid var(--border)',
-  borderRadius: 6,
-  fontSize: 12,
-  color: 'var(--text-faint)',
-  cursor: 'pointer',
+// ── Data & export (static) ───────────────────────────────────────────────
+
+function DataSection() {
+  return (
+    <div className="card card-pad-lg">
+      <div className="col" style={{ gap: 6 }}>
+        <span className="micro" style={{ color: 'var(--ink-3)' }}>Data</span>
+        <span className="ink" style={{ fontSize: 14, fontWeight: 500 }}>
+          Everything lives in Google Sheets and Supabase.
+        </span>
+        <span className="ink-2" style={{ fontSize: 12.5, lineHeight: 1.55, maxWidth: '62ch' }}>
+          Leads, companies, opportunities, and interactions are editable directly in the master sheet.
+          Discoveries and generated copy live in Supabase. Export and workspace-reset tooling is not wired
+          up yet.
+        </span>
+      </div>
+    </div>
+  )
+}
+
+// ── Shared ───────────────────────────────────────────────────────────────
+
+function Setting({ label, help, children }: { label: string; help?: string; children: ReactNode }) {
+  return (
+    <div className="setting-row">
+      <div className="col" style={{ gap: 0, minWidth: 0 }}>
+        <span className="setting-key">{label}</span>
+        {help && <span className="setting-help">{help}</span>}
+      </div>
+      <div>{children}</div>
+    </div>
+  )
 }

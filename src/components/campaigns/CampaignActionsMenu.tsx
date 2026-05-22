@@ -2,14 +2,16 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { Icon, type IconName } from '@/components/ui/icons'
 import type { Campaign, CampaignStatus } from '@/lib/types'
 
 interface Props {
   campaign: Campaign
   cascadeCounts: { leads: number; opportunities: number }
+  onEdit: () => void
 }
 
-export default function CampaignActionsMenu({ campaign, cascadeCounts }: Props) {
+export default function CampaignActionsMenu({ campaign, cascadeCounts, onEdit }: Props) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -46,13 +48,11 @@ export default function CampaignActionsMenu({ campaign, cascadeCounts }: Props) 
   }
 
   async function handleDelete() {
-    const leadCount = cascadeCounts.leads
-    const oppCount = cascadeCounts.opportunities
-    const tail = (leadCount + oppCount) > 0
-      ? ` This will unassign ${leadCount} lead${leadCount === 1 ? '' : 's'} and ${oppCount} opportunit${oppCount === 1 ? 'y' : 'ies'}.`
+    const { leads, opportunities } = cascadeCounts
+    const tail = leads + opportunities > 0
+      ? ` This unassigns ${leads} lead${leads === 1 ? '' : 's'} and ${opportunities} opportunit${opportunities === 1 ? 'y' : 'ies'}.`
       : ''
-    const ok = window.confirm(`Delete "${campaign.name}"?${tail} This cannot be undone.`)
-    if (!ok) return
+    if (!window.confirm(`Delete "${campaign.name}"?${tail} This cannot be undone.`)) return
     setBusy(true)
     setError(null)
     try {
@@ -69,107 +69,54 @@ export default function CampaignActionsMenu({ campaign, cascadeCounts }: Props) 
   }
 
   const status = campaign.status
-  const items: { label: string; action: () => void; danger?: boolean }[] = []
+  const statusItems: { label: string; icon: IconName; action: () => void }[] = []
   if (status === 'Active') {
-    items.push({ label: 'Pause',   action: () => patchStatus('Paused') })
-    items.push({ label: 'Archive', action: () => patchStatus('Archived') })
+    statusItems.push({ label: 'Pause', icon: 'pause', action: () => patchStatus('Paused') })
+    statusItems.push({ label: 'Archive', icon: 'archive', action: () => patchStatus('Archived') })
   } else if (status === 'Paused') {
-    items.push({ label: 'Resume',  action: () => patchStatus('Active') })
-    items.push({ label: 'Archive', action: () => patchStatus('Archived') })
-  } else if (status === 'Archived') {
-    items.push({ label: 'Restore', action: () => patchStatus('Active') })
+    statusItems.push({ label: 'Resume', icon: 'arrowup', action: () => patchStatus('Active') })
+    statusItems.push({ label: 'Archive', icon: 'archive', action: () => patchStatus('Archived') })
+  } else {
+    statusItems.push({ label: 'Restore', icon: 'arrowup', action: () => patchStatus('Active') })
   }
 
   return (
     <div ref={ref} style={{ position: 'relative', flexShrink: 0 }}>
       <button
-        type="button"
+        className="btn btn-sm btn-icon"
         onClick={() => setOpen((o) => !o)}
         disabled={busy}
         aria-label="Campaign actions"
-        style={{
-          width: 28,
-          height: 28,
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          background: 'transparent',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--r-sm)',
-          color: 'var(--text-muted)',
-          cursor: busy ? 'default' : 'pointer',
-          opacity: busy ? 0.5 : 1,
-          fontSize: 14,
-          lineHeight: 1,
-        }}
       >
-        ⋯
+        <Icon name="more" size={13} />
       </button>
       {open && (
-        <div
-          style={{
-            position: 'absolute',
-            top: 'calc(100% + 4px)',
-            right: 0,
-            minWidth: 160,
-            background: 'var(--surface)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--r-md)',
-            boxShadow: 'var(--shadow-md)',
-            zIndex: 30,
-            padding: 4,
-          }}
-        >
-          {items.map((it) => (
-            <button
-              key={it.label}
-              type="button"
-              onClick={it.action}
-              disabled={busy}
-              style={{
-                display: 'block',
-                width: '100%',
-                textAlign: 'left',
-                padding: '8px 12px',
-                fontSize: 12,
-                background: 'transparent',
-                border: 'none',
-                borderRadius: 'var(--r-xs)',
-                color: 'var(--text)',
-                cursor: busy ? 'default' : 'pointer',
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-2)' }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
-            >
-              {it.label}
+        <div className="menu">
+          <button
+            className="menu-item"
+            onClick={() => { setOpen(false); onEdit() }}
+            disabled={busy}
+          >
+            <span className="row" style={{ gap: 8 }}>
+              <Icon name="edit" size={12} /> Edit campaign
+            </span>
+          </button>
+          <div className="menu-sep" />
+          {statusItems.map((it) => (
+            <button key={it.label} className="menu-item" onClick={it.action} disabled={busy}>
+              <span className="row" style={{ gap: 8 }}>
+                <Icon name={it.icon} size={12} /> {it.label}
+              </span>
             </button>
           ))}
-          <div style={{ height: 1, background: 'var(--border-subtle)', margin: '4px 0' }} />
-          <button
-            type="button"
-            onClick={handleDelete}
-            disabled={busy}
-            style={{
-              display: 'block',
-              width: '100%',
-              textAlign: 'left',
-              padding: '8px 12px',
-              fontSize: 12,
-              background: 'transparent',
-              border: 'none',
-              borderRadius: 'var(--r-xs)',
-              color: 'var(--red)',
-              cursor: busy ? 'default' : 'pointer',
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(224,92,92,0.08)' }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
-          >
-            Delete
+          <div className="menu-sep" />
+          <button className="menu-item danger" onClick={handleDelete} disabled={busy}>
+            <span className="row" style={{ gap: 8 }}>
+              <Icon name="trash" size={12} /> Delete
+            </span>
           </button>
           {error && (
-            <div style={{ padding: '6px 10px', fontSize: 11, color: 'var(--red)' }}>
-              {error}
-            </div>
+            <div style={{ padding: '6px 10px', fontSize: 11, color: 'var(--risk)' }}>{error}</div>
           )}
         </div>
       )}

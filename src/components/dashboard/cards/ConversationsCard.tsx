@@ -1,6 +1,9 @@
 'use client'
 
 import Link from 'next/link'
+import { StatusBadge, Empty } from '@/components/ui/primitives'
+import { Icon } from '@/components/ui/icons'
+import { relativeDate } from '@/lib/utils'
 import type { Lead, Thread } from '@/lib/types'
 
 interface Props {
@@ -10,50 +13,48 @@ interface Props {
 
 export default function ConversationsCard({ threads, leads }: Props) {
   const leadMap = new Map(leads.map((l) => [l.lead_id, l]))
-  const waiting = threads
-    .filter((t) => t.inferred_state === 'waiting_for_us')
-    .slice(0, 6)
+  const waiting = threads.filter((t) => t.inferred_state === 'waiting_for_us').slice(0, 6)
 
   return (
-    <section>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-        <h2 style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0 }}>
-          Conversations waiting
-          {waiting.length > 0 && <span style={{ marginLeft: 6, fontWeight: 400, color: 'var(--text-faint)' }}>{waiting.length}</span>}
-        </h2>
-        <Link href="/conversations" style={{ fontSize: 11, color: 'var(--text-faint)' }}>
-          View all →
+    <div className="card">
+      <div className="card-head">
+        <div className="card-head-title">
+          <span className="card-head-name">Conversations waiting</span>
+          <span className="card-head-count">{String(waiting.length).padStart(2, '0')} THREADS</span>
+        </div>
+        <Link className="btn btn-sm btn-ghost" href="/conversations">
+          View all <Icon name="arrow" size={11} />
         </Link>
       </div>
 
       {waiting.length === 0 ? (
-        <div style={{ padding: '20px 16px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, color: 'var(--text-faint)', textAlign: 'center' }}>
-          No conversations waiting on you.
-        </div>
+        <Empty title="No conversations waiting on you.">
+          Threads where the next move is yours show up here.
+        </Empty>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {waiting.map((thread) => {
-            const lead = leadMap.get(thread.lead_id)
+        <div className="stack">
+          {waiting.map((t) => {
+            const lead = leadMap.get(t.lead_id)
             return (
-              <Link key={thread.thread_id} href="/conversations">
-                <div className="hover-card" style={{
-                  background: 'var(--surface)',
-                  border: '1px solid rgba(224,92,92,0.2)',
-                  borderRadius: 8,
-                  padding: '10px 14px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'flex-start',
-                  gap: 12,
-                }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 500 }}>{lead?.full_name ?? thread.lead_id}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {thread.subject}
-                    </div>
+              <Link key={t.thread_id} className="stack-row" href="/conversations">
+                <div className="stack-row-main" style={{ gap: 6 }}>
+                  <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                    <span className="ink" style={{ fontSize: 13, fontWeight: 500 }}>
+                      {lead?.full_name ?? t.lead_id}
+                    </span>
+                    {lead?.company_name && (
+                      <span className="ink-3" style={{ fontSize: 12 }}>· {lead.company_name}</span>
+                    )}
+                    <StatusBadge tone="risk">Reply needed</StatusBadge>
                   </div>
-                  <span style={{ fontSize: 10, color: 'var(--red)', background: 'rgba(224,92,92,0.1)', padding: '2px 7px', borderRadius: 3, flexShrink: 0 }}>
-                    Reply needed
+                  <div className="ink-2 truncate" style={{ fontSize: 12 }}>&ldquo;{t.subject}&rdquo;</div>
+                  {t.snippet && (
+                    <div className="ink-3 truncate" style={{ fontSize: 11.5 }}>{t.snippet}</div>
+                  )}
+                </div>
+                <div className="stack-row-actions">
+                  <span className="micro" style={{ color: 'var(--ink-3)' }}>
+                    {relativeDate(t.last_message_at)}
                   </span>
                 </div>
               </Link>
@@ -61,6 +62,6 @@ export default function ConversationsCard({ threads, leads }: Props) {
           })}
         </div>
       )}
-    </section>
+    </div>
   )
 }

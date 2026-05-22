@@ -6,14 +6,8 @@ import OpportunityFilterPanel, {
   type OpportunityFilterState,
   type OpportunityStatusFilter,
 } from '@/components/opportunities/FilterPanel'
-import OpportunityCard from '@/components/opportunities/OpportunityCard'
-import { IconLoader, IconTrendingUp, IconCalendar, IconZap } from '@/components/ui/icons'
-import type { Opportunity, Lead, Company } from '@/lib/types'
-
-interface EnrichedOpportunity extends Opportunity {
-  lead?: Lead
-  company?: Company
-}
+import OpportunityCard, { type EnrichedOpportunity } from '@/components/opportunities/OpportunityCard'
+import { Empty } from '@/components/ui/primitives'
 
 const STATUS_GROUPS: Record<OpportunityStatusFilter, string[]> = {
   active:   ['Open', 'In Progress'],
@@ -22,7 +16,20 @@ const STATUS_GROUPS: Record<OpportunityStatusFilter, string[]> = {
   archived: ['Archived'],
 }
 
+const STATUS_LABEL: Record<OpportunityStatusFilter, string> = {
+  active:   'Open',
+  touched:  'Touched',
+  closed:   'Closed',
+  archived: 'Archived',
+}
+
 const URGENCY_RANK: Record<string, number> = { High: 0, Medium: 1, Low: 2 }
+
+const SORT_OPTIONS: [OpportunityFilterState['sort_by'], string][] = [
+  ['score', 'Score'],
+  ['urgency', 'Urgency'],
+  ['date', 'Date'],
+]
 
 export default function OpportunitiesPage() {
   const [filters, setFilters] = useState<OpportunityFilterState>(DEFAULT_OPPORTUNITY_FILTERS)
@@ -88,147 +95,71 @@ export default function OpportunitiesPage() {
   }, [opportunities, filters])
 
   return (
-    <div style={{ padding: '28px 32px', maxWidth: 1280, display: 'flex', flexDirection: 'column', gap: 18 }}>
+    <div className="page">
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+      <div className="page-head">
         <div>
-          <h1 className="page-title">Opportunities</h1>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
-            Research-based reasons to reach out — with a clear why now.
-          </p>
+          <div className="page-eyebrow">Pipeline</div>
+          <div className="page-title">Opportunities</div>
+          <div className="page-sub">Every concrete reason to talk to someone right now.</div>
         </div>
-        {!loading && (
-          <span style={{
-            fontSize: 11,
-            fontFamily: 'SF Mono, ui-monospace, monospace',
-            color: 'var(--text-muted)',
-            fontVariantNumeric: 'tabular-nums',
-          }}>
-            {filtered.length}
-          </span>
-        )}
       </div>
 
-      {/* Body — filters + grid */}
-      <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start' }}>
-        <div style={{
-          width: 220,
-          flexShrink: 0,
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--r-md)',
-          background: 'var(--surface)',
-          overflow: 'hidden',
-        }}>
-          <OpportunityFilterPanel filters={filters} onChange={setFilters} />
-        </div>
+      {/* Body — filters + result grid */}
+      <div style={{ display: 'flex', gap: 32, alignItems: 'flex-start' }}>
+        <OpportunityFilterPanel filters={filters} onChange={setFilters} />
 
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
-          {/* Sort toolbar */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0' }}>
-            <span style={{
-              fontSize: 11,
-              color: 'var(--text-faint)',
-              fontFamily: 'SF Mono, ui-monospace, monospace',
-              fontVariantNumeric: 'tabular-nums',
-            }}>
-              {loading ? 'Loading…' : `${filtered.length} ${filtered.length === 1 ? 'result' : 'results'}`}
-            </span>
-            <div style={{ display: 'flex', gap: 2 }}>
-              <SortButton
-                active={filters.sort_by === 'score'}
-                onClick={() => setFilters((f) => ({ ...f, sort_by: 'score' }))}
-                icon={<IconTrendingUp size={11} />}
-                label="Score"
-              />
-              <SortButton
-                active={filters.sort_by === 'urgency'}
-                onClick={() => setFilters((f) => ({ ...f, sort_by: 'urgency' }))}
-                icon={<IconZap size={11} />}
-                label="Urgency"
-              />
-              <SortButton
-                active={filters.sort_by === 'date'}
-                onClick={() => setFilters((f) => ({ ...f, sort_by: 'date' }))}
-                icon={<IconCalendar size={11} />}
-                label="Date"
-              />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {/* Result toolbar */}
+          <div className="between" style={{ marginBottom: 16 }}>
+            <div className="row" style={{ gap: 10 }}>
+              <span className="ink" style={{ fontSize: 13, fontWeight: 500 }}>
+                {loading
+                  ? 'Loading…'
+                  : `${filtered.length} ${filtered.length === 1 ? 'opportunity' : 'opportunities'}`}
+              </span>
+              <span className="ink-3" style={{ fontSize: 12 }}>· {STATUS_LABEL[filters.status]}</span>
+            </div>
+            <div className="row" style={{ gap: 8 }}>
+              <span className="micro" style={{ color: 'var(--ink-3)' }}>Sort</span>
+              <div className="seg">
+                {SORT_OPTIONS.map(([key, label]) => (
+                  <button
+                    key={key}
+                    className={`seg-btn ${filters.sort_by === key ? 'active' : ''}`}
+                    onClick={() => setFilters((f) => ({ ...f, sort_by: key }))}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
           {error && (
-            <div style={{
-              padding: 12,
-              fontSize: 12,
-              color: 'var(--red)',
-              background: 'var(--red-dim)',
-              border: '1px solid rgba(224,92,92,0.2)',
-              borderRadius: 'var(--r-md)',
-            }}>
-              {error}
-            </div>
-          )}
-
-          {loading && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 0', color: 'var(--text-faint)', fontSize: 12 }}>
-              <IconLoader size={12} /> Loading…
+            <div
+              className="card card-pad"
+              style={{ borderColor: 'var(--risk-line)', marginBottom: 16 }}
+            >
+              <span className="risk" style={{ fontSize: 12 }}>{error}</span>
             </div>
           )}
 
           {!loading && !error && filtered.length === 0 && (
-            <div className="empty-state">
-              <div style={{ marginBottom: 6, color: 'var(--text-muted)' }}>No opportunities match this filter.</div>
-              <div style={{ fontSize: 11 }}>
-                Try the All status pill, or reset filters.
-              </div>
+            <div className="card">
+              <Empty title="No opportunities match this filter.">
+                Try a different status, or reset the filters.
+              </Empty>
             </div>
           )}
 
-          <div style={{
-            display: 'grid',
-            gap: 12,
-            gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
-          }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
             {filtered.map((opp) => (
-              <OpportunityCard
-                key={opp.opportunity_id}
-                opp={opp}
-                lead={opp.lead}
-                company={opp.company}
-              />
+              <OpportunityCard key={opp.opportunity_id} opp={opp} onChanged={fetchData} />
             ))}
           </div>
         </div>
       </div>
     </div>
-  )
-}
-
-function SortButton({
-  active, onClick, icon, label,
-}: {
-  active: boolean
-  onClick: () => void
-  icon: React.ReactNode
-  label: string
-}) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 4,
-        fontSize: 11,
-        padding: '4px 8px',
-        borderRadius: 'var(--r-xs)',
-        border: 'none',
-        background: active ? 'var(--surface-2)' : 'transparent',
-        color: active ? 'var(--text)' : 'var(--text-faint)',
-        cursor: 'pointer',
-      }}
-    >
-      {icon}
-      {label}
-    </button>
   )
 }

@@ -1,7 +1,8 @@
-import { getCampaigns, getLeads, getOpportunities } from '@/lib/sheets'
 import Link from 'next/link'
+import { getCampaigns, getLeads, getOpportunities } from '@/lib/sheets'
 import CampaignsClient from '@/components/campaigns/CampaignsClient'
 import RestoreDefaultsButton from '@/components/campaigns/RestoreDefaultsButton'
+import { Icon } from '@/components/ui/icons'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,72 +13,40 @@ export default async function CampaignsPage() {
     getOpportunities(),
   ])
 
-  const activeCampaigns = campaigns.filter((c) => c.status === 'Active')
+  const activeCount = campaigns.filter((c) => c.status === 'Active').length
+  const inCampaigns = leads.filter((l) => l.campaign_id).length
 
   return (
-    <div style={{ padding: '28px 32px', maxWidth: 1100 }}>
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'flex-start',
-        marginBottom: 28,
-        gap: 16,
-      }}>
+    <div className="page">
+      <div className="page-head">
         <div>
-          <h1 className="page-title">Campaigns</h1>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
-            {activeCampaigns.length} active campaigns · {leads.length} leads total
-          </p>
+          <div className="page-eyebrow">Pipeline</div>
+          <div className="page-title">Campaigns</div>
+          <div className="page-sub">
+            {activeCount} active {activeCount === 1 ? 'campaign' : 'campaigns'} · {inCampaigns} leads
+            in campaigns. Each one is a researched stance, not a sequence.
+          </div>
         </div>
-        <Link
-          href="/campaigns/new"
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            padding: '8px 16px',
-            borderRadius: 'var(--r-sm)',
-            border: '1px solid var(--accent)',
-            background: 'var(--accent)',
-            color: '#000',
-            fontSize: 13,
-            fontWeight: 600,
-            textDecoration: 'none',
-            flexShrink: 0,
-          }}
-        >
-          + New campaign
-        </Link>
+        <div className="page-actions">
+          <Link className="btn btn-primary" href="/campaigns/new">
+            <Icon name="plus" size={12} /> New campaign
+          </Link>
+        </div>
       </div>
 
       {campaigns.length === 0 && (
-        <div style={{
-          marginBottom: 28,
-          padding: 20,
-          border: '1px dashed var(--border)',
-          borderRadius: 'var(--r-md)',
-          background: 'var(--surface)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 12,
-        }}>
-          <div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}>
-              No campaigns yet
-            </div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-              Create a campaign manually with the button above, or restore the four defaults
-              you had running before the schema fix.
-            </div>
+        <div className="card card-pad" style={{ marginBottom: 24 }}>
+          <div className="ink" style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>
+            No campaigns yet
+          </div>
+          <div className="ink-2" style={{ fontSize: 12, lineHeight: 1.5, marginBottom: 12 }}>
+            Create one with the button above, or restore the four defaults.
           </div>
           <RestoreDefaultsButton />
         </div>
       )}
 
-      <CampaignsClient
-        campaigns={campaigns}
-        leads={leads}
-        opportunities={opportunities}
-      />
+      <CampaignsClient campaigns={campaigns} leads={leads} opportunities={opportunities} />
     </div>
   )
 }

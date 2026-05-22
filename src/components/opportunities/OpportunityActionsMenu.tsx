@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { Icon } from '@/components/ui/icons'
 
 interface Props {
   oppId: string
@@ -37,7 +38,7 @@ export default function OpportunityActionsMenu({ oppId, currentStatus, onChanged
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error ?? `Update failed (${res.status})`)
       setOpen(false)
-      if (onChanged) onChanged()
+      onChanged?.()
       router.refresh()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Update failed')
@@ -56,7 +57,7 @@ export default function OpportunityActionsMenu({ oppId, currentStatus, onChanged
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error ?? `Delete failed (${res.status})`)
       setOpen(false)
-      if (onChanged) onChanged()
+      onChanged?.()
       router.refresh()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Delete failed')
@@ -65,105 +66,47 @@ export default function OpportunityActionsMenu({ oppId, currentStatus, onChanged
     }
   }
 
-  // Status-aware menu items. Snooze is always available; Dismiss + Archive only
-  // make sense when the opp isn't already in that state.
-  const items: { label: string; action: () => void }[] = []
-  if (currentStatus !== 'Snoozed')   items.push({ label: 'Snooze',  action: () => patchStatus('Snoozed') })
-  if (currentStatus !== 'Dismissed') items.push({ label: 'Dismiss', action: () => patchStatus('Dismissed') })
-  if (currentStatus !== 'Archived')  items.push({ label: 'Archive', action: () => patchStatus('Archived') })
-
   return (
     <div ref={ref} style={{ position: 'relative', flexShrink: 0 }}>
       <button
-        type="button"
+        className="btn btn-sm btn-icon"
         onClick={() => setOpen((o) => !o)}
         disabled={busy}
         aria-label="Opportunity actions"
-        style={{
-          width: 26,
-          height: 26,
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          background: 'transparent',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--r-sm)',
-          color: 'var(--text-muted)',
-          cursor: busy ? 'default' : 'pointer',
-          opacity: busy ? 0.5 : 1,
-          fontSize: 13,
-          lineHeight: 1,
-        }}
       >
-        ⋯
+        <Icon name="more" size={13} />
       </button>
       {open && (
-        <div
-          style={{
-            position: 'absolute',
-            top: 'calc(100% + 4px)',
-            right: 0,
-            minWidth: 140,
-            background: 'var(--surface)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--r-md)',
-            boxShadow: 'var(--shadow-md)',
-            zIndex: 30,
-            padding: 4,
-          }}
-        >
-          {items.map((it) => (
-            <button
-              key={it.label}
-              type="button"
-              onClick={it.action}
-              disabled={busy}
-              style={{
-                display: 'block',
-                width: '100%',
-                textAlign: 'left',
-                padding: '7px 12px',
-                fontSize: 12,
-                background: 'transparent',
-                border: 'none',
-                borderRadius: 'var(--r-xs)',
-                color: 'var(--text)',
-                cursor: busy ? 'default' : 'pointer',
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-2)' }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
-            >
-              {it.label}
+        <div className="menu">
+          {currentStatus !== 'Snoozed' && (
+            <button className="menu-item" onClick={() => patchStatus('Snoozed')} disabled={busy}>
+              <span className="row" style={{ gap: 8 }}>
+                <Icon name="snooze" size={12} /> Snooze
+              </span>
             </button>
-          ))}
-          {items.length > 0 && (
-            <div style={{ height: 1, background: 'var(--border-subtle)', margin: '4px 0' }} />
           )}
-          <button
-            type="button"
-            onClick={handleDelete}
-            disabled={busy}
-            style={{
-              display: 'block',
-              width: '100%',
-              textAlign: 'left',
-              padding: '7px 12px',
-              fontSize: 12,
-              background: 'transparent',
-              border: 'none',
-              borderRadius: 'var(--r-xs)',
-              color: 'var(--red)',
-              cursor: busy ? 'default' : 'pointer',
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(224,92,92,0.08)' }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
-          >
-            Delete
+          {currentStatus !== 'Dismissed' && (
+            <button className="menu-item" onClick={() => patchStatus('Dismissed')} disabled={busy}>
+              <span className="row" style={{ gap: 8 }}>
+                <Icon name="x" size={12} /> Dismiss
+              </span>
+            </button>
+          )}
+          {currentStatus !== 'Archived' && (
+            <button className="menu-item" onClick={() => patchStatus('Archived')} disabled={busy}>
+              <span className="row" style={{ gap: 8 }}>
+                <Icon name="archive" size={12} /> Archive
+              </span>
+            </button>
+          )}
+          <div className="menu-sep" />
+          <button className="menu-item danger" onClick={handleDelete} disabled={busy}>
+            <span className="row" style={{ gap: 8 }}>
+              <Icon name="trash" size={12} /> Delete
+            </span>
           </button>
           {error && (
-            <div style={{ padding: '6px 10px', fontSize: 11, color: 'var(--red)' }}>
-              {error}
-            </div>
+            <div style={{ padding: '6px 10px', fontSize: 11, color: 'var(--risk)' }}>{error}</div>
           )}
         </div>
       )}

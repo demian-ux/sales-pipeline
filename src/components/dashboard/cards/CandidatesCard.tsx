@@ -1,80 +1,73 @@
 'use client'
 
 import Link from 'next/link'
+import { ScoreBlock, Empty } from '@/components/ui/primitives'
+import { Icon } from '@/components/ui/icons'
 import type { FirmCandidateRow } from '@/lib/types'
 
 interface Props {
   candidates: FirmCandidateRow[]
 }
 
-function scoreColor(score: number): string {
-  if (score >= 85) return 'var(--green)'
-  if (score >= 70) return 'var(--accent)'
-  return 'var(--text-faint)'
-}
-
 export default function CandidatesCard({ candidates }: Props) {
   return (
-    <section>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-        <h2 style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0 }}>
-          High-importance candidates
-          {candidates.length > 0 && <span style={{ marginLeft: 6, fontWeight: 400, color: 'var(--text-faint)' }}>{candidates.length}</span>}
-        </h2>
-        <Link href="/import/prospecting" style={{ fontSize: 11, color: 'var(--text-faint)' }}>
-          Find more →
+    <div className="card">
+      <div className="card-head">
+        <div className="card-head-title">
+          <span className="card-head-name">High-importance candidates</span>
+          <span className="card-head-count">{String(candidates.length).padStart(2, '0')} FIRMS</span>
+        </div>
+        <Link className="btn btn-sm btn-ghost" href="/import/prospecting">
+          Find more <Icon name="arrow" size={11} />
         </Link>
       </div>
 
       {candidates.length === 0 ? (
-        <div style={{ padding: '20px 16px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, color: 'var(--text-faint)', textAlign: 'center' }}>
-          No high-importance firm candidates surfaced yet.
-        </div>
+        <Empty title="No firm candidates surfaced yet.">
+          Firms found by article prospecting, ranked by fit, appear here.
+        </Empty>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div className="stack">
           {candidates.map((c) => {
-            const articleHost = (() => { try { return new URL(c.source_article_url).hostname.replace(/^www\./, '') } catch { return null } })()
+            let host: string | null = null
+            try {
+              host = new URL(c.source_article_url).hostname.replace(/^www\./, '')
+            } catch {
+              host = null
+            }
             return (
-              <div key={c.id} className="hover-card" style={{
-                background: 'var(--surface)',
-                border: '1px solid var(--border)',
-                borderRadius: 8,
-                padding: '10px 14px',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'flex-start',
-                gap: 12,
-              }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 500 }}>{c.name}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 1 }}>
-                    {c.country && <span>{c.country}</span>}
-                    {c.project_type && <span style={{ marginLeft: 6, opacity: 0.8 }}>· {c.project_type}</span>}
+              <div key={c.id} className="stack-row" style={{ alignItems: 'flex-start' }}>
+                <div className="stack-row-main">
+                  <div className="ink" style={{ fontSize: 13, fontWeight: 500 }}>{c.name}</div>
+                  <div className="row" style={{ gap: 10, marginTop: 4, flexWrap: 'wrap' }}>
+                    {(c.country || c.project_type) && (
+                      <span className="ink-3" style={{ fontSize: 11.5 }}>
+                        {[c.country, c.project_type].filter(Boolean).join(' · ')}
+                      </span>
+                    )}
+                    {c.reference_project && (
+                      <span className="ink-3" style={{ fontSize: 11.5 }}>· {c.reference_project}</span>
+                    )}
                   </div>
-                  {c.reference_project && (
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {c.reference_project}
-                    </div>
-                  )}
-                  {articleHost && (
-                    <a href={c.source_article_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: 'var(--text-faint)', marginTop: 4, display: 'inline-block' }}>
-                      Source: {articleHost} ↗
+                  {host && (
+                    <a
+                      className="micro"
+                      href={c.source_article_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: 'var(--ink-2)', display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 6 }}
+                    >
+                      {host}
+                      <Icon name="external" size={10} />
                     </a>
                   )}
                 </div>
-                <div style={{ textAlign: 'center', flexShrink: 0 }}>
-                  <div style={{ fontSize: 16, fontWeight: 600, color: scoreColor(c.score ?? 0), lineHeight: 1 }}>
-                    {c.score ?? '—'}
-                  </div>
-                  <div style={{ fontSize: 9, color: 'var(--text-faint)', marginTop: 2, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                    Score
-                  </div>
-                </div>
+                <ScoreBlock value={c.score ?? 0} size="sm" />
               </div>
             )
           })}
         </div>
       )}
-    </section>
+    </div>
   )
 }

@@ -1,8 +1,12 @@
 import type { Metadata } from 'next'
 import { headers } from 'next/headers'
+import { Geist, Geist_Mono } from 'next/font/google'
 import './globals.css'
 import Sidebar from '@/components/layout/Sidebar'
 import SheetsStatusBanner from '@/components/layout/SheetsStatusBanner'
+
+const geist = Geist({ subsets: ['latin'], variable: '--font-geist', display: 'swap' })
+const geistMono = Geist_Mono({ subsets: ['latin'], variable: '--font-geist-mono', display: 'swap' })
 
 export const metadata: Metadata = {
   title: 'Oaki Relations',
@@ -22,15 +26,19 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const showSidebar = !isNoShell(pathname)
 
   return (
-    <html lang="en">
-      <body style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
-        {showSidebar && <Sidebar />}
-        <main style={{ flex: 1, overflow: 'auto', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-          {showSidebar && <SheetsStatusBanner />}
-          <div style={{ flex: 1, minHeight: 0 }}>
-            {children}
+    <html lang="en" className={`${geist.variable} ${geistMono.variable}`}>
+      <body>
+        {showSidebar ? (
+          <div className="app">
+            <Sidebar />
+            <main className="main">
+              <SheetsStatusBanner />
+              <div style={{ flex: 1, minHeight: 0 }}>{children}</div>
+            </main>
           </div>
-        </main>
+        ) : (
+          children
+        )}
       </body>
     </html>
   )

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { Icon } from '@/components/ui/icons'
 
 interface Props {
   threadId: string
@@ -32,24 +33,15 @@ export default function AnalyzeThreadButton({ threadId, leadId }: Props) {
 
   return (
     <button
+      className="btn btn-sm btn-primary"
       onClick={handle}
       disabled={state !== 'idle'}
-      style={{
-        fontSize: 11,
-        padding: '4px 10px',
-        borderRadius: 5,
-        border: state === 'error' ? '1px solid rgba(224,92,92,0.4)' : '1px solid rgba(200,169,110,0.3)',
-        background: state === 'error' ? 'rgba(224,92,92,0.08)' : 'var(--accent-dim)',
-        color: state === 'error' ? 'var(--red)' : 'var(--accent)',
-        cursor: state === 'idle' ? 'pointer' : 'default',
-        transition: 'all 0.15s',
-        flexShrink: 0,
-      }}
       title={state === 'error' ? errorMsg : undefined}
     >
-      {state === 'idle' && 'Analyze →'}
+      <Icon name="sparkle" size={11} />
+      {state === 'idle' && 'Analyze conversation'}
       {state === 'analyzing' && 'Analyzing…'}
-      {state === 'done' && '✓ Done'}
+      {state === 'done' && 'Done'}
       {state === 'error' && 'Error'}
     </button>
   )

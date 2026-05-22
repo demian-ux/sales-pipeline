@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import DiscoveryCard from '@/components/discoveries/DiscoveryCard'
 import FilterPanel, { DEFAULT_FILTERS, type DiscoveryFilterState } from '@/components/discoveries/FilterPanel'
-import { IconRefresh, IconLoader, IconTrendingUp, IconCalendar } from '@/components/ui/icons'
+import { Empty } from '@/components/ui/primitives'
+import { Icon, IconLoader } from '@/components/ui/icons'
 import type { Discovery } from '@/lib/types'
 
 // Returns null when the response body isn't JSON (e.g. a Vercel HTML error
@@ -146,58 +147,29 @@ export default function DiscoveriesPage() {
   }
 
   return (
-    <div style={{ padding: '28px 32px', maxWidth: 1280, display: 'flex', flexDirection: 'column', gap: 18 }}>
+    <div className="page">
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+      <div className="page-head">
         <div>
-          <div style={{
-            fontSize: 11,
-            fontWeight: 600,
-            textTransform: 'uppercase',
-            letterSpacing: '0.12em',
-            color: 'var(--text-faint)',
-            marginBottom: 4,
-          }}>
-            Market Signals
-          </div>
-          <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>Discoveries</h1>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
-            Architecture, real estate, hospitality, infrastructure — analyzed via RSS + Claude.
+          <div className="page-eyebrow">Intelligence</div>
+          <div className="page-title">Discoveries</div>
+          <div className="page-sub">
+            Market signals — articles classified as opportunities. The radar.
           </div>
         </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div className="page-actions">
           {ingestMsg && (
-            <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>{ingestMsg}</span>
-          )}
-          {!loading && total > 0 && (
-            <span style={{
-              fontSize: 11,
-              fontFamily: 'SF Mono, ui-monospace, monospace',
-              color: 'var(--text-muted)',
-              fontVariantNumeric: 'tabular-nums',
-            }}>
-              {total}
-            </span>
+            <div className="col" style={{ alignItems: 'flex-end', gap: 2, marginRight: 4 }}>
+              <span className="micro" style={{ color: 'var(--ink-3)' }}>Research</span>
+              <span className="ink-2" style={{ fontSize: 12 }}>{ingestMsg}</span>
+            </div>
           )}
           <button
+            className="btn btn-primary"
             onClick={handleIngest}
             disabled={ingesting || supabaseMissing}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '6px 12px',
-              fontSize: 11,
-              borderRadius: 'var(--r-sm)',
-              border: '1px solid var(--border)',
-              background: 'transparent',
-              color: 'var(--text-muted)',
-              cursor: ingesting || supabaseMissing ? 'default' : 'pointer',
-              opacity: ingesting || supabaseMissing ? 0.4 : 1,
-            }}
           >
-            {ingesting ? <IconLoader size={12} /> : <IconRefresh size={12} />}
+            {ingesting ? <IconLoader size={12} /> : <Icon name="sparkle" size={12} />}
             {ingesting ? 'Researching…' : 'Run research'}
           </button>
         </div>
@@ -205,134 +177,77 @@ export default function DiscoveriesPage() {
 
       {/* Setup notice */}
       {supabaseMissing && (
-        <div style={{
-          padding: 16,
-          background: 'var(--accent-dim)',
-          border: '1px solid rgba(200,169,110,0.3)',
-          borderRadius: 'var(--r-md)',
-          fontSize: 12,
-          color: 'var(--text)',
-          lineHeight: 1.6,
-        }}>
-          <strong style={{ color: 'var(--accent)' }}>Supabase not yet provisioned.</strong>
-          <div style={{ marginTop: 6, color: 'var(--text-muted)' }}>
-            Set <code style={{ fontFamily: 'SF Mono, monospace', fontSize: 11, padding: '1px 4px', background: 'var(--surface-2)', borderRadius: 3 }}>NEXT_PUBLIC_SUPABASE_URL</code>,&nbsp;
-            <code style={{ fontFamily: 'SF Mono, monospace', fontSize: 11, padding: '1px 4px', background: 'var(--surface-2)', borderRadius: 3 }}>NEXT_PUBLIC_SUPABASE_ANON_KEY</code>, and&nbsp;
-            <code style={{ fontFamily: 'SF Mono, monospace', fontSize: 11, padding: '1px 4px', background: 'var(--surface-2)', borderRadius: 3 }}>SUPABASE_SERVICE_ROLE_KEY</code> in your env,
-            then run the SQL in <code style={{ fontFamily: 'SF Mono, monospace', fontSize: 11, padding: '1px 4px', background: 'var(--surface-2)', borderRadius: 3 }}>supabase/schema.sql</code> against your project.
+        <div
+          className="card card-pad"
+          style={{ borderColor: 'var(--accent-line)', background: 'var(--accent-soft)', marginBottom: 24 }}
+        >
+          <div className="accent" style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>
+            Supabase not yet provisioned.
+          </div>
+          <div className="ink-2" style={{ fontSize: 12, lineHeight: 1.6 }}>
+            Set <span className="mono">NEXT_PUBLIC_SUPABASE_URL</span>,{' '}
+            <span className="mono">NEXT_PUBLIC_SUPABASE_ANON_KEY</span>, and{' '}
+            <span className="mono">SUPABASE_SERVICE_ROLE_KEY</span> in your env, then run the SQL
+            in <span className="mono">supabase/schema.sql</span> against your project.
           </div>
         </div>
       )}
 
-      {/* Body — filters + cards */}
-      <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start' }}>
-        <div style={{
-          width: 220,
-          flexShrink: 0,
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--r-md)',
-          background: 'var(--surface)',
-          overflow: 'hidden',
-        }}>
-          <FilterPanel filters={filters} onChange={setFilters} />
-        </div>
+      {/* Body — filters + result list */}
+      <div style={{ display: 'flex', gap: 32, alignItems: 'flex-start' }}>
+        <FilterPanel filters={filters} onChange={setFilters} />
 
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {/* Sort toolbar */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '6px 0',
-          }}>
-            <span style={{
-              fontSize: 11,
-              color: 'var(--text-faint)',
-              fontFamily: 'SF Mono, ui-monospace, monospace',
-              fontVariantNumeric: 'tabular-nums',
-            }}>
-              {loading ? 'Loading…' : `${total} ${total === 1 ? 'result' : 'results'}`}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {/* Result toolbar */}
+          <div className="between" style={{ marginBottom: 16 }}>
+            <span className="ink" style={{ fontSize: 13, fontWeight: 500 }}>
+              {loading
+                ? 'Loading…'
+                : `${total} ${total === 1 ? 'discovery' : 'discoveries'}`}
             </span>
-            <div style={{ display: 'flex', gap: 2 }}>
-              <SortButton
-                active={filters.sort_by === 'score'}
-                onClick={() => setFilters((f) => ({ ...f, sort_by: 'score' }))}
-                icon={<IconTrendingUp size={11} />}
-                label="Score"
-              />
-              <SortButton
-                active={filters.sort_by === 'date'}
-                onClick={() => setFilters((f) => ({ ...f, sort_by: 'date' }))}
-                icon={<IconCalendar size={11} />}
-                label="Date"
-              />
+            <div className="row" style={{ gap: 8 }}>
+              <span className="micro" style={{ color: 'var(--ink-3)' }}>Sort</span>
+              <div className="seg">
+                <button
+                  className={`seg-btn ${filters.sort_by === 'score' ? 'active' : ''}`}
+                  onClick={() => setFilters((f) => ({ ...f, sort_by: 'score' }))}
+                >
+                  Score
+                </button>
+                <button
+                  className={`seg-btn ${filters.sort_by === 'date' ? 'active' : ''}`}
+                  onClick={() => setFilters((f) => ({ ...f, sort_by: 'date' }))}
+                >
+                  Date
+                </button>
+              </div>
             </div>
           </div>
 
           {fetchError && !supabaseMissing && (
-            <div style={{
-              padding: 12,
-              fontSize: 12,
-              color: 'var(--red)',
-              background: 'var(--red-dim)',
-              border: '1px solid rgba(224,92,92,0.2)',
-              borderRadius: 'var(--r-md)',
-            }}>
-              {fetchError}
+            <div
+              className="card card-pad"
+              style={{ borderColor: 'var(--risk-line)', marginBottom: 16 }}
+            >
+              <span className="risk" style={{ fontSize: 12 }}>{fetchError}</span>
             </div>
           )}
 
           {!loading && discoveries.length === 0 && !fetchError && !supabaseMissing && (
-            <div className="empty-state">
-              <div style={{ marginBottom: 6, color: 'var(--text-muted)' }}>No discoveries yet.</div>
-              <div style={{ fontSize: 11 }}>
-                Run the ingestion pipeline (cron or manual) to pull fresh signals.
-              </div>
+            <div className="card">
+              <Empty title="No discoveries yet.">
+                Run the research pipeline to pull fresh market signals.
+              </Empty>
             </div>
           )}
 
-          <div style={{
-            display: 'grid',
-            gap: 10,
-            gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
-          }}>
-            {discoveries.map((d) => <DiscoveryCard key={d.id} discovery={d} />)}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
+            {discoveries.map((d) => (
+              <DiscoveryCard key={d.id} discovery={d} />
+            ))}
           </div>
         </div>
       </div>
     </div>
-  )
-}
-
-function SortButton({
-  active,
-  onClick,
-  icon,
-  label,
-}: {
-  active: boolean
-  onClick: () => void
-  icon: React.ReactNode
-  label: string
-}) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 4,
-        fontSize: 11,
-        padding: '4px 8px',
-        borderRadius: 'var(--r-xs)',
-        border: 'none',
-        background: active ? 'var(--surface-2)' : 'transparent',
-        color: active ? 'var(--text)' : 'var(--text-faint)',
-        cursor: 'pointer',
-      }}
-    >
-      {icon}
-      {label}
-    </button>
   )
 }
