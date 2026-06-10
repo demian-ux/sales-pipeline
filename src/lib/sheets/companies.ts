@@ -1,6 +1,6 @@
 import type { Company } from '../types'
 import { mockCompanies } from '../mock-data'
-import { USE_MOCK, readTab, appendRowByMap, rowsToObjects, withFallback } from './client'
+import { USE_MOCK, readTab, appendRowByMap, updateRow, rowsToObjects, withFallback } from './client'
 import { sessionCache } from './cache'
 
 const TAB = 'Companies'
@@ -38,6 +38,26 @@ export async function createCompany(company: Company): Promise<void> {
     return
   }
   await appendRowByMap(TAB, companyToMap(company), COMPANY_COLUMNS)
+}
+
+export async function updateCompany(companyId: string, updates: Partial<Company>): Promise<boolean> {
+  if (USE_MOCK) {
+    const idx = sessionCache.companies.findIndex((c) => c.company_id === companyId)
+    if (idx >= 0) sessionCache.companies[idx] = { ...sessionCache.companies[idx], ...updates, updated_at: new Date().toISOString() }
+    return idx >= 0
+  }
+  const rows = await readTab(TAB, { fresh: true })
+  if (rows.length < 2) return false
+  const headers = rows[0]
+  const rowIndex = rows.findIndex((r) => r[0] === companyId)
+  if (rowIndex < 1) return false
+  const updated = [...rows[rowIndex]]
+  Object.entries(updates).forEach(([key, val]) => {
+    const colIndex = headers.indexOf(key)
+    if (colIndex >= 0) updated[colIndex] = String(val ?? '')
+  })
+  await updateRow(TAB, rowIndex + 1, updated)
+  return true
 }
 
 // Case-insensitive name match. Returns the existing Company if one already

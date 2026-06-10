@@ -7,6 +7,7 @@ import StatusUpdater from '@/components/discoveries/StatusUpdater'
 import GenerateOutreach from '@/components/discoveries/GenerateOutreach'
 import { IconArrowLeft, IconExternalLink, IconCheck } from '@/components/ui/icons'
 import { isGoogleNewsUrl, resolveGoogleNewsUrl } from '@/lib/discoveries/googleNewsResolver'
+import { extractDiscoveryEntities, matchEntitiesToRoster, type RosterMatch } from '@/lib/discoveries/roster-match'
 import type { Discovery, DiscoverySector } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -94,6 +95,16 @@ export default async function DiscoveryDetailPage({ params }: { params: Promise<
     } catch (err) {
       console.warn(`[discovery/${d.id}] Google News resolve failed: ${err instanceof Error ? err.message : err}`)
     }
+  }
+
+  // Roster matches: do any of the named entities already exist as Companies
+  // with contacts? Surfaced so the strongest attachment is obvious before
+  // promoting. Failure here must not break the page.
+  let rosterMatches: RosterMatch[] = []
+  try {
+    rosterMatches = await matchEntitiesToRoster(extractDiscoveryEntities(d))
+  } catch (err) {
+    console.warn(`[discovery/${d.id}] roster match failed: ${err instanceof Error ? err.message : err}`)
   }
 
   const location = [d.city, d.country].filter(Boolean).join(', ')
@@ -228,6 +239,33 @@ export default async function DiscoveryDetailPage({ params }: { params: Promise<
 
         {/* Right — metadata */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {/* Roster matches — suggested attachments */}
+          {rosterMatches.length > 0 && (
+            <Panel title="In your roster">
+              {rosterMatches.map((m) => (
+                <div key={m.company_id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div style={{ fontSize: 12, color: 'var(--text)' }}>
+                    Mentions <strong>{m.entity}</strong> — {m.contact_count > 0
+                      ? `${m.contact_count} contact${m.contact_count === 1 ? '' : 's'} at ${m.company_name}`
+                      : `${m.company_name} is in your Companies (no contacts yet)`}
+                  </div>
+                  {m.leads.slice(0, 4).map((l) => (
+                    <Link
+                      key={l.lead_id}
+                      href={`/leads/${l.lead_id}`}
+                      style={{ fontSize: 12, color: 'var(--accent)', textDecoration: 'none' }}
+                    >
+                      → {l.full_name}{l.title ? ` · ${l.title}` : ''}
+                    </Link>
+                  ))}
+                </div>
+              ))}
+              <p style={{ fontSize: 11, color: 'var(--text-faint)', margin: 0, lineHeight: 1.5 }}>
+                Verify who is actually buying/building before attaching — promote to the entity of record.
+              </p>
+            </Panel>
+          )}
+
           {/* Score breakdown */}
           <Panel title="Score breakdown">
             <ScoreBar label="Opportunity Clarity" value={d.score_opportunity_clarity} weight={35} />

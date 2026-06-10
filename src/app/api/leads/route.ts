@@ -12,6 +12,7 @@ import type {
   LinkedInDMStatus,
   LinkedInWarmth,
 } from '@/lib/types'
+import { cleanName } from '@/lib/vocab'
 
 const PIPELINE_STAGES = ['New Lead', 'Contacted', 'Replied', 'Discovery', 'Proposal Sent', 'Negotiation', 'Won', 'Lost', 'Nurture', 'Dormant'] as const satisfies readonly PipelineStage[]
 const LEAD_STATUSES = ['Active', 'Inactive', 'Archived'] as const satisfies readonly LeadStatus[]
@@ -61,8 +62,17 @@ const CreateLeadBody = z
     { message: 'full_name (or first_name + last_name) is required' },
   )
 
-export async function GET() {
+// GET /api/leads?stage=&temperature=&company=&q=&limit=&offset=
+export async function GET(req: Request) {
   try {
+    const { searchParams } = new URL(req.url)
+    const stage = searchParams.get('stage')
+    const temperature = searchParams.get('temperature')
+    const companyFilter = searchParams.get('company')?.toLowerCase().trim()
+    const q = searchParams.get('q')?.toLowerCase().trim()
+    const limit = Math.max(0, Number(searchParams.get('limit')) || 0)
+    const offset = Math.max(0, Number(searchParams.get('offset')) || 0)
+
     const [leads, companies, opportunities, insights, interactions] = await Promise.all([
       getLeads(),
       getCompanies(),
@@ -91,7 +101,20 @@ export async function GET() {
       }
     })
 
-    const enriched: LeadWithCompany[] = leads.map((lead) => ({
+    const filtered = leads.filter((lead) => {
+      if (stage && lead.pipeline_stage !== stage) return false
+      if (temperature && lead.relationship_temperature !== temperature) return false
+      if (companyFilter && !(lead.company_name ?? '').toLowerCase().includes(companyFilter)) return false
+      if (q) {
+        const haystack = `${lead.full_name} ${lead.first_name} ${lead.last_name} ${lead.email ?? ''} ${lead.company_name ?? ''} ${lead.title ?? ''}`.toLowerCase()
+        if (!haystack.includes(q)) return false
+      }
+      return true
+    })
+    const total = filtered.length
+    const page = limit > 0 ? filtered.slice(offset, offset + limit) : filtered.slice(offset)
+
+    const enriched: LeadWithCompany[] = page.map((lead) => ({
       ...lead,
       company: companyMap.get(lead.company_id),
       latest_opportunity: oppMap.get(lead.lead_id),
@@ -102,7 +125,7 @@ export async function GET() {
         .slice(0, 3),
     }))
 
-    return NextResponse.json({ leads: enriched })
+    return NextResponse.json({ leads: enriched, total, limit: limit || null, offset })
   } catch (err) {
     console.error('GET /api/leads error:', err)
     return NextResponse.json({ error: 'Failed to fetch leads' }, { status: 500 })
@@ -123,7 +146,30 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Invalid body' }, { status: 400 })
     }
     const body = parsed.data
-    const { first_name, last_name, company_name } = body
+    const first_name = cleanName(body.first_name)
+    const last_name = cleanName(body.last_name)
+    const company_name = cleanName(body.company_name)
+    const full_name = cleanName(body.full_name) || cleanName(`${first_name} ${last_name}`)
+
+    // Duplicate guard beyond exact email: normalized name + company too.
+    // Pass force: true to create anyway.
+    const force = (json as Record<string, unknown>)?.['force'] === true
+    if (!force) {
+      const existing = await getLeads()
+      const emailNorm = (body.email ?? '').toLowerCase().trim()
+      const dup = existing.find((l) =>
+        (emailNorm && (l.email ?? '').toLowerCase().trim() === emailNorm) ||
+        (full_name && company_name &&
+          cleanName(l.full_name).toLowerCase() === full_name.toLowerCase() &&
+          cleanName(l.company_name).toLowerCase() === company_name.toLowerCase()),
+      )
+      if (dup) {
+        return NextResponse.json(
+          { error: `Duplicate of existing lead ${dup.lead_id} (${dup.full_name} at ${dup.company_name}). Pass force: true to create anyway.`, duplicate_of: dup.lead_id },
+          { status: 409 },
+        )
+      }
+    }
 
     const now = new Date().toISOString()
     const lead_id = `lead_${randomUUID()}`
@@ -133,9 +179,9 @@ export async function POST(req: Request) {
       lead_id,
       company_id,
       campaign_id: body.campaign_id || undefined,
-      first_name: first_name ?? '',
-      last_name: last_name ?? '',
-      full_name: body.full_name?.trim() || `${first_name} ${last_name}`,
+      first_name,
+      last_name,
+      full_name,
       email: body.email || undefined,
       linkedin_url: body.linkedin_url || undefined,
       linkedin_connection_status: body.linkedin_connection_status || (body.linkedin_url ? 'Not Connected' : undefined),

@@ -7,6 +7,7 @@ import {
   getCampaigns,
 } from '@/lib/sheets'
 import { getEmailDraftForLead, getLinkedInDraftForLead, getLetterDraftForLead } from '@/lib/drafts'
+import { getSupabaseAdmin, isSupabaseAdminConfigured } from '@/lib/supabase'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -53,6 +54,31 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
       getLetterDraftForLead(id),
       getCampaigns(),
     ])
+
+  // Drafts written by external agents via POST /api/leads/{id}/drafts.
+  // Must never break the page when Supabase is down or the table is missing.
+  interface LeadDraft {
+    id: string
+    channel: string
+    subject?: string | null
+    body: string
+    status: string
+    created_by?: string | null
+    created_at: string
+  }
+  let agentDrafts: LeadDraft[] = []
+  if (isSupabaseAdminConfigured()) {
+    try {
+      const { data } = await getSupabaseAdmin()
+        .from('lead_drafts')
+        .select('id, channel, subject, body, status, created_by, created_at')
+        .eq('lead_id', id)
+        .order('created_at', { ascending: false })
+      agentDrafts = data ?? []
+    } catch (err) {
+      console.warn(`[lead/${id}] lead_drafts fetch failed:`, err)
+    }
+  }
 
   const latestInsight = [...insights].sort(
     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
@@ -170,6 +196,44 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
             emailSentAt={lastOutboundAt('Email')}
             linkedinSentAt={lastOutboundAt('LinkedIn')}
           />
+
+          {/* Drafts stored on the lead (external agents via the drafts API) */}
+          {agentDrafts.length > 0 && (
+            <div className="card">
+              <div className="card-head">
+                <div className="card-head-title">
+                  <span className="card-head-name">Stored drafts</span>
+                  <span className="card-head-count">{String(agentDrafts.length).padStart(2, '0')}</span>
+                </div>
+              </div>
+              <div className="stack">
+                {agentDrafts.map((d) => (
+                  <div key={d.id} className="stack-row" style={{ alignItems: 'flex-start', padding: '14px 20px' }}>
+                    <div className="col" style={{ width: 120, flexShrink: 0, gap: 4 }}>
+                      <Pill>{d.channel.replace('_', ' ')}</Pill>
+                      <StatusBadge tone={d.status === 'sent' ? 'ok' : d.status === 'approved' ? 'info' : 'warn'}>
+                        {d.status}
+                      </StatusBadge>
+                      <span className="mono" style={{ fontSize: 11, color: 'var(--ink-3)' }}>
+                        {shortDate(d.created_at)}
+                      </span>
+                    </div>
+                    <div className="col" style={{ gap: 4, flex: 1, minWidth: 0 }}>
+                      {d.subject && (
+                        <span className="ink" style={{ fontSize: 13, fontWeight: 500 }}>{d.subject}</span>
+                      )}
+                      <span className="ink-2" style={{ fontSize: 12, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                        {d.body}
+                      </span>
+                      {d.created_by && (
+                        <span className="micro" style={{ color: 'var(--ink-3)' }}>by {d.created_by}</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Opportunities */}
           <div className="card">

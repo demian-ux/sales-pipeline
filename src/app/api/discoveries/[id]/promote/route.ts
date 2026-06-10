@@ -30,6 +30,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const { id } = await params
   const body = await request.json().catch(() => ({}))
   const leadId: string | undefined = body.lead_id
+  // Who is actually buying/building/commissioning — verified against a source
+  // before attaching, so a discovery doesn't get pinned to the wrong firm.
+  const verifiedEntity: string | undefined = body.verified_entity?.trim() || undefined
+  const verifiedSourceUrl: string | undefined = body.verified_source_url?.trim() || undefined
+  const force: boolean = body.force === true
 
   if (!leadId) {
     return Response.json({ error: 'lead_id required' }, { status: 400 })
@@ -63,6 +68,24 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return Response.json({ error: 'Lead not found' }, { status: 404 })
   }
 
+  // 2b. Verification guard: if a verified entity is supplied and clearly
+  // doesn't match the lead's company, refuse unless forced — this is exactly
+  // the wrong-attachment failure mode (e.g. a Fort Partners lead attached to
+  // an Oak Row Equities deal).
+  if (verifiedEntity && !force) {
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim()
+    const entity = norm(verifiedEntity)
+    const company = norm(lead.company_name ?? '')
+    const related = company && (entity.includes(company) || company.includes(entity))
+    if (!related) {
+      return Response.json({
+        error: `verified_entity "${verifiedEntity}" does not match the lead's company "${lead.company_name}". Check GET /api/discoveries/${id}/matches for better-placed contacts, or pass force: true to attach anyway.`,
+        verified_entity: verifiedEntity,
+        lead_company: lead.company_name,
+      }, { status: 409 })
+    }
+  }
+
   // 3. Build the Opportunity row
   const nowIso = new Date().toISOString()
   const opportunityId = `opp_${randomUUID()}`
@@ -74,7 +97,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     opportunity_type: pickOpportunityType(discovery.opportunity_type),
     source: discovery.source,
     summary: discovery.brief_summary ?? discovery.title,
-    why_now: discovery.why_it_matters ?? '',
+    why_now: [
+      discovery.why_it_matters ?? '',
+      verifiedEntity ? `Entity of record: ${verifiedEntity}${verifiedSourceUrl ? ` (${verifiedSourceUrl})` : ''}` : '',
+    ].filter(Boolean).join(' — '),
     recommended_action: discovery.suggested_action ?? '',
     urgency: urgencyFromScore(discovery.urgency_score),
     confidence: Number(discovery.confidence_score ?? 0),
@@ -109,5 +135,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
   }
 
-  return Response.json({ opportunity })
+  return Response.json({
+    opportunity,
+    ...(verifiedEntity ? {} : {
+      verification_hint: 'No verified_entity supplied. Identify the entity of record (who is actually buying/building/commissioning) with a source URL before relying on this attachment — see GET /api/discoveries/{id}/matches.',
+    }),
+  })
 }

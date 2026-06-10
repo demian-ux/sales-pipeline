@@ -55,6 +55,7 @@ interface Props {
   leads: Lead[]
   companies: Company[]
   campaigns: Campaign[]
+  openOppCounts?: Record<string, number>
 }
 
 interface Group {
@@ -64,10 +65,10 @@ interface Group {
   leads: Lead[]
 }
 
-export default function RelationshipsClient({ leads, companies, campaigns }: Props) {
+export default function RelationshipsClient({ leads, companies, campaigns, openOppCounts = {} }: Props) {
   const router = useRouter()
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [busyKind, setBusyKind] = useState<null | 'assign' | 'delete'>(null)
+  const [busyKind, setBusyKind] = useState<null | 'assign' | 'delete' | 'stage' | 'temperature'>(null)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [groupBy, setGroupBy] = useState<GroupBy>('category')
@@ -146,6 +147,28 @@ export default function RelationshipsClient({ leads, companies, campaigns }: Pro
       router.refresh()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Assign failed')
+    } finally {
+      setBusyKind(null)
+    }
+  }
+
+  async function bulkSetField(kind: 'stage' | 'temperature', value: string) {
+    if (selected.size === 0) return
+    setBusyKind(kind)
+    setError(null)
+    try {
+      const fields = kind === 'stage' ? { pipeline_stage: value } : { relationship_temperature: value }
+      const res = await fetch('/api/leads/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selected), action: 'update', fields }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error ?? `Request failed (${res.status})`)
+      clearSelection()
+      router.refresh()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Update failed')
     } finally {
       setBusyKind(null)
     }
@@ -271,6 +294,18 @@ export default function RelationshipsClient({ leads, companies, campaigns }: Pro
             <button className="btn btn-xs btn-ghost" onClick={clearSelection}>Clear</button>
           </div>
           <div className="row" style={{ gap: 6 }}>
+            <BulkPicker
+              label={busyKind === 'stage' ? 'Updating…' : 'Set stage'}
+              options={[...STAGE_ORDER]}
+              disabled={busyKind !== null}
+              onPick={(v) => bulkSetField('stage', v)}
+            />
+            <BulkPicker
+              label={busyKind === 'temperature' ? 'Updating…' : 'Set temperature'}
+              options={['Hot', 'Warm', 'Cool', 'Cold']}
+              disabled={busyKind !== null}
+              onPick={(v) => bulkSetField('temperature', v)}
+            />
             <CampaignAssigner
               campaigns={campaigns}
               disabled={busyKind !== null}
@@ -321,6 +356,7 @@ export default function RelationshipsClient({ leads, companies, campaigns }: Pro
                   <LeadRow
                     key={lead.lead_id}
                     lead={lead}
+                    openOpps={openOppCounts[lead.lead_id] ?? 0}
                     selected={selected.has(lead.lead_id)}
                     onToggle={() => toggleOne(lead.lead_id)}
                     onOpen={() => router.push(`/leads/${lead.lead_id}`)}
@@ -338,12 +374,14 @@ export default function RelationshipsClient({ leads, companies, campaigns }: Pro
 
 function LeadRow({
   lead,
+  openOpps,
   selected,
   onToggle,
   onOpen,
   last,
 }: {
   lead: Lead
+  openOpps: number
   selected: boolean
   onToggle: () => void
   onOpen: () => void
@@ -382,6 +420,22 @@ function LeadRow({
       </div>
 
       <div className="rs-meta">
+        {openOpps > 0 && (
+          <span
+            title={`${openOpps} open opportunit${openOpps === 1 ? 'y' : 'ies'}`}
+            style={{
+              fontSize: 10.5,
+              fontWeight: 600,
+              color: 'var(--accent)',
+              border: '1px solid var(--accent-line)',
+              borderRadius: 999,
+              padding: '1px 8px',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {openOpps} opp{openOpps === 1 ? '' : 's'}
+          </span>
+        )}
         <span className="rs-stage">
           <span className="num">{stageNum}</span>{lead.pipeline_stage}
         </span>
@@ -398,6 +452,40 @@ function LeadRow({
         </span>
       ) : (
         <span className="rs-score empty">&mdash;</span>
+      )}
+    </div>
+  )
+}
+
+function BulkPicker({
+  label,
+  options,
+  disabled,
+  onPick,
+}: {
+  label: string
+  options: string[]
+  disabled: boolean
+  onPick: (value: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div style={{ position: 'relative' }}>
+      <button className="btn btn-sm" onClick={() => setOpen((o) => !o)} disabled={disabled}>
+        {label}
+        <Icon name="chevdown" size={11} />
+      </button>
+      {open && !disabled && (
+        <>
+          <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 20 }} />
+          <div className="menu" style={{ minWidth: 180, maxHeight: 300, overflowY: 'auto' }}>
+            {options.map((o) => (
+              <button key={o} className="menu-item" onClick={() => { setOpen(false); onPick(o) }}>
+                <span>{o}</span>
+              </button>
+            ))}
+          </div>
+        </>
       )}
     </div>
   )

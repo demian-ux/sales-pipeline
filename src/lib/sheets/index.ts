@@ -7,10 +7,11 @@ export {
   updateLead,
   deleteLead,
   bulkDeleteLeads,
+  bulkUpdateLeads,
   bulkAssignCampaign,
   clearLeadCampaign,
 } from './leads'
-export { getCompanies, getCompanyById, createCompany, findOrCreateCompanyByName } from './companies'
+export { getCompanies, getCompanyById, createCompany, updateCompany, findOrCreateCompanyByName } from './companies'
 export {
   getOpportunities,
   getOpportunitiesForLead,

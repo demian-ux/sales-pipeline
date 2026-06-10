@@ -11,8 +11,23 @@ import {
 } from '@/lib/sheets'
 import type { ApolloImportRow, ApolloImportResult, Lead, Company, Opportunity } from '@/lib/types'
 
+import { cleanName, PIPELINE_STAGES, TEMPERATURES } from '@/lib/vocab'
+import type { PipelineStage, RelationshipTemperature } from '@/lib/types'
+
 function normalize(s?: string): string {
   return (s ?? '').toLowerCase().trim()
+}
+
+// Reject rows that are clearly CSV-parse garbage (a multiline field split one
+// contact into several rows): empty names, or names containing URLs/newlines.
+function validateRowShape(row: ApolloImportRow): string | null {
+  const name = `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim()
+  if (!name) return 'Name is empty'
+  if (/https?:\/\/|www\./i.test(name)) return 'Name contains a URL — likely a split multiline field'
+  if (/[\r\n]/.test(name)) return 'Name contains a newline'
+  if (!row.company_name?.trim()) return 'Company name is empty'
+  if (/[\r\n]/.test(row.company_name)) return 'Company name contains a newline'
+  return null
 }
 
 function detectDuplicate(
@@ -84,7 +99,18 @@ export async function POST(req: NextRequest) {
     const autoAttached: { lead_id: string; opportunity_id: string }[] = []
     const results: ApolloImportRow[] = []
 
-    for (const row of rows) {
+    for (const raw of rows) {
+      const row: ApolloImportRow = {
+        ...raw,
+        first_name: cleanName(raw.first_name),
+        last_name: cleanName(raw.last_name),
+        company_name: cleanName(raw.company_name),
+      }
+      const rejectReason = validateRowShape(row)
+      if (rejectReason) {
+        results.push({ ...row, action: 'rejected', reject_reason: rejectReason })
+        continue
+      }
       const dup = detectDuplicate(row, existingLeads)
       results.push({
         ...row,
@@ -110,6 +136,10 @@ export async function POST(req: NextRequest) {
     const now = new Date().toISOString()
 
     for (const row of results) {
+      if (row.action === 'rejected') {
+        summary.errors.push(`Rejected row: ${row.reject_reason}`)
+        continue
+      }
       if (row.action === 'duplicate') {
         summary.skipped_duplicates++
         continue
@@ -155,8 +185,15 @@ export async function POST(req: NextRequest) {
           company_name: row.company_name,
           website: row.website,
           location: row.location,
-          source: 'Apollo CSV',
-          pipeline_stage: 'New Lead',
+          source: row.source?.trim() || 'Apollo CSV',
+          pipeline_stage: (PIPELINE_STAGES as readonly string[]).includes(row.pipeline_stage ?? '')
+            ? (row.pipeline_stage as PipelineStage)
+            : 'New Lead',
+          relationship_temperature: (TEMPERATURES as readonly string[]).includes(row.relationship_temperature ?? '')
+            ? (row.relationship_temperature as RelationshipTemperature)
+            : undefined,
+          last_touch_date: row.last_touch_date?.trim() || undefined,
+          notes: row.notes?.trim() || undefined,
           lead_status: 'Active',
           created_at: now,
           updated_at: now,

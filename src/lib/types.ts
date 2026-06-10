@@ -310,10 +310,17 @@ export interface ApolloImportRow {
   industry?: string
   company_size?: string
   phone?: string
+  // Optional warmth-context columns (generic CSV / Kanbox imports)
+  source?: string
+  pipeline_stage?: string
+  relationship_temperature?: string
+  last_touch_date?: string
+  notes?: string
   // Populated by server during preview/import
-  action?: 'create' | 'duplicate' | 'update'
+  action?: 'create' | 'duplicate' | 'update' | 'rejected'
   duplicate_of?: string
   duplicate_reason?: string
+  reject_reason?: string
 }
 
 // Workflow memory

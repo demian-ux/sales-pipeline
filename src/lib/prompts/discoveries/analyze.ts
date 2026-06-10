@@ -116,7 +116,7 @@ Return this exact JSON structure (replace descriptions with actual values):
   "investment_size": "formatted amount or null",
   "timeline": "timeline description or null",
   "main_actors": ["array", "of", "actor", "names"],
-  "developer": "developer name or null",
+  "developer": "developer name or null — the ENTITY OF RECORD actually buying/building/commissioning, as stated in the article. Do NOT guess from adjacent mentions: if the article names only a seller, broker, lender, or neighboring firm but not the actual buyer/developer, use null.",
   "architect": "architect/designer name or null",
   "government_body": "government body name or null",
   "opportunity_type": ["service", "tender", "trend"],

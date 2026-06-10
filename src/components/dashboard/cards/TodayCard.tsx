@@ -65,7 +65,18 @@ export default function TodayCard({ leads, threads, initialSnoozedSignals }: Pro
 
   const [formTitle, setFormTitle] = useState('')
   const [formDue, setFormDue] = useState('')
+  const [formLeadQuery, setFormLeadQuery] = useState('')
   const [creating, setCreating] = useState(false)
+
+  // Match the typed text against the roster so "Log outreach en tracker" can
+  // point at the actual lead (link_type/link_id on the task).
+  const formLead = useMemo(() => {
+    const q = formLeadQuery.trim().toLowerCase()
+    if (!q) return null
+    return leads.find((l) => l.full_name.toLowerCase() === q)
+      ?? leads.find((l) => l.full_name.toLowerCase().includes(q))
+      ?? null
+  }, [leads, formLeadQuery])
 
   const reloadTasks = useCallback(async () => {
     setLoadingTasks(true)
@@ -253,12 +264,17 @@ export default function TodayCard({ leads, threads, initialSnoozedSignals }: Pro
       const res = await fetch('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: formTitle.trim(), due_date: formDue || undefined }),
+        body: JSON.stringify({
+          title: formTitle.trim(),
+          due_date: formDue || undefined,
+          ...(formLead ? { link_type: 'lead', link_id: formLead.lead_id } : {}),
+        }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Create failed')
       setFormTitle('')
       setFormDue('')
+      setFormLeadQuery('')
       setShowForm(false)
       reloadTasks()
     } catch (e) {
@@ -318,6 +334,22 @@ export default function TodayCard({ leads, threads, initialSnoozedSignals }: Pro
             value={formDue}
             onChange={(e) => setFormDue(e.target.value)}
           />
+          <input
+            className="input"
+            list="today-lead-options"
+            style={{ width: 180 }}
+            placeholder="Link to lead (optional)"
+            value={formLeadQuery}
+            onChange={(e) => setFormLeadQuery(e.target.value)}
+          />
+          <datalist id="today-lead-options">
+            {leads.map((l) => (
+              <option key={l.lead_id} value={l.full_name}>{l.company_name}</option>
+            ))}
+          </datalist>
+          {formLead && (
+            <span className="micro" style={{ color: 'var(--ok)' }}>→ {formLead.full_name}</span>
+          )}
           <button className="btn btn-primary btn-sm" type="submit" disabled={creating || !formTitle.trim()}>
             {creating ? 'Saving…' : 'Save'}
           </button>
@@ -466,6 +498,16 @@ function ManualRow({
         <span className="micro" style={{ color: 'var(--ink-3)' }}>{due ? `Due ${due}` : 'No date'}</span>
       </div>
       <div className="row" style={{ gap: 6, flexShrink: 0 }}>
+        {item.task.link_type === 'lead' && item.task.link_id && (
+          <Link className="btn btn-xs" href={`/leads/${item.task.link_id}`}>
+            Open <Icon name="arrow" size={10} />
+          </Link>
+        )}
+        {item.task.link_type === 'opportunity' && item.task.link_id && (
+          <Link className="btn btn-xs" href="/opportunities">
+            Open <Icon name="arrow" size={10} />
+          </Link>
+        )}
         <button className="btn btn-xs btn-ghost" onClick={onDone} disabled={busy}>
           <Icon name="check" size={11} /> Done
         </button>

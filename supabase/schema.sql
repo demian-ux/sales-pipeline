@@ -406,3 +406,26 @@ create table if not exists letter_drafts (
 );
 
 create index if not exists idx_letter_drafts_lead on letter_drafts(lead_id);
+
+-- ============================================================================
+-- LEAD_DRAFTS — N drafts per lead with a status lifecycle, written by
+-- external agents via POST /api/leads/{id}/drafts (2026-06-10).
+-- status: draft → approved → sent. Marking `sent` auto-logs an Interaction.
+-- ============================================================================
+create table if not exists lead_drafts (
+  id          uuid primary key default uuid_generate_v4(),
+  lead_id     text not null,
+  company_id  text,
+  channel     text not null check (channel in ('letter', 'email', 'linkedin_dm')),
+  subject     text,
+  body        text not null,
+  status      text not null default 'draft' check (status in ('draft', 'approved', 'sent')),
+  created_by  text,
+  sent_at     timestamptz,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+
+create index if not exists idx_lead_drafts_lead on lead_drafts(lead_id);
+
+alter table lead_drafts enable row level security;

@@ -30,6 +30,22 @@ const COLUMN_MAP: Record<string, keyof ApolloImportRow> = {
   'phone': 'phone',
   'phone number': 'phone',
   'mobile phone': 'phone',
+  // Generic warmth-context columns
+  'source': 'source',
+  'pipeline stage': 'pipeline_stage',
+  'stage': 'pipeline_stage',
+  'temperature': 'relationship_temperature',
+  'relationship temperature': 'relationship_temperature',
+  'last touch': 'last_touch_date',
+  'last touch date': 'last_touch_date',
+  'notes': 'notes',
+  // Kanbox / LinkedIn export preset
+  'headline': 'notes',
+  'job': 'title',
+  'linkedin_profile_url': 'linkedin_url',
+  'linkedin profile url': 'linkedin_url',
+  'last_message_at': 'last_touch_date',
+  'last message at': 'last_touch_date',
 }
 
 const DISPLAY_FIELDS: { key: keyof ApolloImportRow; label: string }[] = [
@@ -44,37 +60,55 @@ const DISPLAY_FIELDS: { key: keyof ApolloImportRow; label: string }[] = [
   { key: 'location', label: 'Location' },
   { key: 'industry', label: 'Industry' },
   { key: 'company_size', label: 'Size' },
+  { key: 'source', label: 'Source' },
+  { key: 'pipeline_stage', label: 'Pipeline stage' },
+  { key: 'relationship_temperature', label: 'Temperature' },
+  { key: 'last_touch_date', label: 'Last touch date' },
+  { key: 'notes', label: 'Notes' },
 ]
 
 // ── CSV parser ─────────────────────────────────────────────────────────────
 
+// Full-text state machine (RFC 4180): quoted fields may contain commas AND
+// newlines. The old line-splitting parser broke contacts with multiline
+// LinkedIn headlines into garbage rows.
 function parseCSV(text: string): { headers: string[]; rows: string[][] } {
-  const lines = text.split(/\r?\n/).filter((l) => l.trim())
-  if (lines.length < 2) return { headers: [], rows: [] }
+  const records: string[][] = []
+  let fields: string[] = []
+  let current = ''
+  let inQuotes = false
 
-  function parseLine(line: string): string[] {
-    const fields: string[] = []
-    let current = ''
-    let inQuotes = false
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i]
+  const pushField = () => { fields.push(current.trim()); current = '' }
+  const pushRecord = () => {
+    pushField()
+    if (fields.some((f) => f !== '')) records.push(fields)
+    fields = []
+  }
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (inQuotes) {
       if (ch === '"') {
-        if (inQuotes && line[i + 1] === '"') { current += '"'; i++ }
-        else inQuotes = !inQuotes
-      } else if (ch === ',' && !inQuotes) {
-        fields.push(current.trim())
-        current = ''
+        if (text[i + 1] === '"') { current += '"'; i++ }
+        else inQuotes = false
       } else {
         current += ch
       }
+    } else if (ch === '"') {
+      inQuotes = true
+    } else if (ch === ',') {
+      pushField()
+    } else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && text[i + 1] === '\n') i++
+      pushRecord()
+    } else {
+      current += ch
     }
-    fields.push(current.trim())
-    return fields
   }
+  if (current !== '' || fields.length > 0) pushRecord()
 
-  const headers = parseLine(lines[0])
-  const rows = lines.slice(1).map(parseLine)
-  return { headers, rows }
+  if (records.length < 2) return { headers: [], rows: [] }
+  return { headers: records[0], rows: records.slice(1) }
 }
 
 function mapRows(headers: string[], rows: string[][], fieldMap: Record<string, keyof ApolloImportRow>): ApolloImportRow[] {
@@ -114,6 +148,9 @@ export default function ApolloImportClient({ campaigns }: Props) {
   const [previewing, setPreviewing] = useState(false)
   const [result, setResult] = useState<{ created_leads: number; created_companies: number; skipped_duplicates: number; errors: string[] } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [progress, setProgress] = useState<{ written: number; total: number } | null>(null)
+  // Resume point after a mid-import failure: index into the chunk list.
+  const [resumeFrom, setResumeFrom] = useState<number>(0)
   const fileRef = useRef<HTMLInputElement>(null)
 
   // ── Step 1: Upload ─────────────────────────────────────────────────────
@@ -166,7 +203,7 @@ export default function ApolloImportClient({ campaigns }: Props) {
       const toSelect = new Set(
         annotated
           .map((_, i) => i)
-          .filter((i) => annotated[i].action !== 'duplicate')
+          .filter((i) => annotated[i].action === 'create')
       )
       setSelectedIds(toSelect)
       setStep('review')
@@ -189,37 +226,64 @@ export default function ApolloImportClient({ campaigns }: Props) {
   }
 
   const toggleAll = () => {
-    if (selectedIds.size === previewRows.filter((r) => r.action !== 'duplicate').length) {
+    if (selectedIds.size === previewRows.filter((r) => r.action === 'create').length) {
       setSelectedIds(new Set())
     } else {
-      setSelectedIds(new Set(previewRows.map((_, i) => i).filter((i) => previewRows[i].action !== 'duplicate')))
+      setSelectedIds(new Set(previewRows.map((_, i) => i).filter((i) => previewRows[i].action === 'create')))
     }
   }
 
-  const handleImport = async () => {
+  // Import in chunks so one slow Sheets write can't time out the whole batch;
+  // on failure we keep the chunk index so "Resume" continues where it stopped.
+  const CHUNK_SIZE = 20
+
+  const handleImport = async (startChunk = 0) => {
     const toImport = previewRows.filter((_, i) => selectedIds.has(i))
     if (toImport.length === 0) { setError('No rows selected.'); return }
     setStep('importing')
     setError(null)
-    try {
-      const res = await fetch('/api/import/apollo', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rows: toImport, campaign_id: campaignId || undefined, dry_run: false }),
-      })
-      const data = await res.json()
-      if (!res.ok) { setError(data.error ?? 'Import failed'); setStep('review'); return }
-      setResult(data.summary)
-      setStep('done')
-    } catch {
-      setError('Network error during import')
-      setStep('review')
+
+    const chunks: ApolloImportRow[][] = []
+    for (let i = 0; i < toImport.length; i += CHUNK_SIZE) chunks.push(toImport.slice(i, i + CHUNK_SIZE))
+
+    const totals = startChunk > 0 && result
+      ? { ...result, errors: [...result.errors] }
+      : { created_leads: 0, created_companies: 0, skipped_duplicates: 0, errors: [] as string[] }
+
+    for (let c = startChunk; c < chunks.length; c++) {
+      setProgress({ written: c * CHUNK_SIZE, total: toImport.length })
+      try {
+        const res = await fetch('/api/import/apollo', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rows: chunks[c], campaign_id: campaignId || undefined, dry_run: false }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error ?? 'Import failed')
+        totals.created_leads += data.summary.created_leads
+        totals.created_companies += data.summary.created_companies
+        totals.skipped_duplicates += data.summary.skipped_duplicates
+        totals.errors.push(...data.summary.errors)
+        setResult({ ...totals })
+      } catch (err) {
+        setResult({ ...totals })
+        setResumeFrom(c)
+        setProgress({ written: c * CHUNK_SIZE, total: toImport.length })
+        setError(`${Math.min(c * CHUNK_SIZE, toImport.length)} of ${toImport.length} rows written — ${err instanceof Error ? err.message : 'network error'}. Use Resume to continue.`)
+        setStep('review')
+        return
+      }
     }
+    setProgress(null)
+    setResumeFrom(0)
+    setResult({ ...totals })
+    setStep('done')
   }
 
   // ── Render ─────────────────────────────────────────────────────────────
 
   const dupCount = previewRows.filter((r) => r.action === 'duplicate').length
+  const rejectedCount = previewRows.filter((r) => r.action === 'rejected').length
   const newCount = previewRows.filter((r) => r.action === 'create').length
 
   return (
@@ -324,6 +388,7 @@ export default function ApolloImportClient({ campaigns }: Props) {
           <div style={{ display: 'flex', gap: 16, marginBottom: 20, alignItems: 'center', flexWrap: 'wrap' }}>
             <Stat label="New" value={newCount} color="var(--green)" />
             <Stat label="Duplicates" value={dupCount} color="var(--text-faint)" />
+            {rejectedCount > 0 && <Stat label="Rejected" value={rejectedCount} color="var(--red)" />}
             <Stat label="Selected" value={selectedIds.size} color="var(--accent)" />
           </div>
 
@@ -359,7 +424,7 @@ export default function ApolloImportClient({ campaigns }: Props) {
               </thead>
               <tbody>
                 {previewRows.map((row, i) => {
-                  const isDup = row.action === 'duplicate'
+                  const isDup = row.action !== 'create'
                   const isSelected = selectedIds.has(i)
                   return (
                     <tr
@@ -380,7 +445,9 @@ export default function ApolloImportClient({ campaigns }: Props) {
                         ) : '—'}
                       </td>
                       <td style={{ padding: '7px 10px' }}>
-                        {isDup ? (
+                        {row.action === 'rejected' ? (
+                          <span style={{ fontSize: 10, color: 'var(--red)', background: 'rgba(224,92,92,0.1)', padding: '2px 7px', borderRadius: 4 }} title={row.reject_reason}>Rejected</span>
+                        ) : isDup ? (
                           <span style={{ fontSize: 10, color: 'var(--text-faint)', background: 'var(--surface-2)', padding: '2px 7px', borderRadius: 4 }} title={row.duplicate_reason}>Duplicate</span>
                         ) : (
                           <span style={{ fontSize: 10, color: 'var(--green)', background: 'rgba(80,180,120,0.1)', padding: '2px 7px', borderRadius: 4 }}>New</span>
@@ -395,9 +462,15 @@ export default function ApolloImportClient({ campaigns }: Props) {
 
           <div style={{ display: 'flex', gap: 10 }}>
             <button onClick={() => setStep('mapping')} style={btnStyle('secondary')}>Back</button>
-            <button onClick={handleImport} disabled={selectedIds.size === 0} style={btnStyle('primary')}>
-              Import {selectedIds.size} lead{selectedIds.size !== 1 ? 's' : ''} →
-            </button>
+            {resumeFrom > 0 ? (
+              <button onClick={() => handleImport(resumeFrom)} style={btnStyle('primary')}>
+                Resume import ({progress ? `${progress.written} of ${progress.total} written` : 'continue'}) →
+              </button>
+            ) : (
+              <button onClick={() => handleImport(0)} disabled={selectedIds.size === 0} style={btnStyle('primary')}>
+                Import {selectedIds.size} lead{selectedIds.size !== 1 ? 's' : ''} →
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -405,7 +478,10 @@ export default function ApolloImportClient({ campaigns }: Props) {
       {/* ── Step: Importing ── */}
       {step === 'importing' && (
         <div style={{ textAlign: 'center', padding: '48px 0' }}>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Importing leads and companies…</div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+            Importing leads and companies…
+            {progress && ` ${Math.min(progress.written, progress.total)} of ${progress.total} written`}
+          </div>
         </div>
       )}
 
@@ -443,7 +519,7 @@ export default function ApolloImportClient({ campaigns }: Props) {
             <a href="/relationships" style={{ ...btnStyle('primary') as React.CSSProperties, textDecoration: 'none', display: 'inline-block' }}>
               View relationships →
             </a>
-            <button onClick={() => { setStep('upload'); setPreviewRows([]); setHeaders([]); setRawRows([]); setResult(null) }} style={btnStyle('secondary')}>
+            <button onClick={() => { setStep('upload'); setPreviewRows([]); setHeaders([]); setRawRows([]); setResult(null); setResumeFrom(0); setProgress(null) }} style={btnStyle('secondary')}>
               Import another file
             </button>
           </div>

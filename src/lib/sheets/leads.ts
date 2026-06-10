@@ -133,6 +133,47 @@ export async function bulkDeleteLeads(leadIds: string[]): Promise<{ deleted: num
   return { deleted: indices.length }
 }
 
+// Apply the same field updates to N leads in one batchUpdate — one tab read,
+// one HTTP write, instead of N updateLead() calls. Returns per-id results so
+// callers can report which leads were not found.
+export async function bulkUpdateLeads(
+  leadIds: string[],
+  updates: Partial<Lead>,
+): Promise<{ updated: string[]; not_found: string[] }> {
+  const nowIso = new Date().toISOString()
+  const fields: Partial<Lead> = { ...updates, updated_at: nowIso }
+
+  if (USE_MOCK) {
+    for (const id of leadIds) {
+      sessionCache.leadUpdates[id] = { ...(sessionCache.leadUpdates[id] ?? {}), ...fields }
+    }
+    return { updated: [...leadIds], not_found: [] }
+  }
+
+  const rows = await readTab(TAB, { fresh: true })
+  if (rows.length < 2) return { updated: [], not_found: [...leadIds] }
+  const headers = rows[0]
+
+  const cellUpdates: { tab: string; row: number; col: string; value: string }[] = []
+  const updated: string[] = []
+  const idSet = new Set(leadIds)
+  for (let i = 1; i < rows.length; i++) {
+    const id = rows[i][0]
+    if (!idSet.has(id)) continue
+    updated.push(id)
+    const sheetRow = i + 1
+    for (const [key, val] of Object.entries(fields)) {
+      const colIdx = headers.indexOf(key)
+      if (colIdx >= 0) {
+        cellUpdates.push({ tab: TAB, row: sheetRow, col: columnIndexToLetter(colIdx), value: String(val ?? '') })
+      }
+    }
+  }
+  if (cellUpdates.length > 0) await batchUpdateCells(cellUpdates)
+  const updatedSet = new Set(updated)
+  return { updated, not_found: leadIds.filter((id) => !updatedSet.has(id)) }
+}
+
 // Set the same campaign_id (or null/'' to unassign) on N leads in one
 // batchUpdate. Touches only the campaign_id + updated_at cells per row —
 // much faster than N updateLead() calls (which each re-read the whole tab).
