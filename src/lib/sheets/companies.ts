@@ -24,7 +24,6 @@ function companyToMap(company: Company): Record<string, string> {
 export async function getCompanies(): Promise<Company[]> {
   if (USE_MOCK) return [...mockCompanies, ...sessionCache.companies]
   const rows = await withFallback(() => readTab(TAB), [] as string[][])
-  if (rows.length === 0) return [...mockCompanies, ...sessionCache.companies]
   return rowsToObjects<Company>(rows)
 }
 
@@ -61,7 +60,7 @@ export async function findOrCreateCompanyByName(
 
   const nowIso = new Date().toISOString()
   const company: Company = {
-    company_id: `co_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    company_id: `co_${crypto.randomUUID()}`,
     company_name: name.trim(),
     created_at: nowIso,
     updated_at: nowIso,

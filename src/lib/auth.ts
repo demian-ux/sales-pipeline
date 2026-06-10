@@ -104,19 +104,31 @@ type IngestAuthRequest = {
 }
 
 export async function isIngestAuthorized(request: IngestAuthRequest): Promise<boolean> {
-  // 1. Vercel cron — Vercel's edge sets this header on scheduled invocations.
-  if (request.headers.get('x-vercel-cron') === '1') return true
+  const authHeader = request.headers.get('authorization')
+
+  // 1. Vercel cron — authenticated via CRON_SECRET. When the env var is set,
+  //    Vercel attaches `Authorization: Bearer ${CRON_SECRET}` to scheduled
+  //    invocations. The bare x-vercel-cron header is client-spoofable, so it
+  //    is only honored while CRON_SECRET is not yet configured (and we log
+  //    loudly so it gets configured).
+  if (env.CRON_SECRET && authHeader === `Bearer ${env.CRON_SECRET}`) return true
+  if (!env.CRON_SECRET && request.headers.get('x-vercel-cron') === '1') {
+    console.warn(
+      '[auth] Accepting unauthenticated x-vercel-cron header — set CRON_SECRET to close this spoofable path',
+    )
+    return true
+  }
 
   // 2. Bearer token from env.
-  const authHeader = request.headers.get('authorization')
   if (env.INGEST_SECRET && authHeader === `Bearer ${env.INGEST_SECRET}`) return true
 
   // 3. Valid session cookie — same HMAC the middleware uses.
   const cookie = request.cookies.get(SESSION_COOKIE_NAME)?.value
   if (cookie && (await verifySessionCookieValue(cookie))) return true
 
-  // 4. Open mode — when the app's basic auth isn't configured, ingest is too.
-  if (!isAuthConfigured()) return true
+  // 4. Open mode — local development only. In production, unconfigured auth
+  //    no longer opens the ingest endpoint (each run spends real API tokens).
+  if (!isAuthConfigured() && env.NODE_ENV !== 'production') return true
 
   return false
 }

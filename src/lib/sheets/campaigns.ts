@@ -39,17 +39,18 @@ function campaignToMap(c: Campaign): Record<string, string> {
 export async function getCampaigns(): Promise<Campaign[]> {
   if (USE_MOCK) return mockCampaigns
   const rows = await withFallback(() => readTab(TAB), [] as string[][])
-  if (rows.length === 0) return mockCampaigns
   return rowsToObjects<Record<string, string>>(rows).map(parseCampaign)
 }
 
-export async function updateCampaign(campaignId: string, updates: Partial<Campaign>): Promise<void> {
-  if (USE_MOCK) return // campaigns are static in mock mode
-  const rows = await readTab(TAB)
-  if (rows.length < 2) return
+// Returns false when the Campaign row (or the tab's data) can't be found, so
+// callers can surface a 404 instead of silently pretending the write landed.
+export async function updateCampaign(campaignId: string, updates: Partial<Campaign>): Promise<boolean> {
+  if (USE_MOCK) return true // campaigns are static in mock mode
+  const rows = await readTab(TAB, { fresh: true })
+  if (rows.length < 2) return false
   const headers = rows[0]
   const rowIndex = rows.findIndex((r) => r[0] === campaignId)
-  if (rowIndex < 1) return
+  if (rowIndex < 1) return false
   const updated = [...rows[rowIndex]]
   Object.entries(updates).forEach(([key, val]) => {
     const colIndex = headers.indexOf(key)
@@ -58,6 +59,7 @@ export async function updateCampaign(campaignId: string, updates: Partial<Campai
     }
   })
   await updateRow(TAB, rowIndex + 1, updated)
+  return true
 }
 
 export async function createCampaign(campaign: Campaign): Promise<void> {
@@ -67,7 +69,7 @@ export async function createCampaign(campaign: Campaign): Promise<void> {
 
 export async function deleteCampaign(campaignId: string): Promise<boolean> {
   if (USE_MOCK) return false  // campaigns are static in mock mode
-  const rows = await readTab(TAB)
+  const rows = await readTab(TAB, { fresh: true })
   const rowIndex = rows.findIndex((r) => r[0] === campaignId)
   if (rowIndex < 1) return false
   await deleteRowsAt(TAB, [rowIndex])

@@ -40,8 +40,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   try {
     letter = await generateLetter(
       discovery,
-      recipient_name ?? 'Dear Sir or Madam',
-      recipient_company ?? 'your organisation',
+      recipient_name || 'the lead contact',
+      recipient_company || 'the recipient firm',
       client_type,
     )
   } catch (err) {

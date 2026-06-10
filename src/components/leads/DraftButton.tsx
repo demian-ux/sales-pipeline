@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 
 interface Props {
   leadId: string
-  kind: 'email' | 'linkedin'
+  kind: 'email' | 'linkedin' | 'letter'
   hasInsight: boolean
   hasExistingDraft: boolean
 }
@@ -19,8 +19,9 @@ export default function DraftButton({ leadId, kind, hasInsight, hasExistingDraft
     setLoading(true)
     setError(null)
     try {
-      const endpoint = kind === 'email'
-        ? `/api/leads/${leadId}/draft-email`
+      const endpoint =
+        kind === 'email' ? `/api/leads/${leadId}/draft-email`
+        : kind === 'letter' ? `/api/leads/${leadId}/draft-letter`
         : `/api/leads/${leadId}/draft-linkedin`
       const res = await fetch(endpoint, { method: 'POST' })
       const data = await res.json().catch(() => ({}))
@@ -33,7 +34,7 @@ export default function DraftButton({ leadId, kind, hasInsight, hasExistingDraft
     }
   }
 
-  const label = kind === 'email' ? 'email' : 'LinkedIn DM'
+  const label = kind === 'email' ? 'email' : kind === 'letter' ? 'letter' : 'LinkedIn DM'
   const verb = hasExistingDraft ? 'Regenerate' : 'Draft'
 
   return (

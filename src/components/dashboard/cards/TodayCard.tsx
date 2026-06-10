@@ -106,7 +106,7 @@ export default function TodayCard({ leads, threads, initialSnoozedSignals }: Pro
         reason: waitingDays >= 1 ? `Waiting ${waitingDays}d for our reply` : 'Reply needed',
         effective_due,
         severity: waitingDays > 7 ? 'critical' : waitingDays >= 3 ? 'high' : 'medium',
-        open_href: '/conversations',
+        open_href: `/conversations?thread=${encodeURIComponent(t.thread_id)}`,
       })
     }
 

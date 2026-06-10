@@ -63,11 +63,11 @@ const STATUS_OPTIONS = [
   { value: 'archived', label: 'Archived' },
 ]
 
+// Aligned with the tier thresholds in lib/discoveries/scoring.ts (70/40).
 const SCORE_OPTIONS = [
   { value: 0,  label: 'All scores' },
-  { value: 60, label: '60+' },
-  { value: 75, label: '75+' },
-  { value: 85, label: '85+' },
+  { value: 40, label: '40+ (Watchlist)' },
+  { value: 70, label: '70+ (Strong)' },
 ]
 
 const DEFAULT_FILTERS: DiscoveryFilterState = {

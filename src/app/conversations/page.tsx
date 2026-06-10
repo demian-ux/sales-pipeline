@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { getLeads } from '@/lib/sheets'
-import { sessionCache } from '@/lib/sheets/cache'
+import { getAllThreads, getLatestAnalysesByThread } from '@/lib/gmail/store'
 import { isGmailConnected, isGmailConfigured } from '@/lib/gmail/client'
 import SyncButton from '@/components/conversations/SyncButton'
 import ConversationsClient, { type EnrichedThread } from '@/components/conversations/ConversationsClient'
@@ -9,15 +9,21 @@ import { Icon } from '@/components/ui/icons'
 
 export const dynamic = 'force-dynamic'
 
-export default async function ConversationsPage() {
+export default async function ConversationsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ thread?: string }>
+}) {
+  const { thread: threadParam } = await searchParams
   const configured = isGmailConfigured()
   const connected = configured && (await isGmailConnected())
 
-  const leads = await getLeads()
+  const [leads, allThreads, analyses] = await Promise.all([
+    getLeads(),
+    getAllThreads(),
+    getLatestAnalysesByThread(),
+  ])
   const leadMap = new Map(leads.map((l) => [l.lead_id, l]))
-
-  const allThreads = Object.values(sessionCache.threads).flat()
-  const analyses = sessionCache.analyses
 
   const enriched: EnrichedThread[] = allThreads.map((thread) => {
     const analysis = analyses[thread.thread_id] ?? null
@@ -85,7 +91,9 @@ export default async function ConversationsPage() {
         </div>
       )}
 
-      {connected && enriched.length > 0 && <ConversationsClient threads={enriched} />}
+      {connected && enriched.length > 0 && (
+        <ConversationsClient threads={enriched} initialThreadId={threadParam} />
+      )}
     </div>
   )
 }

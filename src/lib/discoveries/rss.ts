@@ -22,6 +22,9 @@ const parser = new Parser({
 
 const FETCH_TIMEOUT_MS = 10_000
 
+// Throws on HTTP errors, timeouts, and parse failures so the caller can
+// distinguish a dead feed from a genuinely empty one. (Previously this
+// swallowed every error and returned [] — failed feeds were invisible.)
 export async function fetchRSSFeed(
   url: string,
   sourceName: string,
@@ -39,8 +42,7 @@ export async function fetchRSSFeed(
     })
 
     if (!response.ok) {
-      console.error(`[rss] HTTP ${response.status} for ${sourceName} (${url})`)
-      return []
+      throw new Error(`HTTP ${response.status}`)
     }
 
     const text = await response.text()
@@ -62,11 +64,9 @@ export async function fetchRSSFeed(
     }))
   } catch (err) {
     if (err instanceof Error && err.name === 'AbortError') {
-      console.error(`[rss] Timeout (>${FETCH_TIMEOUT_MS}ms) for ${sourceName} (${url})`)
-    } else {
-      console.error(`[rss] Failed to fetch ${sourceName} (${url}):`, err instanceof Error ? err.message : err)
+      throw new Error(`timeout after ${FETCH_TIMEOUT_MS / 1000}s`)
     }
-    return []
+    throw err
   } finally {
     clearTimeout(timeoutId)
   }

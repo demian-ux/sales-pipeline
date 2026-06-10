@@ -19,6 +19,12 @@ export const CARD_REGISTRY: Record<DashboardCardId, CardMeta> = {
     description: 'Auto signals + manual tasks ranked by due date.',
     removable: false,    // Today is permanent
   },
+  send_queue: {
+    id: 'send_queue',
+    title: 'Send queue',
+    description: 'Tue/Thu cold sends staged with drafts + follow-ups due this week.',
+    removable: true,
+  },
   opportunities: {
     id: 'opportunities',
     title: 'Strategic opportunities',
@@ -53,6 +59,7 @@ export const CARD_REGISTRY: Record<DashboardCardId, CardMeta> = {
 
 export const ALL_CARD_IDS: DashboardCardId[] = [
   'today',
+  'send_queue',
   'opportunities',
   'attention',
   'conversations',

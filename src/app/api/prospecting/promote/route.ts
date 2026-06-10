@@ -4,9 +4,8 @@
 
 import { type NextRequest } from 'next/server'
 import { z } from 'zod'
-import { createCompany } from '@/lib/sheets'
+import { findOrCreateCompanyByName } from '@/lib/sheets'
 import { markCandidatePromoted } from '@/lib/prospecting/persistence'
-import type { Company } from '@/lib/types'
 
 const BodySchema = z.object({
   firm: z.object({
@@ -42,7 +41,6 @@ export async function POST(request: NextRequest) {
   const { firm, source_article_url, source_article_title } = parsed.data
 
   const nowIso = new Date().toISOString()
-  const companyId = `co_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
   // The Tavily score is a one-shot prospect-fit signal — preserve it in the
   // notes for reference rather than mapping onto Company.design_quality_score
   // (which describes their aesthetic, not their fit).
@@ -54,30 +52,28 @@ export async function POST(request: NextRequest) {
     articleLine,
   ].join('\n')
 
-  const company: Company = {
-    company_id: companyId,
-    company_name: firm.name,
-    website: firm.website ?? undefined,
-    location: firm.country,
-    project_type: firm.project_type,
-    known_projects: firm.reference_project,
-    ideal_client_fit: firm.score >= 65,
-    notes: provenance,
-    created_at: nowIso,
-    updated_at: nowIso,
-  }
-
   try {
-    await createCompany(company)
+    // Find-or-create by name — promoting a firm that already exists in Sheets
+    // must NOT create a duplicate Company row (the bulk promote-firms path
+    // already worked this way; this path used to blind-append).
+    const { company, wasNew } = await findOrCreateCompanyByName(firm.name, {
+      website: firm.website ?? undefined,
+      location: firm.country,
+      project_type: firm.project_type,
+      known_projects: firm.reference_project,
+      ideal_client_fit: firm.score >= 65,
+      notes: provenance,
+    })
+
     // Flip the persisted candidate row to 'promoted' (silent no-op when
     // Supabase isn't configured or the candidate was never persisted).
     await markCandidatePromoted(
       { name: firm.name, source_article_url },
-      { company_id: companyId },
+      { company_id: company.company_id },
     )
-    return Response.json({ company_id: companyId })
+    return Response.json({ company_id: company.company_id, was_new: wasNew })
   } catch (err) {
-    console.error('[prospecting/promote] createCompany error:', err)
+    console.error('[prospecting/promote] promote error:', err)
     return Response.json(
       { error: err instanceof Error ? err.message : 'Failed to create Company' },
       { status: 500 },

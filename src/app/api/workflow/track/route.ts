@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { sessionCache } from '@/lib/sheets/cache'
+import {
+  saveWorkflowAction,
+  getRecentWorkflowActions,
+  newWorkflowActionId,
+} from '@/lib/workflow/store'
 import type { WorkflowAction, WorkflowActionType } from '@/lib/types'
 
 // POST /api/workflow/track
@@ -11,7 +15,7 @@ export async function POST(req: NextRequest) {
     if (!type) return NextResponse.json({ error: 'type required' }, { status: 400 })
 
     const action: WorkflowAction = {
-      action_id: `wa_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      action_id: newWorkflowActionId(),
       type,
       lead_id: body.lead_id,
       insight_id: body.insight_id,
@@ -21,7 +25,7 @@ export async function POST(req: NextRequest) {
       recorded_at: new Date().toISOString(),
     }
 
-    sessionCache.workflowActions.unshift(action)
+    await saveWorkflowAction(action)
 
     return NextResponse.json({ action })
   } catch (err) {
@@ -31,5 +35,6 @@ export async function POST(req: NextRequest) {
 
 // GET /api/workflow/track — return recent actions
 export async function GET() {
-  return NextResponse.json({ actions: sessionCache.workflowActions.slice(0, 200) })
+  const actions = await getRecentWorkflowActions(200)
+  return NextResponse.json({ actions })
 }

@@ -1,12 +1,39 @@
 import { NextResponse } from 'next/server'
+import { randomUUID } from 'crypto'
+import { z } from 'zod'
 import { getInteractions, saveInteraction } from '@/lib/sheets'
 import type { Interaction } from '@/lib/types'
 
+const CreateInteractionBody = z.object({
+  lead_id: z.string().min(1, 'lead_id is required'),
+  company_id: z.string().min(1, 'company_id is required'),
+  channel: z.enum(['Email', 'LinkedIn', 'Phone', 'Meeting', 'Other']),
+  direction: z.enum(['Inbound', 'Outbound']).optional(),
+  subject: z.string().optional(),
+  body_summary: z.string().optional(),
+  gmail_thread_id: z.string().optional(),
+  gmail_message_id: z.string().optional(),
+  linkedin_manual_status: z.string().optional(),
+  sent_at: z.string().optional(),
+})
+
 export async function POST(req: Request) {
   try {
-    const body = await req.json()
+    let json: unknown
+    try {
+      json = await req.json()
+    } catch {
+      return NextResponse.json({ error: 'Body must be JSON' }, { status: 400 })
+    }
+
+    const parsed = CreateInteractionBody.safeParse(json)
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Invalid body' }, { status: 400 })
+    }
+    const body = parsed.data
+
     const interaction: Interaction = {
-      interaction_id: `int_${Date.now()}`,
+      interaction_id: `int_${randomUUID()}`,
       lead_id: body.lead_id,
       company_id: body.company_id,
       channel: body.channel,

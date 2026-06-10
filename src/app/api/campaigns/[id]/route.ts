@@ -50,10 +50,13 @@ export async function PATCH(
   }
 
   try {
-    await updateCampaign(id, {
+    const ok = await updateCampaign(id, {
       ...parsed.data,
       updated_at: new Date().toISOString(),
     })
+    if (!ok) {
+      return NextResponse.json({ error: 'Campaign not found in sheet' }, { status: 404 })
+    }
     return NextResponse.json({ ok: true })
   } catch (err) {
     console.error('PATCH /api/campaigns/[id] error:', err)

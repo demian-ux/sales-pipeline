@@ -597,11 +597,21 @@ export interface LinkedInDraft {
   updated_at: string
 }
 
+export interface LetterDraft {
+  id: string
+  lead_id: string
+  company_id: string
+  content: string
+  created_at: string
+  updated_at: string
+}
+
 // Persisted in app_secrets under key 'dashboard_layout'. Cards not in the
 // array are treated as hidden (defaults filled in by the server route when
 // no row exists yet).
 export type DashboardCardId =
   | 'today'
+  | 'send_queue'
   | 'opportunities'
   | 'attention'
   | 'conversations'

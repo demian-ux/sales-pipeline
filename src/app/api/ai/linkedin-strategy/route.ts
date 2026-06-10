@@ -7,7 +7,7 @@ import {
   getInteractionsForLead,
   getOpportunitiesForLead,
 } from '@/lib/sheets'
-import { sessionCache } from '@/lib/sheets/cache'
+import { getThreadsForLead, getLatestAnalysesByThread } from '@/lib/gmail/store'
 
 export async function POST(req: Request) {
   try {
@@ -28,11 +28,14 @@ export async function POST(req: Request) {
       getOpportunitiesForLead(lead_id, lead.company_id),
     ])
 
-    const leadThreads = sessionCache.threads[lead_id] ?? []
+    const [leadThreads, analysesByThread] = await Promise.all([
+      getThreadsForLead(lead_id),
+      getLatestAnalysesByThread(),
+    ])
     const latestThread = leadThreads
       .map((thread) => ({
         thread,
-        analysis: sessionCache.analyses[thread.thread_id],
+        analysis: analysesByThread[thread.thread_id],
       }))
       .sort((a, b) => new Date(b.thread.last_message_at).getTime() - new Date(a.thread.last_message_at).getTime())[0]
 

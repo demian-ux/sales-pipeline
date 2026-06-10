@@ -2,6 +2,7 @@
 /* eslint-disable react/no-unescaped-entities */
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { OPP_TYPES } from '@/lib/constants/opportunity-types'
 import { Icon } from '@/components/ui/icons'
 
@@ -19,6 +20,7 @@ export default function LeadActions({ leadId, companyId, tab }: Props) {
 }
 
 function AnalyzeButton({ leadId }: { leadId: string }) {
+  const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState(false)
@@ -35,7 +37,7 @@ function AnalyzeButton({ leadId }: { leadId: string }) {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Analysis failed')
       setDone(true)
-      setTimeout(() => window.location.reload(), 800)
+      setTimeout(() => router.refresh(), 800)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error')
     } finally {
@@ -94,8 +96,10 @@ type OppFormState = {
 }
 
 function ResearchForm({ leadId, companyId }: { leadId: string; companyId: string }) {
+  const router = useRouter()
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [saved, setSaved] = useState<ResearchFormState | null>(null)
   const [phase, setPhase] = useState<'form' | 'next' | 'opp' | 'analyzing' | 'done'>('form')
   const [form, setForm] = useState<ResearchFormState>(RESEARCH_INITIAL)
@@ -110,12 +114,17 @@ function ResearchForm({ leadId, companyId }: { leadId: string; companyId: string
     e.preventDefault()
     if (!form.research_summary.trim()) return
     setLoading(true)
+    setSaveError(null)
     try {
-      await fetch('/api/research', {
+      const res = await fetch('/api/research', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...form, lead_id: leadId, company_id: companyId }),
       })
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.error ?? 'Could not save finding')
+      }
       setSaved(form)
       setOppForm({
         opportunity_type: '',
@@ -127,6 +136,8 @@ function ResearchForm({ leadId, companyId }: { leadId: string; companyId: string
       })
       setForm(RESEARCH_INITIAL)
       setPhase('next')
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Could not save finding')
     } finally {
       setLoading(false)
     }
@@ -155,7 +166,7 @@ function ResearchForm({ leadId, companyId }: { leadId: string; companyId: string
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to create opportunity')
       setPhase('done')
-      setTimeout(() => window.location.reload(), 800)
+      setTimeout(() => router.refresh(), 800)
     } catch (err) {
       setOppError(err instanceof Error ? err.message : 'Something went wrong')
     } finally {
@@ -175,7 +186,7 @@ function ResearchForm({ leadId, companyId }: { leadId: string; companyId: string
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Analysis failed')
       setPhase('done')
-      setTimeout(() => window.location.reload(), 800)
+      setTimeout(() => router.refresh(), 800)
     } catch (err) {
       setAnalyzeError(err instanceof Error ? err.message : 'Analysis failed')
       setPhase('next')
@@ -235,7 +246,7 @@ function ResearchForm({ leadId, companyId }: { leadId: string; companyId: string
             <div style={{ fontSize: 11, color: 'var(--text-faint)' }}>Generate why-now signal, email draft, and discovery questions</div>
           </button>
           <button
-            onClick={() => { setPhase('form'); setOpen(false); window.location.reload() }}
+            onClick={() => { setPhase('form'); setOpen(false); router.refresh() }}
             style={{ fontSize: 12, color: 'var(--text-faint)', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', padding: '4px 0' }}
           >
             Done, just reload
@@ -349,6 +360,9 @@ function ResearchForm({ leadId, companyId }: { leadId: string; companyId: string
         <Label>Market positioning</Label>
         <input value={form.market_positioning} onChange={(e) => setForm((f) => ({ ...f, market_positioning: e.target.value }))} placeholder="e.g. expanding into luxury segment, repositioning post-merger" style={inputStyle} />
       </div>
+      {saveError && (
+        <div style={{ fontSize: 11, color: 'var(--red)', padding: '6px 10px', background: 'rgba(224,92,92,0.08)', border: '1px solid rgba(224,92,92,0.2)', borderRadius: 5 }}>{saveError}</div>
+      )}
       <div style={{ display: 'flex', gap: 8 }}>
         <button type="submit" disabled={loading} style={{ ...btnStyle, background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid rgba(200,169,110,0.3)' }}>
           {loading ? 'Saving…' : 'Save finding'}
@@ -362,8 +376,10 @@ function ResearchForm({ leadId, companyId }: { leadId: string; companyId: string
 }
 
 function LogForm({ leadId, companyId }: { leadId: string; companyId: string }) {
+  const router = useRouter()
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState({
     channel: 'Email',
     direction: 'Outbound',
@@ -376,15 +392,22 @@ function LogForm({ leadId, companyId }: { leadId: string; companyId: string }) {
     e.preventDefault()
     if (!form.body_summary.trim() && !form.subject.trim()) return
     setLoading(true)
+    setError(null)
     try {
-      await fetch('/api/interactions', {
+      const res = await fetch('/api/interactions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...form, lead_id: leadId, company_id: companyId }),
       })
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        throw new Error(data?.error ?? 'Could not log interaction')
+      }
       setForm({ channel: 'Email', direction: 'Outbound', subject: '', body_summary: '', linkedin_manual_status: '' })
       setOpen(false)
-      window.location.reload()
+      router.refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not log interaction')
     } finally {
       setLoading(false)
     }
@@ -442,6 +465,9 @@ function LogForm({ leadId, companyId }: { leadId: string; companyId: string }) {
             <option value="Connected">Connected</option>
           </select>
         </div>
+      )}
+      {error && (
+        <div style={{ fontSize: 11, color: 'var(--red)', padding: '6px 10px', background: 'rgba(224,92,92,0.08)', border: '1px solid rgba(224,92,92,0.2)', borderRadius: 5 }}>{error}</div>
       )}
       <div style={{ display: 'flex', gap: 8 }}>
         <button type="submit" disabled={loading} style={{ ...btnStyle, background: 'var(--surface-2)', color: 'var(--text)', border: '1px solid var(--border)' }}>

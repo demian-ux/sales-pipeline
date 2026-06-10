@@ -22,7 +22,6 @@ function findingToMap(f: ResearchFinding): Record<string, string> {
 export async function getResearchFindings(): Promise<ResearchFinding[]> {
   if (USE_MOCK) return [...mockResearchFindings, ...sessionCache.research]
   const rows = await withFallback(() => readTab(TAB), [] as string[][])
-  if (rows.length === 0) return [...mockResearchFindings, ...sessionCache.research]
   return rowsToObjects<ResearchFinding>(rows)
 }
 

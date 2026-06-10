@@ -68,15 +68,32 @@ export async function discoverCandidateSources(article: ProspectingArticle): Pro
   return Promise.all(queries.map((query) => searchTavily(query, countryParam)))
 }
 
+// Where to look for firms. City-level when the article gives one; when the
+// article is US-wide with no city, bias toward Oaki's core markets (New York
+// and Miami) instead of searching the whole country; never emit the literal
+// "in unspecified" the legacy version produced.
+function searchPlace(article: ProspectingArticle, country: string): string {
+  const location = article.location?.trim() ?? ''
+  if (location && location.toLowerCase() !== 'unspecified' && location.includes(',')) {
+    return location // "City, Country" — search near the project itself
+  }
+  const c = country.toLowerCase()
+  if (c === 'united states') return 'New York or Miami'
+  if (c && c !== 'unspecified') return country
+  return ''
+}
+
 function buildCandidateQueries(article: ProspectingArticle, country: string): string[] {
-  const location = article.location === 'unspecified' ? country : article.location
+  const place = searchPlace(article, country)
   const scale = article.scale === 'unspecified' ? '' : article.scale
-  const context = [article.project_type, scale, location].filter(Boolean).join(' ')
+  const context = [article.project_type, scale].filter(Boolean).join(' ')
+  const where = place ? ` in ${place}` : ''
+  const what = context ? ` with ${context} projects` : ' working on high-end projects'
 
   return [
-    `architecture studios in ${country} with ${context} projects`,
-    `interior design studios in ${country} with ${context} projects`,
-    `real estate developers in ${country} with ${context} projects`,
+    `architecture studios${where}${what}`,
+    `interior design studios${where}${what}`,
+    `real estate developers${where}${what}`,
   ]
 }
 

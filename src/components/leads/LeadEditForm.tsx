@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import type {
   Lead,
   LinkedInConnectionStatus,
@@ -25,6 +26,7 @@ interface Props {
 }
 
 export default function LeadEditForm({ lead }: Props) {
+  const router = useRouter()
   const [open, setOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -88,7 +90,7 @@ export default function LeadEditForm({ lead }: Props) {
       if (!res.ok) throw new Error(data.error ?? 'Save failed')
 
       setSaved(true)
-      setTimeout(() => window.location.reload(), 600)
+      setTimeout(() => router.refresh(), 600)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error saving')
     } finally {

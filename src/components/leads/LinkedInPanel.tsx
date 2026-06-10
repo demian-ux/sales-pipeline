@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import type {
   Company,
   Interaction,
@@ -85,6 +86,7 @@ export default function LinkedInPanel({
   company: Company | null
   interactions: Interaction[]
 }) {
+  const router = useRouter()
   const [strategy, setStrategy] = useState<LinkedInStrategyOutput | null>(null)
   const [loadingStrategy, setLoadingStrategy] = useState(false)
   const [logging, setLogging] = useState<string | null>(null)
@@ -148,7 +150,7 @@ export default function LinkedInPanel({
       const leadData = await leadRes.json()
       if (!leadRes.ok) throw new Error(leadData.error ?? 'Could not update LinkedIn status')
 
-      window.location.reload()
+      router.refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not log action')
     } finally {

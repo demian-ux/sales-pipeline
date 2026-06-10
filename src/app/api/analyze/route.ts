@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { randomUUID } from 'crypto'
 import {
   getLeadById,
   getCompanyById,
@@ -36,7 +37,7 @@ export async function POST(req: Request) {
     const analysis = await analyzeLeadWhyNow(lead, company, findings, interactions, opportunities, campaign)
 
     const insight: AIInsight = {
-      insight_id: `ai_${Date.now()}`,
+      insight_id: `ai_${randomUUID()}`,
       lead_id,
       company_id: lead.company_id,
       ...analysis,

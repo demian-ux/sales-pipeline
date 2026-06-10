@@ -4,6 +4,27 @@
 import { type NextRequest } from 'next/server'
 import { getSupabaseAdmin, isSupabaseAdminConfigured } from '@/lib/supabase'
 
+// UI filter values (snake_case) → stored region values (display strings from
+// the analysis prompt). Previously this worked only because ILIKE treats `_`
+// as a single-char wildcard ("new_york" happened to match "New York").
+const REGION_VALUES: Record<string, string> = {
+  new_york: 'New York',
+  miami:    'Miami',
+  france:   'France',
+  europe:   'Europe',
+  other:    'Other',
+}
+
+// The list view renders ~10 fields — exclude the heavy text columns
+// (raw_content ~5KB + deep_analysis ~4KB per row) from the payload.
+const LIST_COLUMNS =
+  'id, created_at, title, date_published, source, source_url, source_type, ' +
+  'region, city, country, sector, project_type, opportunity_type, target_client_types, ' +
+  'investment_size, timeline, main_actors, developer, architect, government_body, ' +
+  'brief_summary, why_it_matters, suggested_action, tags, ' +
+  'signal_tier, discovery_score, urgency_score, confidence_score, ' +
+  'status, promoted_to_opportunity_id'
+
 export async function GET(request: NextRequest) {
   if (!isSupabaseAdminConfigured()) {
     return Response.json({ error: 'Supabase not configured' }, { status: 503 })
@@ -28,7 +49,7 @@ export async function GET(request: NextRequest) {
 
   let query = getSupabaseAdmin()
     .from('discoveries')
-    .select('*', { count: 'exact' })
+    .select(LIST_COLUMNS, { count: 'estimated' })
 
   if (sortBy === 'date') {
     query = query
@@ -41,7 +62,7 @@ export async function GET(request: NextRequest) {
   }
 
   if (status)        query = query.eq('status', status)
-  if (region)        query = query.ilike('region', `%${region}%`)
+  if (region)        query = query.ilike('region', REGION_VALUES[region] ?? region)
   if (country)       query = query.ilike('country', `%${country}%`)
   if (city)          query = query.ilike('city', `%${city}%`)
   if (sector)        query = query.eq('sector', sector)

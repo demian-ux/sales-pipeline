@@ -45,6 +45,9 @@ interface SourceFetchResult {
 interface CandidateArticle {
   source: Source
   article: RawArticleFromRSS
+  // analysis_attempts already recorded on the raw_articles row (0 for fresh
+  // articles). Threaded through so terminal status updates can increment it.
+  priorAttempts: number
 }
 
 export interface IngestProgress {
@@ -80,6 +83,12 @@ const MAX_PER_SOURCE = 2
 const ARTICLE_FRESHNESS_DAYS = 365
 const MIN_CONTENT_LENGTH_FOR_ANALYSIS = 600
 const ARTICLE_FETCH_TIMEOUT_MS = 8_000
+// An article whose analysis failed transiently is retried on later runs,
+// up to this many total attempts, before being skipped for good.
+const MAX_ANALYSIS_ATTEMPTS = 3
+// Concurrent classify→analyze chains. 3 stays well inside API rate limits
+// while cutting wall-clock roughly 3× vs the old serial loop.
+const ANALYSIS_CONCURRENCY = 3
 
 export function createIngestProgress(): IngestProgress {
   return {
@@ -99,6 +108,11 @@ export async function runIngestion(
   sources: Source[],
   runId: string,
   progress: IngestProgress = createIngestProgress(),
+  // Wall-clock deadline (ms epoch). On Vercel the function is hard-killed at
+  // `maxDuration` — without a deadline the run record stays 'running' forever
+  // and unprocessed candidates are stranded. We stop cleanly before the wall;
+  // deferred candidates keep status='new' and are reclaimed by the next run.
+  deadlineMs?: number,
 ): Promise<IngestResult> {
   const supabase = getSupabaseAdmin()
 
@@ -116,21 +130,25 @@ export async function runIngestion(
   const candidates = await prepareCandidateArticles(sourceResults, freshnessCutoff, runId, progress)
   await updateRunProgress(runId, progress, `Prepared ${candidates.length} candidates`, 40)
 
-  for (const [candidateIndex, { source, article }] of candidates.entries()) {
-    const candidateNumber = candidateIndex + 1
-    const progressBase = candidates.length === 0
-      ? 95
-      : 40 + Math.round((candidateIndex / candidates.length) * 55)
+  // Process candidates with a small worker pool — the serial loop took
+  // 15-40s per article and routinely outlived the function's time budget.
+  // 3 concurrent chains sit comfortably inside API rate limits.
+  let nextIndex = 0
+  let completed = 0
 
-    await updateRunProgress(runId, progress, `Classifying article ${candidateNumber} of ${candidates.length}`, progressBase)
+  const takeNext = (): number | null => {
+    if (nextIndex >= candidates.length) return null
+    if (deadlineMs && Date.now() > deadlineMs) return null
+    return nextIndex++
+  }
 
+  const processCandidate = async ({ source, article, priorAttempts }: CandidateArticle): Promise<void> => {
     const classification = await classifyArticle(article.title, article.content, article.link)
     if (classification && !classification.should_analyze) {
       progress.articles_skipped_irrelevant++
       await updateRawArticleStatus(article.link, 'skipped_classifier', classification.reason)
       console.log(`[ingest] Classifier skipped: "${article.title.slice(0, 70)}" — ${classification.reason}`)
-      await updateRunProgress(runId, progress, `Classifier skipped article ${candidateNumber} of ${candidates.length}`, progressBase)
-      continue
+      return
     }
 
     if (!classification) {
@@ -138,53 +156,103 @@ export async function runIngestion(
     }
 
     progress.articles_analyzed++
-    console.log(`[ingest] Analyzing (${candidateNumber}/${candidates.length}): "${article.title.slice(0, 70)}"`)
-    await updateRunProgress(runId, progress, `Analyzing article ${candidateNumber} of ${candidates.length}`, Math.min(96, progressBase + 1))
+    console.log(`[ingest] Analyzing: "${article.title.slice(0, 70)}"`)
 
     try {
-      const enrichedArticle = await enrichArticleForAnalysis(article)
-      const result = await processArticle(enrichedArticle)
+      // Resolve Google News redirect URLs FIRST so enrichment fetches the
+      // real publisher page, not Google's interstitial.
+      const resolvedUrl = await resolveSourceUrlSafe(article.link)
+      const enrichedArticle = await enrichArticleForAnalysis(article, resolvedUrl)
+      const result = await processArticle(enrichedArticle, resolvedUrl)
       if (result === 'saved_strong' || result === 'saved_watchlist') {
         progress.articles_new++
       }
-      await updateRawArticleAfterProcessing(enrichedArticle.link, result, enrichedArticle.content)
-      await updateRunProgress(runId, progress, `Saved ${progress.articles_new} discoveries`, Math.min(97, progressBase + 2))
+      await updateRawArticleAfterProcessing(article.link, result, enrichedArticle.content, priorAttempts)
     } catch (err) {
       const msg = `${source.name} / "${article.title.slice(0, 60)}": ${err instanceof Error ? err.message : String(err)}`
       progress.errors.push(msg)
-      await updateRawArticleStatus(article.link, 'failed', msg)
+      // 'failed' is retryable: the next run reclaims this article until
+      // MAX_ANALYSIS_ATTEMPTS is reached. Never tombstone on a transient error.
+      await updateRawArticleStatus(article.link, 'failed', msg, undefined, priorAttempts)
       console.error(`[ingest] Article error: ${msg}`)
     }
-
-    await sleep(300)
   }
 
-  await supabase
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const idx = takeNext()
+      if (idx === null) return
+      await processCandidate(candidates[idx])
+      completed++
+      const pct = candidates.length === 0
+        ? 95
+        : 40 + Math.round((completed / candidates.length) * 55)
+      await updateRunProgress(
+        runId,
+        progress,
+        `Processed ${completed} of ${candidates.length} candidates — ${progress.articles_new} saved`,
+        Math.min(97, pct),
+      )
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(ANALYSIS_CONCURRENCY, Math.max(candidates.length, 1)) }, worker),
+  )
+
+  const deferred = candidates.length - nextIndex
+  if (deferred > 0) {
+    const note = `Time budget reached — ${deferred} candidate(s) deferred to the next run`
+    progress.errors.push(note)
+    console.warn(`[ingest] ${note}`)
+  }
+
+  const finalStep = deferred > 0
+    ? `Research complete — ${deferred} deferred to next run`
+    : 'Research complete'
+
+  const finalUpdate = {
+    finished_at: new Date().toISOString(),
+    sources_count: sources.length,
+    articles_found: progress.articles_found,
+    raw_articles_new: progress.raw_articles_new,
+    raw_articles_duplicate: progress.raw_articles_duplicate,
+    articles_skipped_old: progress.articles_skipped_old,
+    articles_skipped_irrelevant: progress.articles_skipped_irrelevant,
+    articles_analyzed: progress.articles_analyzed,
+    articles_new: progress.articles_new,
+    errors: progress.errors,
+    current_step: finalStep,
+    progress_percent: 100,
+    status: 'done',
+  }
+
+  // Write failed_sources too, but tolerate the column not existing yet
+  // (migration 2026-06-09). A failed final update would strand the run as
+  // 'running' forever, so fall back to the legacy column set on error.
+  const { error: finishError } = await supabase
     .from('ingestion_runs')
-    .update({
-      finished_at: new Date().toISOString(),
-      sources_count: sources.length,
-      articles_found: progress.articles_found,
-      raw_articles_new: progress.raw_articles_new,
-      raw_articles_duplicate: progress.raw_articles_duplicate,
-      articles_skipped_old: progress.articles_skipped_old,
-      articles_skipped_irrelevant: progress.articles_skipped_irrelevant,
-      articles_analyzed: progress.articles_analyzed,
-      articles_new: progress.articles_new,
-      errors: progress.errors,
-      current_step: 'Research complete',
-      progress_percent: 100,
-      status: 'done',
-    })
+    .update({ ...finalUpdate, failed_sources: progress.failed_sources })
     .eq('id', runId)
+  if (finishError) {
+    const { error: fallbackError } = await supabase
+      .from('ingestion_runs')
+      .update(finalUpdate)
+      .eq('id', runId)
+    if (fallbackError) {
+      console.error('[ingest] FAILED to finalize run record:', fallbackError.message)
+    }
+  }
 
   console.log(
     `[ingest] Finished — ${progress.articles_new} saved / ${progress.articles_found} found / ` +
-    `${progress.articles_analyzed} deeply analyzed / ${progress.failed_sources.length} failed sources`,
+    `${progress.articles_analyzed} deeply analyzed / ${progress.failed_sources.length} failed sources` +
+    (deferred > 0 ? ` / ${deferred} deferred` : ''),
   )
 
   return {
     success: true,
+    partial: deferred > 0,
     run_id: runId,
     sources_processed: sources.length,
     articles_found: progress.articles_found,
@@ -235,7 +303,13 @@ async function prepareCandidateArticles(
         continue
       }
 
-      if (rawStatus.status === 'error') {
+      let priorAttempts = 0
+      if (rawStatus.status === 'retry') {
+        // Seen before but never successfully analyzed (still 'new' after a
+        // killed run, or 'failed' after a transient error) — reclaim it.
+        priorAttempts = rawStatus.attempts
+        console.log(`[ingest] Reclaiming unprocessed article (attempt ${priorAttempts + 1}): "${article.title.slice(0, 60)}"`)
+      } else if (rawStatus.status === 'error') {
         progress.errors.push(rawStatus.error)
         const isDup = await isAlreadyAnalyzed(article.link)
         if (isDup) {
@@ -258,7 +332,7 @@ async function prepareCandidateArticles(
         continue
       }
 
-      candidates.push({ source, article })
+      candidates.push({ source, article, priorAttempts })
       sourceCandidates++
     }
   }
@@ -270,13 +344,13 @@ async function prepareCandidateArticles(
 
 type ProcessResult = 'saved_strong' | 'saved_watchlist' | 'archived' | 'error'
 
-async function processArticle(article: RawArticleFromRSS): Promise<ProcessResult> {
+// `resolvedUrl` is the publisher URL (Google News redirects already resolved
+// by the caller, who also used it for content enrichment). Stored as
+// source_url so downstream Jina/find-firms flows get a clean URL.
+// Throws on analysis failure — the caller records 'failed' (retryable).
+async function processArticle(article: RawArticleFromRSS, resolvedUrl: string): Promise<ProcessResult> {
   const supabase = getSupabaseAdmin()
   const analysis = await analyzeArticle(article.title, article.content, article.link)
-  if (!analysis) {
-    await recordAnalyzed(article, 'archive')
-    return 'error'
-  }
 
   const discoveryScore = computeDiscoveryScore(analysis.scores)
   const tier: DiscoverySignalTier = analysis.signal_tier ?? scoreToTier(discoveryScore)
@@ -285,12 +359,6 @@ async function processArticle(article: RawArticleFromRSS): Promise<ProcessResult
     await recordAnalyzed(article, 'archive')
     return 'archived'
   }
-
-  // Resolve Google News redirect URLs to their publisher URL before storing.
-  // The Find-firms / outreach flows downstream both feed source_url to Jina
-  // Reader, which gets HTTP 451 on news.google.com URLs. Resolving here means
-  // every freshly ingested Discovery has a clean URL out of the gate.
-  const resolvedUrl = await resolveSourceUrlSafe(article.link)
 
   const { error } = await supabase.from('discoveries').insert({
     title: analysis.title || article.title,
@@ -338,6 +406,14 @@ async function processArticle(article: RawArticleFromRSS): Promise<ProcessResult
   })
 
   if (error) {
+    if (error.code === '23505') {
+      // Same story already saved as a discovery (e.g. reached via another
+      // feed that resolved to the same publisher URL). A duplicate is not a
+      // failure — record it so it stops being retried.
+      console.log(`[ingest] Duplicate discovery (already saved): "${article.title.slice(0, 60)}"`)
+      await recordAnalyzed(article, tier)
+      return 'archived'
+    }
     console.error('[ingest] discoveries insert error:', error.message)
     return 'error'
   }
@@ -366,6 +442,7 @@ async function recordAnalyzed(article: RawArticleFromRSS, tier: DiscoverySignalT
 type RawStoreResult =
   | { status: 'inserted' }
   | { status: 'duplicate' }
+  | { status: 'retry'; attempts: number }
   | { status: 'error'; error: string }
 
 async function storeRawArticle(article: RawArticleFromRSS, sourceFeedUrl: string, runId: string): Promise<RawStoreResult> {
@@ -387,6 +464,16 @@ async function storeRawArticle(article: RawArticleFromRSS, sourceFeedUrl: string
 
   if (!error) return { status: 'inserted' }
   if (error.code === '23505') {
+    // Already stored. Distinguish "fully handled" from "never successfully
+    // analyzed": rows still 'new' (a previous run was killed mid-flight) or
+    // 'failed' (transient analysis error) get reclaimed as candidates until
+    // MAX_ANALYSIS_ATTEMPTS is exhausted.
+    const { data: existing } = await supabase
+      .from('raw_articles')
+      .select('status, analysis_attempts')
+      .eq('normalized_url', normalizedUrl)
+      .maybeSingle()
+
     await supabase
       .from('raw_articles')
       .update({
@@ -394,6 +481,14 @@ async function storeRawArticle(article: RawArticleFromRSS, sourceFeedUrl: string
         research_run_id: runId,
       })
       .eq('normalized_url', normalizedUrl)
+
+    const attempts = Number(existing?.analysis_attempts ?? 0)
+    const reclaimable =
+      existing &&
+      (existing.status === 'new' || existing.status === 'failed') &&
+      attempts < MAX_ANALYSIS_ATTEMPTS
+
+    if (reclaimable) return { status: 'retry', attempts }
     return { status: 'duplicate' }
   }
   return { status: 'error', error: `raw_articles insert failed: ${error.message}` }
@@ -403,6 +498,7 @@ async function updateRawArticleAfterProcessing(
   url: string,
   result: ProcessResult,
   rawContent?: string,
+  priorAttempts?: number,
 ): Promise<void> {
   const statusByResult: Record<ProcessResult, string> = {
     saved_strong:    'saved_discovery',
@@ -410,7 +506,7 @@ async function updateRawArticleAfterProcessing(
     archived:        'archived',
     error:           'failed',
   }
-  await updateRawArticleStatus(url, statusByResult[result], undefined, rawContent)
+  await updateRawArticleStatus(url, statusByResult[result], undefined, rawContent, priorAttempts)
 }
 
 async function updateRawArticleStatus(
@@ -418,6 +514,7 @@ async function updateRawArticleStatus(
   status: string,
   skipReason?: string,
   rawContent?: string,
+  priorAttempts?: number,
 ): Promise<void> {
   const supabase = getSupabaseAdmin()
   const normalizedUrl = normalizeArticleUrl(url)
@@ -429,7 +526,7 @@ async function updateRawArticleStatus(
 
   if (status === 'saved_discovery' || status === 'archived' || status === 'failed') {
     update.analyzed_at = new Date().toISOString()
-    update.analysis_attempts = 1
+    update.analysis_attempts = (priorAttempts ?? 0) + 1
   }
   if (rawContent) {
     update.raw_content = rawContent.slice(0, 10_000)
@@ -492,10 +589,15 @@ async function fetchSourceArticles(source: Source): Promise<SourceFetchResult> {
 
 // ─── Content enrichment (paywall-tolerant best effort) ─────────────────────
 
-async function enrichArticleForAnalysis(article: RawArticleFromRSS): Promise<RawArticleFromRSS> {
+// `fetchUrl` is the resolved publisher URL — fetching the raw Google News
+// redirect URL used to return Google's interstitial page as "content".
+async function enrichArticleForAnalysis(
+  article: RawArticleFromRSS,
+  fetchUrl?: string,
+): Promise<RawArticleFromRSS> {
   if (article.content.trim().length >= MIN_CONTENT_LENGTH_FOR_ANALYSIS) return article
 
-  const enrichedContent = await fetchArticleText(article.link)
+  const enrichedContent = await fetchArticleText(fetchUrl ?? article.link)
   if (!enrichedContent || enrichedContent.length <= article.content.length) return article
 
   return { ...article, content: enrichedContent }
@@ -603,6 +705,3 @@ function looksRelevantEnough(article: RawArticleFromRSS): boolean {
   return RELEVANCE_KEYWORDS.some((keyword) => haystack.includes(keyword))
 }
 
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}

@@ -1,6 +1,65 @@
 import { NextResponse } from 'next/server'
+import { randomUUID } from 'crypto'
+import { z } from 'zod'
 import { getLeads, getCompanies, getOpportunities, getAIInsights, getInteractions, createLead } from '@/lib/sheets'
-import type { Lead, LeadWithCompany } from '@/lib/types'
+import type {
+  Lead,
+  LeadWithCompany,
+  PipelineStage,
+  LeadStatus,
+  RelationshipTemperature,
+  LinkedInConnectionStatus,
+  LinkedInDMStatus,
+  LinkedInWarmth,
+} from '@/lib/types'
+
+const PIPELINE_STAGES = ['New Lead', 'Contacted', 'Replied', 'Discovery', 'Proposal Sent', 'Negotiation', 'Won', 'Lost', 'Nurture', 'Dormant'] as const satisfies readonly PipelineStage[]
+const LEAD_STATUSES = ['Active', 'Inactive', 'Archived'] as const satisfies readonly LeadStatus[]
+const TEMPERATURES = ['Hot', 'Warm', 'Cool', 'Cold'] as const satisfies readonly RelationshipTemperature[]
+const LINKEDIN_CONNECTION_STATUSES = ['Not Connected', 'Connection Ready', 'Connection Sent', 'Connected', 'Unknown'] as const satisfies readonly LinkedInConnectionStatus[]
+const LINKEDIN_DM_STATUSES = ['Not Started', 'DM Ready', 'DM Sent', 'Replied', 'Not Interested', 'Unknown'] as const satisfies readonly LinkedInDMStatus[]
+const LINKEDIN_WARMTHS = ['Passive', 'Aware', 'Connected', 'Warm', 'Engaged', 'Active'] as const satisfies readonly LinkedInWarmth[]
+
+const score = z.coerce.number().min(1, 'Scores must be between 1 and 10').max(10, 'Scores must be between 1 and 10').optional()
+
+const CreateLeadBody = z
+  .object({
+    first_name: z.string().optional(),
+    last_name: z.string().optional(),
+    full_name: z.string().optional(),
+    company_name: z.string().min(1, 'company_name is required'),
+    company_id: z.string().optional(),
+    campaign_id: z.string().optional(),
+    email: z.string().email('Invalid email').or(z.literal('')).optional(),
+    linkedin_url: z.string().optional(),
+    linkedin_connection_status: z.enum(LINKEDIN_CONNECTION_STATUSES).optional(),
+    linkedin_dm_status: z.enum(LINKEDIN_DM_STATUSES).optional(),
+    linkedin_warmth: z.enum(LINKEDIN_WARMTHS).optional(),
+    last_linkedin_touch_date: z.string().optional(),
+    linkedin_notes: z.string().optional(),
+    title: z.string().optional(),
+    website: z.string().optional(),
+    location: z.string().optional(),
+    source: z.string().optional(),
+    pipeline_stage: z.enum(PIPELINE_STAGES).optional(),
+    lead_status: z.enum(LEAD_STATUSES).optional(),
+    business_fit_score: score,
+    taste_score: score,
+    relationship_score: score,
+    opportunity_score: score,
+    priority_score: score,
+    relationship_temperature: z.enum(TEMPERATURES).optional(),
+    next_action: z.string().optional(),
+    next_followup_date: z.string().optional(),
+    known_pain_points: z.string().optional(),
+    preferred_communication_style: z.string().optional(),
+    owner: z.string().optional(),
+    notes: z.string().optional(),
+  })
+  .refine(
+    (b) => !!b.full_name?.trim() || (!!b.first_name?.trim() && !!b.last_name?.trim()),
+    { message: 'full_name (or first_name + last_name) is required' },
+  )
 
 export async function GET() {
   try {
@@ -52,24 +111,31 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json()
-
-    const { first_name, last_name, company_name } = body
-    if (!first_name || !last_name || !company_name) {
-      return NextResponse.json({ error: 'first_name, last_name, and company_name are required' }, { status: 400 })
+    let json: unknown
+    try {
+      json = await req.json()
+    } catch {
+      return NextResponse.json({ error: 'Body must be JSON' }, { status: 400 })
     }
 
+    const parsed = CreateLeadBody.safeParse(json)
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Invalid body' }, { status: 400 })
+    }
+    const body = parsed.data
+    const { first_name, last_name, company_name } = body
+
     const now = new Date().toISOString()
-    const lead_id = `lead_${Date.now()}`
-    const company_id = body.company_id || `comp_${Date.now()}`
+    const lead_id = `lead_${randomUUID()}`
+    const company_id = body.company_id || `comp_${randomUUID()}`
 
     const lead: Lead = {
       lead_id,
       company_id,
       campaign_id: body.campaign_id || undefined,
-      first_name,
-      last_name,
-      full_name: `${first_name} ${last_name}`,
+      first_name: first_name ?? '',
+      last_name: last_name ?? '',
+      full_name: body.full_name?.trim() || `${first_name} ${last_name}`,
       email: body.email || undefined,
       linkedin_url: body.linkedin_url || undefined,
       linkedin_connection_status: body.linkedin_connection_status || (body.linkedin_url ? 'Not Connected' : undefined),

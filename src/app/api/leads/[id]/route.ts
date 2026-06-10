@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { z } from 'zod'
 import {
   getLeadById,
   getCompanyById,
@@ -35,27 +36,33 @@ export async function GET(
   }
 }
 
-const EDITABLE_FIELDS: (keyof Lead)[] = [
-  'pipeline_stage',
-  'relationship_temperature',
-  'lead_status',
-  'campaign_id',
-  'next_action',
-  'next_followup_date',
-  'known_pain_points',
-  'notes',
-  'linkedin_url',
-  'linkedin_connection_status',
-  'linkedin_dm_status',
-  'linkedin_warmth',
-  'last_linkedin_touch_date',
-  'linkedin_notes',
-  'business_fit_score',
-  'taste_score',
-  'relationship_score',
-  'opportunity_score',
-  'priority_score',
-]
+const PIPELINE_STAGES = ['New Lead', 'Contacted', 'Replied', 'Discovery', 'Proposal Sent', 'Negotiation', 'Won', 'Lost', 'Nurture', 'Dormant'] as const
+const LEAD_STATUSES = ['Active', 'Inactive', 'Archived'] as const
+
+const score = z.coerce.number().min(1, 'Scores must be between 1 and 10').max(10, 'Scores must be between 1 and 10').optional()
+
+// Whitelisted editable fields — extra keys in the body are silently dropped.
+const PatchBody = z.object({
+  pipeline_stage: z.enum(PIPELINE_STAGES).optional(),
+  relationship_temperature: z.string().optional(),
+  lead_status: z.enum(LEAD_STATUSES).optional(),
+  campaign_id: z.string().optional(),
+  next_action: z.string().optional(),
+  next_followup_date: z.string().optional(),
+  known_pain_points: z.string().optional(),
+  notes: z.string().optional(),
+  linkedin_url: z.string().optional(),
+  linkedin_connection_status: z.string().optional(),
+  linkedin_dm_status: z.string().optional(),
+  linkedin_warmth: z.string().optional(),
+  last_linkedin_touch_date: z.string().optional(),
+  linkedin_notes: z.string().optional(),
+  business_fit_score: score,
+  taste_score: score,
+  relationship_score: score,
+  opportunity_score: score,
+  priority_score: score,
+})
 
 export async function PATCH(
   req: Request,
@@ -66,22 +73,30 @@ export async function PATCH(
     const lead = await getLeadById(id)
     if (!lead) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
 
-    const body = await req.json()
-
-    // Only allow whitelisted fields
-    const updates: Partial<Lead> = {}
-    for (const field of EDITABLE_FIELDS) {
-      if (field in body) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ;(updates as any)[field] = body[field]
-      }
+    let json: unknown
+    try {
+      json = await req.json()
+    } catch {
+      return NextResponse.json({ error: 'Body must be JSON' }, { status: 400 })
     }
+
+    const parsed = PatchBody.safeParse(json)
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Invalid body' }, { status: 400 })
+    }
+
+    const updates = Object.fromEntries(
+      Object.entries(parsed.data).filter(([, val]) => val !== undefined)
+    ) as Partial<Lead>
 
     if (Object.keys(updates).length === 0) {
       return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 })
     }
 
-    await updateLead(id, updates)
+    const ok = await updateLead(id, updates)
+    if (!ok) {
+      return NextResponse.json({ error: 'Lead not found in sheet' }, { status: 404 })
+    }
     const updated = await getLeadById(id)
     return NextResponse.json({ lead: updated })
   } catch (err) {

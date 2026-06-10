@@ -1,3 +1,6 @@
-export const dynamic = 'force-dynamic'
+import { redirect } from 'next/navigation'
 
-export { default } from '../research/page'
+// Legacy URL — the research inbox now lives at /research.
+export default function ResearchInboxPage() {
+  redirect('/research')
+}

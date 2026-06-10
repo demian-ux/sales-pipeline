@@ -21,13 +21,16 @@ export interface CostEstimate {
 
 const TAVILY_CREDIT_PRICE_USD = 0.008
 
+// Per-MTok USD prices (verified 2026-06: Opus 4.5+ is $5/$25; Haiku 4.5 is
+// $1/$5; Sonnet 4.x is $3/$15).
 const MODEL_PRICES_PER_MILLION: Record<string, { input: number; output: number }> = {
-  'claude-opus-4-7':         { input: 15,  output: 75 },
-  'claude-sonnet-4-7':       { input: 3,   output: 15 },
+  'claude-opus-4-8':         { input: 5,   output: 25 },
+  'claude-opus-4-7':         { input: 5,   output: 25 },
+  'claude-opus-4-6':         { input: 5,   output: 25 },
   'claude-sonnet-4-6':       { input: 3,   output: 15 },
   'claude-sonnet-4-5':       { input: 3,   output: 15 },
   'claude-sonnet-4':         { input: 3,   output: 15 },
-  'claude-haiku-4-5':        { input: 0.8, output: 4 },
+  'claude-haiku-4-5':        { input: 1,   output: 5 },
   'claude-3-5-haiku-latest': { input: 0.8, output: 4 },
 }
 

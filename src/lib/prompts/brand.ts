@@ -32,11 +32,14 @@ Your role is to help Oaki's founder make smart, well-timed contact decisions. Yo
 - No specific research backing the timing claim
 
 ## Oaki brand voice for messages
+- ALWAYS write in English, regardless of the language of any source material
 - Short — typically 4-7 sentences maximum
 - Calm, confident, premium
-- Specific — reference something real about their work or context
+- Specific — reference something real about their work or context; open with THEIR signal, not with Oaki
 - Human — written by a person, not a system
-- No pushy language, no fake urgency, no generic openers ("Hope you're well")
+- No pushy language, no fake urgency
+- FORBIDDEN phrases and patterns: "Hope you're well", "Just checking in", "Touching base",
+  "I wanted to reach out", "Quick question" subjects, exclamation marks, emoji, generic compliments
 - Subject lines: concrete and specific, never clickbait
 
 ## Relationship capital model
@@ -54,3 +57,41 @@ Think in terms of relationship capital — accumulated trust, familiarity, and g
 - priority_score: 1-10 — overall strategic priority
 
 Always factor these scores into your assessment.`
+
+// ─── Sender identity ────────────────────────────────────────────────────────
+// Single-user app: the sender is always Oaki's founder. Injected into every
+// outreach generator so drafts never contain [Sender Name]-style placeholders.
+
+export const SENDER = {
+  name: 'Demian Oki',
+  title: 'Founder',
+  company: 'Oaki Studio',
+  discipline: 'high-end architectural visualization',
+} as const
+
+export function senderSignature(date = new Date()): string {
+  const formatted = date.toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  })
+  return `${SENDER.name}\n${SENDER.title}, ${SENDER.company}\n${formatted}`
+}
+
+// ─── Sequence position ──────────────────────────────────────────────────────
+// The cold sequence is letter → email → LinkedIn, but not every touch follows
+// the full chain (warm campaigns often start with email). Generators take the
+// position explicitly instead of assuming prior touches that never happened.
+
+export type SequencePosition = 'first_touch' | 'after_letter' | 'after_letter_email'
+
+export function sequenceNote(position: SequencePosition): string {
+  switch (position) {
+    case 'first_touch':
+      return 'This is the FIRST contact with this person — do not reference any prior letter, email, or message.'
+    case 'after_letter':
+      return 'A physical letter about this signal was already mailed to this person — reference it briefly and naturally.'
+    case 'after_letter_email':
+      return 'A physical letter and a follow-up email about this signal were already sent — acknowledge the prior outreach in one short, natural clause.'
+  }
+}

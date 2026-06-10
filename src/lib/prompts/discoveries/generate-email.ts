@@ -1,32 +1,42 @@
-// Email follow-up generator — 100–160 words, references a physical letter
-// presumed to have been sent first.
+// Email generator for a Discovery — 100–160 words. Receives the same full
+// signal context as the letter (it used to get only the title, which forced
+// the model to bluff the "why now"), and an explicit sequence position
+// instead of always assuming a letter was already sent.
 
 import { ai, MODEL, requireAnthropic } from '@/lib/ai/client'
 import { extractText } from '@/lib/ai/parse'
 import { withTimeout } from '@/lib/ai/timeout'
-import { BRAND_VOICE } from '@/lib/prompts/brand'
+import {
+  BRAND_VOICE,
+  SENDER,
+  sequenceNote,
+  type SequencePosition,
+} from '@/lib/prompts/brand'
+import { discoveryContextBlock, type LetterDiscoveryContext } from './generate-letter'
 import type { DiscoveryClientType } from '@/lib/types'
 
 export async function generateEmail(
-  discoveryTitle: string,
+  discovery: LetterDiscoveryContext,
   recipientName: string,
   recipientCompany: string,
   clientType: DiscoveryClientType,
+  position: SequencePosition = 'after_letter',
 ): Promise<string> {
   requireAnthropic()
 
-  const prompt = `Write a brief email follow-up (100–160 words) referencing a physical letter already sent to ${recipientName} at ${recipientCompany}.
+  const prompt = `Write a brief outreach email (100–160 words) from ${SENDER.name} (${SENDER.title} of ${SENDER.company}, ${SENDER.discipline}) to ${recipientName} at ${recipientCompany} (${clientType.replace(/_/g, ' ')}).
 
-The physical letter was about this market signal: "${discoveryTitle}"
-Client type: ${clientType.replace('_', ' ')}
+${sequenceNote(position)}
+
+${discoveryContextBlock(discovery)}
 
 Requirements:
-- Casual-professional tone consistent with Oaki Studio's brand voice
-- Reference the physical letter briefly
-- Restate the core opportunity in 1–2 sentences
-- One clear, low-pressure call to action
-- Do not be salesy
-- Format: Subject line, then body
+- Calm-professional tone consistent with Oaki Studio's brand voice
+- Open with the recipient's signal — the project/news above — not with Oaki
+- State the core opportunity in 1–2 sentences
+- One clear, low-pressure call to action (e.g. a short walkthrough or 20-minute call)
+- Written in English; no placeholders — sign off as ${SENDER.name}, ${SENDER.company}
+- Format: a "Subject:" line, then the body
 
 Write the email now:`
 

@@ -1,6 +1,8 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { ScoreBlock, Empty } from '@/components/ui/primitives'
 import { Icon } from '@/components/ui/icons'
 import type { FirmCandidateRow } from '@/lib/types'
@@ -9,7 +11,74 @@ interface Props {
   candidates: FirmCandidateRow[]
 }
 
+// /api/prospecting/promote requires every firm field non-empty + a 0–100
+// integer score; rows missing any of those can't be promoted from here.
+function canPromote(c: FirmCandidateRow): boolean {
+  return !!(c.name && c.country && c.project_type && c.reference_project && typeof c.score === 'number')
+}
+
 export default function CandidatesCard({ candidates }: Props) {
+  const router = useRouter()
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [errorById, setErrorById] = useState<Record<string, string>>({})
+
+  function setRowError(id: string, message: string | null) {
+    setErrorById((prev) => {
+      const next = { ...prev }
+      if (message) next[id] = message
+      else delete next[id]
+      return next
+    })
+  }
+
+  async function handlePromote(c: FirmCandidateRow) {
+    setBusyId(c.id)
+    setRowError(c.id, null)
+    try {
+      const res = await fetch('/api/prospecting/promote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          firm: {
+            name: c.name,
+            country: c.country,
+            project_type: c.project_type,
+            reference_project: c.reference_project,
+            website: c.website ?? null,
+            score: Math.round(c.score ?? 0),
+          },
+          source_article_url: c.source_article_url,
+        }),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(data?.error ?? 'Promote failed')
+      router.refresh()
+    } catch (err) {
+      setRowError(c.id, err instanceof Error ? err.message : 'Promote failed')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function handleDismiss(c: FirmCandidateRow) {
+    setBusyId(c.id)
+    setRowError(c.id, null)
+    try {
+      const res = await fetch(`/api/candidates/${c.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'dismissed' }),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(data?.error ?? 'Dismiss failed')
+      router.refresh()
+    } catch (err) {
+      setRowError(c.id, err instanceof Error ? err.message : 'Dismiss failed')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   return (
     <div className="card">
       <div className="card-head">
@@ -60,6 +129,26 @@ export default function CandidatesCard({ candidates }: Props) {
                       {host}
                       <Icon name="external" size={10} />
                     </a>
+                  )}
+                  <div className="row" style={{ gap: 6, marginTop: 8 }}>
+                    <button
+                      className="btn btn-xs"
+                      onClick={() => handlePromote(c)}
+                      disabled={busyId !== null || !canPromote(c)}
+                      title={canPromote(c) ? 'Promote to Company' : 'Missing fields — promote from Prospecting instead'}
+                    >
+                      {busyId === c.id ? 'Working…' : 'Promote'}
+                    </button>
+                    <button
+                      className="btn btn-xs btn-ghost"
+                      onClick={() => handleDismiss(c)}
+                      disabled={busyId !== null}
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                  {errorById[c.id] && (
+                    <div className="micro" style={{ color: 'var(--red)', marginTop: 6 }}>{errorById[c.id]}</div>
                   )}
                 </div>
                 <ScoreBlock value={c.score ?? 0} size="sm" />

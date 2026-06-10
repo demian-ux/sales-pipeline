@@ -129,6 +129,7 @@ create table if not exists ingestion_runs (
   articles_analyzed           integer default 0,
   articles_new                integer default 0,
   errors                      text[],
+  failed_sources              text[],
   current_step                text,
   progress_percent            integer not null default 0,
   status                      text not null default 'running' -- 'running' | 'done' | 'failed'
@@ -362,3 +363,46 @@ insert into sources (name, url, source_type, region, sector, active, sort_order)
   ('Le Moniteur',          'https://www.lemoniteur.fr/rss/actualites',                   'rss', 'france',   'general',      false, 200),
   ('Building Design',      'https://www.bdonline.co.uk/rss',                             'rss', 'europe',   'architecture', false, 200)
 on conflict (url) do update set active = excluded.active, sort_order = excluded.sort_order;
+
+-- ============================================================================
+-- WORKFLOW_ACTIONS — durable sent/copied/dismissed tracking (P0, 2026-06-09).
+-- Replaces sessionCache.workflowActions. IDs reference Sheets rows (no FK).
+-- ============================================================================
+create table if not exists workflow_actions (
+  action_id      text primary key,
+  type           text not null,        -- draft_copied | draft_sent | draft_dismissed | gmail_draft_created | recommendation_accepted | recommendation_dismissed
+  lead_id        text,
+  insight_id     text,
+  opportunity_id text,
+  channel        text,                 -- 'email' | 'linkedin'
+  note           text,
+  recorded_at    timestamptz not null default now()
+);
+
+create index if not exists idx_workflow_actions_recorded on workflow_actions(recorded_at desc);
+create index if not exists idx_workflow_actions_lead     on workflow_actions(lead_id);
+
+-- ============================================================================
+-- MEETING_PREPS — durable per-lead meeting prep (P0, 2026-06-09).
+-- Replaces sessionCache.meetingPreps.
+-- ============================================================================
+create table if not exists meeting_preps (
+  lead_id    text primary key,
+  prep       jsonb not null,
+  updated_at timestamptz not null default now()
+);
+
+-- ============================================================================
+-- LETTER_DRAFTS — physical-letter drafts per lead (P2, 2026-06-10).
+-- Mirrors email_drafts / linkedin_drafts.
+-- ============================================================================
+create table if not exists letter_drafts (
+  id         uuid primary key default uuid_generate_v4(),
+  lead_id    text not null unique,
+  company_id text,
+  content    text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_letter_drafts_lead on letter_drafts(lead_id);

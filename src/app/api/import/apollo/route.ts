@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { randomUUID } from 'crypto'
+import { z } from 'zod'
 import {
   getLeads,
   getCompanies,
@@ -38,16 +40,35 @@ function detectDuplicate(
 
 // POST /api/import/apollo
 // Body: { rows: ApolloImportRow[], campaign_id?: string, dry_run?: boolean }
+const MAX_IMPORT_ROWS = 2000
+
+const ImportBody = z.object({
+  rows: z
+    .array(z.record(z.string(), z.string().optional()))
+    .min(1, 'No rows provided')
+    .max(MAX_IMPORT_ROWS, `Too many rows — max ${MAX_IMPORT_ROWS} per import`),
+  campaign_id: z.string().optional(),
+  dry_run: z.boolean().optional(),
+  field_map: z.record(z.string(), z.string()).optional(),
+})
+
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json()
-    const rows: ApolloImportRow[] = body.rows ?? []
-    const campaignId: string | undefined = body.campaign_id
-    const dryRun: boolean = body.dry_run ?? false
-
-    if (!Array.isArray(rows) || rows.length === 0) {
-      return NextResponse.json({ error: 'No rows provided' }, { status: 400 })
+    let json: unknown
+    try {
+      json = await req.json()
+    } catch {
+      return NextResponse.json({ error: 'Body must be JSON' }, { status: 400 })
     }
+
+    const parsed = ImportBody.safeParse(json)
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Invalid body' }, { status: 400 })
+    }
+
+    const rows = parsed.data.rows as unknown as ApolloImportRow[]
+    const campaignId: string | undefined = parsed.data.campaign_id
+    const dryRun: boolean = parsed.data.dry_run ?? false
 
     const [existingLeads, existingCompanies, existingOpportunities] = await Promise.all([
       getLeads(),
@@ -102,7 +123,7 @@ export async function POST(req: NextRequest) {
         if (existingCompany) {
           companyId = existingCompany.company_id
         } else {
-          companyId = `co_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+          companyId = `co_${randomUUID()}`
           const newCompany: Company = {
             company_id: companyId,
             company_name: row.company_name,
@@ -120,7 +141,7 @@ export async function POST(req: NextRequest) {
         }
 
         // Create lead
-        const leadId = `lead_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+        const leadId = `lead_${randomUUID()}`
         const newLead: Lead = {
           lead_id: leadId,
           company_id: companyId,
@@ -156,12 +177,16 @@ export async function POST(req: NextRequest) {
         )
         if (unclaimed.length === 1) {
           try {
-            await updateOpportunity(unclaimed[0].opportunity_id, {
+            const attached = await updateOpportunity(unclaimed[0].opportunity_id, {
               lead_id: leadId,
               updated_at: now,
             })
-            claimedOppIds.add(unclaimed[0].opportunity_id)
-            autoAttached.push({ lead_id: leadId, opportunity_id: unclaimed[0].opportunity_id })
+            if (!attached) {
+              summary.errors.push(`Auto-attach opportunity for ${row.first_name} ${row.last_name}: opportunity ${unclaimed[0].opportunity_id} not found in sheet`)
+            } else {
+              claimedOppIds.add(unclaimed[0].opportunity_id)
+              autoAttached.push({ lead_id: leadId, opportunity_id: unclaimed[0].opportunity_id })
+            }
           } catch (err) {
             summary.errors.push(`Auto-attach opportunity for ${row.first_name} ${row.last_name}: ${err instanceof Error ? err.message : 'Unknown error'}`)
           }

@@ -18,6 +18,8 @@ async function safeJson<T = unknown>(res: Response): Promise<T | null> {
   }
 }
 
+const LAST_VISIT_KEY = 'oaki_discoveries_last_visit'
+
 export default function DiscoveriesPage() {
   const [filters, setFilters] = useState<DiscoveryFilterState>(DEFAULT_FILTERS)
   const [discoveries, setDiscoveries] = useState<Discovery[]>([])
@@ -27,6 +29,22 @@ export default function DiscoveriesPage() {
   const [ingesting, setIngesting] = useState(false)
   const [ingestMsg, setIngestMsg] = useState('')
   const [supabaseMissing, setSupabaseMissing] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [bulkBusy, setBulkBusy] = useState(false)
+  // Timestamp of the PREVIOUS visit — discoveries created after it get a NEW
+  // marker. Updated to "now" once on mount, so the markers persist for the
+  // whole session.
+  const [lastVisit, setLastVisit] = useState<number | null>(null)
+
+  useEffect(() => {
+    try {
+      const prev = localStorage.getItem(LAST_VISIT_KEY)
+      setLastVisit(prev ? Number(prev) : null)
+      localStorage.setItem(LAST_VISIT_KEY, String(Date.now()))
+    } catch {
+      // localStorage unavailable — no markers, no problem
+    }
+  }, [])
 
   const fetchDiscoveries = useCallback(async (f: DiscoveryFilterState) => {
     setLoading(true)
@@ -76,7 +94,56 @@ export default function DiscoveriesPage() {
 
   useEffect(() => {
     fetchDiscoveries(filters)
+    setSelected(new Set())
   }, [filters, fetchDiscoveries])
+
+  const setStatus = useCallback(
+    async (id: string, status: 'saved' | 'archived' | 'active') => {
+      const res = await fetch(`/api/discoveries/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      })
+      if (res.ok) fetchDiscoveries(filters)
+    },
+    [filters, fetchDiscoveries],
+  )
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  async function bulkSetStatus(status: 'saved' | 'archived') {
+    if (selected.size === 0 || bulkBusy) return
+    setBulkBusy(true)
+    try {
+      const res = await fetch('/api/discoveries/bulk-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [...selected], status }),
+      })
+      if (res.ok) {
+        setSelected(new Set())
+        fetchDiscoveries(filters)
+      }
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+
+  const isNew = useCallback(
+    (d: Discovery) => {
+      if (lastVisit === null) return false
+      const created = d.created_at ? new Date(d.created_at).getTime() : 0
+      return created > lastVisit
+    },
+    [lastVisit],
+  )
 
   async function handleIngest() {
     setIngesting(true)
@@ -92,6 +159,12 @@ export default function DiscoveriesPage() {
       // (e.g. a Vercel 502), `safeJson` returns null and we surface a useful
       // status code instead of "Unexpected token ..." from JSON.parse.
       const data = await safeJson<{ run_id?: string; error?: string }>(res)
+      if (res.status === 409 && data?.run_id) {
+        // A run is already in progress — attach to it instead of failing.
+        setIngestMsg('A run is already in progress — following it…')
+        pollRunStatus(data.run_id)
+        return
+      }
       if (!res.ok) {
         setIngestMsg(`Error: ${data?.error ?? `Request failed (${res.status})`}`)
         setIngesting(false)
@@ -123,11 +196,18 @@ export default function DiscoveriesPage() {
           progress_percent?: number
           articles_new?: number
           articles_analyzed?: number
+          failed_sources?: string[]
         }>(res)
         if (!run) continue
 
         if (run.status === 'done') {
-          setIngestMsg(`${run.articles_new ?? 0} new from ${run.articles_analyzed ?? 0} analyzed`)
+          const failedNote = run.failed_sources && run.failed_sources.length > 0
+            ? ` · ${run.failed_sources.length} source${run.failed_sources.length === 1 ? '' : 's'} failed: ${run.failed_sources.join(', ')}`
+            : ''
+          const deferredNote = run.current_step?.includes('deferred')
+            ? ' · some articles deferred to next run'
+            : ''
+          setIngestMsg(`${run.articles_new ?? 0} new from ${run.articles_analyzed ?? 0} analyzed${deferredNote}${failedNote}`)
           fetchDiscoveries(filters)
           setIngesting(false)
           return
@@ -206,6 +286,39 @@ export default function DiscoveriesPage() {
                 : `${total} ${total === 1 ? 'discovery' : 'discoveries'}`}
             </span>
             <div className="row" style={{ gap: 8 }}>
+              {selected.size > 0 && (
+                <div className="row" style={{ gap: 6, marginRight: 8 }}>
+                  <span className="micro" style={{ color: 'var(--accent)' }}>
+                    {selected.size} SELECTED
+                  </span>
+                  <button
+                    className="btn btn-xs"
+                    onClick={() => bulkSetStatus('saved')}
+                    disabled={bulkBusy}
+                  >
+                    {bulkBusy ? '…' : 'Save'}
+                  </button>
+                  <button
+                    className="btn btn-xs"
+                    onClick={() => bulkSetStatus('archived')}
+                    disabled={bulkBusy}
+                  >
+                    {bulkBusy ? '…' : 'Archive'}
+                  </button>
+                  <button
+                    className="btn btn-xs btn-ghost"
+                    onClick={() => setSelected(new Set(discoveries.map((d) => d.id)))}
+                  >
+                    All
+                  </button>
+                  <button
+                    className="btn btn-xs btn-ghost"
+                    onClick={() => setSelected(new Set())}
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
               <span className="micro" style={{ color: 'var(--ink-3)' }}>Sort</span>
               <div className="seg">
                 <button
@@ -243,7 +356,14 @@ export default function DiscoveriesPage() {
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
             {discoveries.map((d) => (
-              <DiscoveryCard key={d.id} discovery={d} />
+              <DiscoveryCard
+                key={d.id}
+                discovery={d}
+                selected={selected.has(d.id)}
+                onToggleSelect={() => toggleSelect(d.id)}
+                onStatusChange={setStatus}
+                isNew={isNew(d)}
+              />
             ))}
           </div>
         </div>

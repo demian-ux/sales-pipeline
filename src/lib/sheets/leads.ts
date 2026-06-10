@@ -46,7 +46,6 @@ export async function getLeads(): Promise<Lead[]> {
   }
   if (USE_MOCK) return mockResult()
   const rows = await withFallback(() => readTab(TAB), [] as string[][])
-  if (rows.length === 0) return mockResult()
   const leads = rowsToObjects<Lead>(rows)
   return leads.map((l) => ({
     ...l,
@@ -71,26 +70,29 @@ export async function createLead(lead: Lead): Promise<void> {
   await appendRowByMap(TAB, leadToMap(lead), LEAD_COLUMNS)
 }
 
-export async function updateLead(leadId: string, updates: Partial<Lead>): Promise<void> {
+// Returns false when the Lead row (or the tab's data) can't be found, so
+// callers can surface a 404 instead of silently pretending the write landed.
+export async function updateLead(leadId: string, updates: Partial<Lead>): Promise<boolean> {
   if (USE_MOCK) {
     sessionCache.leadUpdates[leadId] = {
       ...(sessionCache.leadUpdates[leadId] ?? {}),
       ...updates,
       updated_at: new Date().toISOString(),
     }
-    return
+    return true
   }
-  const rows = await readTab(TAB)
-  if (rows.length < 2) return
+  const rows = await readTab(TAB, { fresh: true })
+  if (rows.length < 2) return false
   const headers = rows[0]
   const rowIndex = rows.findIndex((r) => r[0] === leadId)
-  if (rowIndex < 1) return
+  if (rowIndex < 1) return false
   const updated = [...rows[rowIndex]]
   Object.entries(updates).forEach(([key, val]) => {
     const colIndex = headers.indexOf(key)
     if (colIndex >= 0) updated[colIndex] = String(val ?? '')
   })
   await updateRow(TAB, rowIndex + 1, updated)
+  return true
 }
 
 // ─── Delete + bulk ─────────────────────────────────────────────────────────
@@ -102,7 +104,7 @@ export async function deleteLead(leadId: string): Promise<boolean> {
     delete sessionCache.leadUpdates[leadId]
     return sessionCache.leads.length < before
   }
-  const rows = await readTab(TAB)
+  const rows = await readTab(TAB, { fresh: true })
   const rowIndex = rows.findIndex((r) => r[0] === leadId)
   if (rowIndex < 1) return false
   // rowIndex in our array == 0-based sheet row index (rows[0] = sheet row 1)
@@ -119,7 +121,7 @@ export async function bulkDeleteLeads(leadIds: string[]): Promise<{ deleted: num
     for (const id of leadIds) delete sessionCache.leadUpdates[id]
     return { deleted: before - sessionCache.leads.length }
   }
-  const rows = await readTab(TAB)
+  const rows = await readTab(TAB, { fresh: true })
   if (rows.length < 2) return { deleted: 0 }
   const idSet = new Set(leadIds)
   const indices: number[] = []
@@ -153,7 +155,7 @@ export async function bulkAssignCampaign(
     return { updated: leadIds.length }
   }
 
-  const rows = await readTab(TAB)
+  const rows = await readTab(TAB, { fresh: true })
   if (rows.length < 2) return { updated: 0 }
   const headers = rows[0]
   const campaignColIdx = headers.indexOf('campaign_id')
@@ -200,7 +202,7 @@ export async function clearLeadCampaign(campaignId: string): Promise<{ updated: 
     return { updated: touched }
   }
 
-  const rows = await readTab(TAB)
+  const rows = await readTab(TAB, { fresh: true })
   if (rows.length < 2) return { updated: 0 }
   const headers = rows[0]
   const campaignColIdx = headers.indexOf('campaign_id')

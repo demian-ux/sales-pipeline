@@ -22,7 +22,6 @@ function interactionToMap(i: Interaction): Record<string, string> {
 export async function getInteractions(): Promise<Interaction[]> {
   if (USE_MOCK) return [...mockInteractions, ...sessionCache.interactions]
   const rows = await withFallback(() => readTab(TAB), [] as string[][])
-  if (rows.length === 0) return [...mockInteractions, ...sessionCache.interactions]
   return rowsToObjects<Interaction>(rows)
 }
 

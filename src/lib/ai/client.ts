@@ -4,7 +4,13 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { env } from '@/lib/env'
 
-export const ai = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY })
+// timeout: the SDK aborts the underlying request itself — unlike the
+// withTimeout race, a timed-out call stops consuming the function slot.
+export const ai = new Anthropic({
+  apiKey: env.ANTHROPIC_API_KEY,
+  timeout: env.ANTHROPIC_TIMEOUT_MS,
+  maxRetries: 2,
+})
 
 export const MODEL = env.ANTHROPIC_MODEL
 export const ANTHROPIC_TIMEOUT_MS = env.ANTHROPIC_TIMEOUT_MS

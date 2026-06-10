@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getGmailClient, isGmailConfigured, isGmailConnected } from '@/lib/gmail/client'
+import { saveWorkflowAction, newWorkflowActionId } from '@/lib/workflow/store'
 
 // POST /api/gmail/create-draft
-// Body: { to: string, subject: string, body: string }
+// Body: { to: string, subject: string, body: string, lead_id?: string }
 export async function POST(req: NextRequest) {
   try {
     if (!isGmailConfigured()) {
@@ -12,7 +13,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Gmail not connected — connect in Settings' }, { status: 403 })
     }
 
-    const { to, subject, body } = await req.json()
+    const { to, subject, body, lead_id } = await req.json()
     if (!to || !subject || !body) {
       return NextResponse.json({ error: 'to, subject, and body are required' }, { status: 400 })
     }
@@ -40,6 +41,21 @@ export async function POST(req: NextRequest) {
         message: { raw: encoded },
       },
     })
+
+    if (lead_id) {
+      // Non-fatal: the Gmail draft exists either way.
+      try {
+        await saveWorkflowAction({
+          action_id: newWorkflowActionId(),
+          type: 'gmail_draft_created',
+          lead_id,
+          channel: 'email',
+          recorded_at: new Date().toISOString(),
+        })
+      } catch (err) {
+        console.error('create-draft: workflow log failed:', err)
+      }
+    }
 
     return NextResponse.json({
       draft_id: result.data.id,

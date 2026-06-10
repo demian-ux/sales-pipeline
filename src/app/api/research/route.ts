@@ -1,6 +1,20 @@
 import { NextResponse } from 'next/server'
+import { randomUUID } from 'crypto'
+import { z } from 'zod'
 import { getResearchFindings, saveResearchFinding } from '@/lib/sheets'
 import type { ResearchFinding } from '@/lib/types'
+
+const CreateResearchBody = z.object({
+  company_id: z.string().min(1, 'company_id is required'),
+  lead_id: z.string().optional(),
+  source_type: z.string().optional(),
+  source_url: z.string().optional(),
+  research_summary: z.string().min(1, 'research_summary is required'),
+  design_observations: z.string().optional(),
+  market_positioning: z.string().optional(),
+  visual_identity_notes: z.string().optional(),
+  signals_detected: z.string().optional(),
+})
 
 export async function GET(req: Request) {
   try {
@@ -24,16 +38,21 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json()
-    if (!body.company_id || !body.research_summary) {
-      return NextResponse.json(
-        { error: 'company_id and research_summary are required' },
-        { status: 400 }
-      )
+    let json: unknown
+    try {
+      json = await req.json()
+    } catch {
+      return NextResponse.json({ error: 'Body must be JSON' }, { status: 400 })
     }
 
+    const parsed = CreateResearchBody.safeParse(json)
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Invalid body' }, { status: 400 })
+    }
+    const body = parsed.data
+
     const finding: ResearchFinding = {
-      finding_id: `rf_${Date.now()}`,
+      finding_id: `rf_${randomUUID()}`,
       company_id: body.company_id,
       lead_id: body.lead_id,
       source_type: body.source_type ?? 'Manual',

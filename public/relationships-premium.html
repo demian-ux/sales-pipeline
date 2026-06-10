@@ -1,0 +1,777 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Oaki Relations — Relationships</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap"
+    rel="stylesheet"
+  />
+
+  <style>
+    /* ─────────────────────────────────────────────────────────────────────
+       Oaki Relations — Relationships
+       A premium roster: breathing room, a clear read, hairline detail.
+       The eye travels — temperature → name → next move. Everything else
+       is a quiet supporting note.
+    ───────────────────────────────────────────────────────────────────── */
+
+    :root {
+      --bg:          #101010;
+      --bg-raise:    #141414;
+      --side:        #0c0c0c;
+
+      --ink:         #ededed;
+      --ink-2:       #8c8c8c;
+      --ink-3:       #565656;
+      --ink-4:       #383838;
+
+      --line:        #222222;
+      --line-soft:   #1a1a1a;
+
+      --gold:        #c9a96d;
+      --gold-soft:   rgba(201, 169, 109, 0.10);
+
+      --temp-anchor: #c9a96d;
+      --temp-warm:   #bf923c;
+      --temp-cold:   #6f9cc4;
+
+      --font: 'Geist', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+      --mono: 'Geist Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+      --ease: cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+
+    body {
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--font);
+      font-size: 13px;
+      line-height: 1.5;
+      letter-spacing: -0.011em;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      font-variant-numeric: tabular-nums;
+    }
+
+    ::selection { background: var(--gold-soft); }
+
+    /* ── Shell ─────────────────────────────────────────────────────────── */
+
+    .app {
+      display: grid;
+      grid-template-columns: 232px 1fr;
+      min-height: 100vh;
+    }
+
+    .side {
+      background: var(--side);
+      border-right: 1px solid var(--line-soft);
+      display: flex;
+      flex-direction: column;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+    }
+
+    .brand {
+      padding: 30px 26px 26px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .brand-mark {
+      font-size: 17px;
+      font-weight: 600;
+      letter-spacing: 0.26em;
+      color: var(--ink);
+    }
+    .brand-mark .ring { color: var(--gold); margin-right: 2px; }
+    .brand-sub {
+      font-size: 9.5px;
+      letter-spacing: 0.24em;
+      text-transform: uppercase;
+      color: var(--ink-3);
+    }
+
+    .nav {
+      flex: 1;
+      padding: 8px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .nav-group { display: flex; flex-direction: column; gap: 1px; }
+    .nav-label {
+      font-size: 9px;
+      font-weight: 500;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--ink-4);
+      padding: 0 12px 8px;
+    }
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      padding: 7px 12px;
+      border-radius: 5px;
+      font-size: 12.5px;
+      color: var(--ink-2);
+      border-left: 1.5px solid transparent;
+      margin-left: -1.5px;
+      transition: color 0.12s var(--ease), background 0.12s var(--ease);
+      cursor: pointer;
+    }
+    .nav-item:hover { color: var(--ink); }
+    .nav-item .glyph { font-size: 5px; color: var(--ink-4); }
+    .nav-item.on {
+      color: var(--ink);
+      border-left-color: var(--gold);
+      background: linear-gradient(90deg, var(--gold-soft), transparent 70%);
+    }
+    .nav-item.on .glyph { color: var(--gold); }
+
+    .side-foot {
+      padding: 18px 26px 22px;
+      border-top: 1px solid var(--line-soft);
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .side-foot .who { font-size: 12px; color: var(--ink); }
+    .side-foot .where {
+      font-size: 9.5px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--ink-3);
+    }
+
+    /* ── Page ──────────────────────────────────────────────────────────── */
+
+    .page {
+      max-width: 1180px;
+      padding: 52px 64px 120px;
+    }
+
+    .page-head {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 32px;
+      margin-bottom: 38px;
+    }
+    .eyebrow {
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--ink-3);
+      margin-bottom: 14px;
+    }
+    .title {
+      font-size: 30px;
+      font-weight: 500;
+      letter-spacing: -0.022em;
+      line-height: 1;
+      color: var(--ink);
+    }
+    .lede {
+      font-size: 13px;
+      color: var(--ink-2);
+      margin-top: 12px;
+      max-width: 52ch;
+      line-height: 1.6;
+    }
+
+    .head-actions { display: flex; gap: 10px; flex-shrink: 0; }
+    .btn {
+      font-family: inherit;
+      font-size: 12px;
+      letter-spacing: -0.01em;
+      color: var(--ink-2);
+      background: transparent;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 8px 15px;
+      cursor: pointer;
+      transition: all 0.12s var(--ease);
+      white-space: nowrap;
+    }
+    .btn:hover { color: var(--ink); border-color: var(--ink-4); }
+    .btn-key { color: var(--ink); border-color: var(--ink-4); }
+    .btn-key .plus { color: var(--gold); margin-right: 5px; }
+
+    /* ── Toolbar ───────────────────────────────────────────────────────── */
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      padding-bottom: 22px;
+      border-bottom: 1px solid var(--line-soft);
+    }
+
+    .search {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      flex: 1;
+      max-width: 320px;
+      padding: 7px 2px;
+      border-bottom: 1px solid var(--line);
+      transition: border-color 0.15s var(--ease);
+    }
+    .search:focus-within { border-bottom-color: var(--gold); }
+    .search svg { flex-shrink: 0; color: var(--ink-3); }
+    .search input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      font-family: inherit;
+      font-size: 13px;
+      color: var(--ink);
+      letter-spacing: -0.011em;
+    }
+    .search input::placeholder { color: var(--ink-3); }
+
+    .group-by {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    .group-by-label {
+      font-size: 9.5px;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--ink-4);
+    }
+    .seg {
+      display: inline-flex;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 2px;
+      gap: 2px;
+    }
+    .seg-opt {
+      font-family: inherit;
+      font-size: 11.5px;
+      letter-spacing: -0.01em;
+      color: var(--ink-3);
+      background: transparent;
+      border: none;
+      border-radius: 5px;
+      padding: 5px 12px;
+      cursor: pointer;
+      transition: all 0.12s var(--ease);
+    }
+    .seg-opt:hover { color: var(--ink-2); }
+    .seg-opt.on { background: var(--bg-raise); color: var(--ink); }
+
+    /* ── Group ─────────────────────────────────────────────────────────── */
+
+    .group { margin-top: 54px; }
+    .group:first-child { margin-top: 34px; }
+
+    .group-head {
+      display: flex;
+      align-items: baseline;
+      gap: 14px;
+      margin-bottom: 6px;
+    }
+    .group-label {
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--ink-2);
+    }
+    .group-count {
+      font-family: var(--mono);
+      font-size: 10.5px;
+      color: var(--ink-4);
+      letter-spacing: 0.04em;
+    }
+    .group-rule {
+      flex: 1;
+      height: 1px;
+      background: var(--line-soft);
+    }
+    .group-note {
+      font-size: 12px;
+      color: var(--ink-3);
+      margin-bottom: 10px;
+      letter-spacing: -0.005em;
+    }
+
+    /* ── Lead row ──────────────────────────────────────────────────────── */
+
+    .lead {
+      display: grid;
+      grid-template-columns: 18px minmax(0, 1.15fr) minmax(0, 1.55fr) 128px 44px;
+      align-items: center;
+      gap: 28px;
+      padding: 19px 16px 19px 12px;
+      margin: 0 -16px 0 -12px;
+      border-radius: 8px;
+      border-bottom: 1px solid var(--line-soft);
+      transition: background 0.14s var(--ease);
+      cursor: pointer;
+    }
+    .lead:hover { background: var(--bg-raise); }
+    .group .lead:last-child { border-bottom: none; }
+
+    /* mark — temperature dot at rest, selection check on hover */
+    .lead-mark {
+      position: relative;
+      width: 16px;
+      height: 16px;
+    }
+    .dot, .check {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      transition: opacity 0.14s var(--ease);
+    }
+    .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+    }
+    .dot.anchor { background: var(--temp-anchor); }
+    .dot.warm   { background: var(--temp-warm); }
+    .dot.cold   { background: var(--temp-cold); }
+    .check {
+      width: 14px;
+      height: 14px;
+      border: 1px solid var(--ink-3);
+      border-radius: 4px;
+      opacity: 0;
+    }
+    .lead:hover .dot   { opacity: 0; }
+    .lead:hover .check { opacity: 1; }
+
+    /* identity — the primary read */
+    .lead-name {
+      font-size: 15px;
+      font-weight: 500;
+      letter-spacing: -0.018em;
+      color: var(--ink);
+    }
+    .lead-sub {
+      font-size: 12px;
+      color: var(--ink-2);
+      margin-top: 3px;
+      letter-spacing: -0.006em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .lead-sub .city { color: var(--ink-3); }
+
+    /* next move — the secondary read */
+    .lead-move {
+      display: flex;
+      gap: 9px;
+      align-items: baseline;
+      font-size: 13px;
+      color: var(--ink);
+      letter-spacing: -0.008em;
+      line-height: 1.45;
+    }
+    .lead-move .tick {
+      color: var(--gold);
+      font-family: var(--mono);
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+    .lead-move.quiet { color: var(--ink-3); }
+    .lead-move.quiet .tick { color: var(--ink-4); }
+
+    /* meta — a whisper */
+    .lead-meta {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
+      text-align: right;
+    }
+    .lead-stage {
+      font-size: 11px;
+      color: var(--ink-2);
+      letter-spacing: 0.01em;
+      white-space: nowrap;
+    }
+    .lead-stage .num {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--ink-4);
+      margin-right: 5px;
+    }
+    .lead-when {
+      font-size: 10.5px;
+      color: var(--ink-3);
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+    }
+    .lead-when.none { color: var(--ink-4); }
+
+    /* priority — present, not loud */
+    .lead-score {
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--ink-2);
+      text-align: right;
+      letter-spacing: -0.01em;
+    }
+    .lead-score .of {
+      font-size: 9px;
+      color: var(--ink-4);
+    }
+
+    /* footer note */
+    .roster-foot {
+      margin-top: 56px;
+      padding-top: 22px;
+      border-top: 1px solid var(--line-soft);
+      font-size: 11px;
+      color: var(--ink-3);
+      letter-spacing: 0.01em;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .roster-foot .key-dot {
+      width: 5px; height: 5px; border-radius: 50%;
+      display: inline-block;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <!-- ── Sidebar ───────────────────────────────────────────────────── -->
+    <aside class="side">
+      <div class="brand">
+        <div class="brand-mark"><span class="ring">○</span>OAKI</div>
+        <div class="brand-sub">Relations</div>
+      </div>
+
+      <nav class="nav">
+        <div class="nav-group">
+          <div class="nav-item"><span class="glyph">○</span> Dashboard</div>
+        </div>
+        <div class="nav-group">
+          <div class="nav-label">People</div>
+          <div class="nav-item on"><span class="glyph">●</span> Relationships</div>
+          <div class="nav-item"><span class="glyph">○</span> Conversations</div>
+        </div>
+        <div class="nav-group">
+          <div class="nav-label">Pipeline</div>
+          <div class="nav-item"><span class="glyph">○</span> Opportunities</div>
+          <div class="nav-item"><span class="glyph">○</span> Campaigns</div>
+        </div>
+        <div class="nav-group">
+          <div class="nav-label">Intelligence</div>
+          <div class="nav-item"><span class="glyph">○</span> Discoveries</div>
+          <div class="nav-item"><span class="glyph">○</span> Research</div>
+        </div>
+        <div class="nav-group">
+          <div class="nav-label">Tools</div>
+          <div class="nav-item"><span class="glyph">○</span> Import</div>
+          <div class="nav-item"><span class="glyph">○</span> Settings</div>
+        </div>
+      </nav>
+
+      <div class="side-foot">
+        <div class="who">Demian Oki</div>
+        <div class="where">Buenos Aires · Founder</div>
+      </div>
+    </aside>
+
+    <!-- ── Main ──────────────────────────────────────────────────────── -->
+    <main>
+      <div class="page">
+
+        <!-- Header -->
+        <header class="page-head">
+          <div>
+            <div class="eyebrow">People</div>
+            <h1 class="title">Relationships</h1>
+            <p class="lede">
+              Eleven active relationships across eleven studios — the people the
+              work comes through, kept in order of who needs you next.
+            </p>
+          </div>
+          <div class="head-actions">
+            <button class="btn">Import</button>
+            <button class="btn btn-key"><span class="plus">+</span>New lead</button>
+          </div>
+        </header>
+
+        <!-- Toolbar -->
+        <div class="toolbar">
+          <div class="search">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+              <circle cx="11" cy="11" r="7" />
+              <path d="M21 21l-4.3-4.3" />
+            </svg>
+            <input type="text" placeholder="Search the roster — name, studio, city" />
+          </div>
+          <div class="group-by">
+            <span class="group-by-label">Grouped by</span>
+            <div class="seg">
+              <button class="seg-opt on">Relationship</button>
+              <button class="seg-opt">Pipeline stage</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Roster -->
+        <div class="roster">
+
+          <!-- Anchor Clients -->
+          <section class="group">
+            <div class="group-head">
+              <span class="group-label">Anchor Clients</span>
+              <span class="group-count">04</span>
+              <span class="group-rule"></span>
+            </div>
+            <p class="group-note">The relationships the studio is built on. Protect the cadence.</p>
+
+            <div class="lead">
+              <span class="lead-mark"><span class="dot anchor"></span><span class="check"></span></span>
+              <div>
+                <div class="lead-name">Lina Marchetti</div>
+                <div class="lead-sub">Founding Partner · Studio Aria <span class="city">· Milan</span></div>
+              </div>
+              <div class="lead-move">
+                <span class="tick">&rarr;</span>
+                <span>Send the Côte Maritime moodboard</span>
+              </div>
+              <div class="lead-meta">
+                <span class="lead-stage"><span class="num">04</span>Discovery</span>
+                <span class="lead-when">3 days ago</span>
+              </div>
+              <div class="lead-score">9.2<span class="of">&nbsp;/10</span></div>
+            </div>
+
+            <div class="lead">
+              <span class="lead-mark"><span class="dot anchor"></span><span class="check"></span></span>
+              <div>
+                <div class="lead-name">Jules Bensaïd</div>
+                <div class="lead-sub">Head of Development · Côte Développement <span class="city">· Marseille</span></div>
+              </div>
+              <div class="lead-move">
+                <span class="tick">&rarr;</span>
+                <span>Confirm the Q3 RFP window</span>
+              </div>
+              <div class="lead-meta">
+                <span class="lead-stage"><span class="num">04</span>Discovery</span>
+                <span class="lead-when">11 days ago</span>
+              </div>
+              <div class="lead-score">9.0<span class="of">&nbsp;/10</span></div>
+            </div>
+
+            <div class="lead">
+              <span class="lead-mark"><span class="dot anchor"></span><span class="check"></span></span>
+              <div>
+                <div class="lead-name">Andrea Cattin</div>
+                <div class="lead-sub">Studio Lead · Cattin Associati <span class="city">· Venice</span></div>
+              </div>
+              <div class="lead-move">
+                <span class="tick">&rarr;</span>
+                <span>Schedule the July studio visit</span>
+              </div>
+              <div class="lead-meta">
+                <span class="lead-stage"><span class="num">03</span>Replied</span>
+                <span class="lead-when">5 days ago</span>
+              </div>
+              <div class="lead-score">8.7<span class="of">&nbsp;/10</span></div>
+            </div>
+
+            <div class="lead">
+              <span class="lead-mark"><span class="dot anchor"></span><span class="check"></span></span>
+              <div>
+                <div class="lead-name">Hannah Vogel</div>
+                <div class="lead-sub">Principal · Vogel Werkstatt <span class="city">· Berlin</span></div>
+              </div>
+              <div class="lead-move">
+                <span class="tick">&rarr;</span>
+                <span>Send the revised fee schedule</span>
+              </div>
+              <div class="lead-meta">
+                <span class="lead-stage"><span class="num">05</span>Proposal</span>
+                <span class="lead-when">8 days ago</span>
+              </div>
+              <div class="lead-score">8.5<span class="of">&nbsp;/10</span></div>
+            </div>
+          </section>
+
+          <!-- Warm Leads -->
+          <section class="group">
+            <div class="group-head">
+              <span class="group-label">Warm Leads</span>
+              <span class="group-count">04</span>
+              <span class="group-rule"></span>
+            </div>
+            <p class="group-note">Engaged and moving. A timely note keeps them warm.</p>
+
+            <div class="lead">
+              <span class="lead-mark"><span class="dot warm"></span><span class="check"></span></span>
+              <div>
+                <div class="lead-name">Étienne Vero</div>
+                <div class="lead-sub">Principal · Vero Architecture <span class="city">· Paris</span></div>
+              </div>
+              <div class="lead-move">
+                <span class="tick">&rarr;</span>
+                <span>Nudge on the Vence villa proposal</span>
+              </div>
+              <div class="lead-meta">
+                <span class="lead-stage"><span class="num">05</span>Proposal</span>
+                <span class="lead-when">21 days ago</span>
+              </div>
+              <div class="lead-score">8.1<span class="of">&nbsp;/10</span></div>
+            </div>
+
+            <div class="lead">
+              <span class="lead-mark"><span class="dot warm"></span><span class="check"></span></span>
+              <div>
+                <div class="lead-name">Inés Peralta</div>
+                <div class="lead-sub">Creative Director · Maison Peralta <span class="city">· Mexico City</span></div>
+              </div>
+              <div class="lead-move">
+                <span class="tick">&rarr;</span>
+                <span>Reply to the Mar de Cortés thread</span>
+              </div>
+              <div class="lead-meta">
+                <span class="lead-stage"><span class="num">02</span>Contacted</span>
+                <span class="lead-when">6 days ago</span>
+              </div>
+              <div class="lead-score">7.7<span class="of">&nbsp;/10</span></div>
+            </div>
+
+            <div class="lead">
+              <span class="lead-mark"><span class="dot warm"></span><span class="check"></span></span>
+              <div>
+                <div class="lead-name">Kenji Tahara</div>
+                <div class="lead-sub">Partner · Tahara Office <span class="city">· Kyoto</span></div>
+              </div>
+              <div class="lead-move">
+                <span class="tick">&rarr;</span>
+                <span>Send the teahouse reference set</span>
+              </div>
+              <div class="lead-meta">
+                <span class="lead-stage"><span class="num">03</span>Replied</span>
+                <span class="lead-when">4 days ago</span>
+              </div>
+              <div class="lead-score">7.4<span class="of">&nbsp;/10</span></div>
+            </div>
+
+            <div class="lead">
+              <span class="lead-mark"><span class="dot warm"></span><span class="check"></span></span>
+              <div>
+                <div class="lead-name">Tomás Kessler</div>
+                <div class="lead-sub">Principal · Kessler &amp; Romm <span class="city">· New York</span></div>
+              </div>
+              <div class="lead-move">
+                <span class="tick">&rarr;</span>
+                <span>Re-open the Greenpoint library scope</span>
+              </div>
+              <div class="lead-meta">
+                <span class="lead-stage"><span class="num">05</span>Proposal</span>
+                <span class="lead-when">24 days ago</span>
+              </div>
+              <div class="lead-score">7.2<span class="of">&nbsp;/10</span></div>
+            </div>
+          </section>
+
+          <!-- Cold Prospects -->
+          <section class="group">
+            <div class="group-head">
+              <span class="group-label">Cold Prospects</span>
+              <span class="group-count">03</span>
+              <span class="group-rule"></span>
+            </div>
+            <p class="group-note">Researched, not yet approached. Open only with a real reason.</p>
+
+            <div class="lead">
+              <span class="lead-mark"><span class="dot cold"></span><span class="check"></span></span>
+              <div>
+                <div class="lead-name">Salomé Cárdenas</div>
+                <div class="lead-sub">Director of Design · Praedia Group <span class="city">· Lisbon</span></div>
+              </div>
+              <div class="lead-move">
+                <span class="tick">&rarr;</span>
+                <span>Open with the Sintra retreat signal</span>
+              </div>
+              <div class="lead-meta">
+                <span class="lead-stage"><span class="num">01</span>Researched</span>
+                <span class="lead-when none">No touch yet</span>
+              </div>
+              <div class="lead-score">7.2<span class="of">&nbsp;/10</span></div>
+            </div>
+
+            <div class="lead">
+              <span class="lead-mark"><span class="dot cold"></span><span class="check"></span></span>
+              <div>
+                <div class="lead-name">Mira Lindgren</div>
+                <div class="lead-sub">Project Director · Norden Hospitality <span class="city">· Stockholm</span></div>
+              </div>
+              <div class="lead-move quiet">
+                <span class="tick">&rarr;</span>
+                <span>Research before the first approach</span>
+              </div>
+              <div class="lead-meta">
+                <span class="lead-stage"><span class="num">00</span>New</span>
+                <span class="lead-when none">No touch yet</span>
+              </div>
+              <div class="lead-score">6.4<span class="of">&nbsp;/10</span></div>
+            </div>
+
+            <div class="lead">
+              <span class="lead-mark"><span class="dot cold"></span><span class="check"></span></span>
+              <div>
+                <div class="lead-name">Carla Baixa</div>
+                <div class="lead-sub">Head of Brand · Baixa Hospitality <span class="city">· Porto</span></div>
+              </div>
+              <div class="lead-move">
+                <span class="tick">&rarr;</span>
+                <span>Open with the Sintra angle</span>
+              </div>
+              <div class="lead-meta">
+                <span class="lead-stage"><span class="num">00</span>New</span>
+                <span class="lead-when none">No touch yet</span>
+              </div>
+              <div class="lead-score">6.9<span class="of">&nbsp;/10</span></div>
+            </div>
+          </section>
+
+          <div class="roster-foot">
+            <span class="key-dot" style="background: var(--temp-anchor)"></span> Anchor
+            &nbsp;&nbsp;
+            <span class="key-dot" style="background: var(--temp-warm)"></span> Warm
+            &nbsp;&nbsp;
+            <span class="key-dot" style="background: var(--temp-cold)"></span> Cold
+            &nbsp;·&nbsp; Hover a row to select. Priority is scored 0–10.
+          </div>
+
+        </div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

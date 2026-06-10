@@ -16,7 +16,7 @@ export async function GET(req: Request) {
     const leadId = searchParams.get('lead_id')
     if (!leadId) return NextResponse.json({ error: 'lead_id required' }, { status: 400 })
 
-    const cached = getMeetingPrep(leadId)
+    const cached = await getMeetingPrep(leadId)
     return NextResponse.json({ prep: cached })
   } catch (err) {
     console.error('GET /api/meeting-prep error:', err)
@@ -46,7 +46,7 @@ export async function POST(req: Request) {
     const campaign = lead.campaign_id ? campaigns.find((c) => c.campaign_id === lead.campaign_id) ?? null : null
 
     const prep = await prepareMeetingPrep(lead, company, research, interactions, campaign)
-    saveMeetingPrep(lead_id, prep)
+    await saveMeetingPrep(lead_id, prep)
 
     return NextResponse.json({ prep })
   } catch (err) {

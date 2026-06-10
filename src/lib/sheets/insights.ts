@@ -51,7 +51,6 @@ function safeParseArray(val?: string): string[] {
 export async function getAIInsights(): Promise<AIInsight[]> {
   if (USE_MOCK) return [...mockAIInsights, ...sessionCache.insights]
   const rows = await withFallback(() => readTab(TAB), [] as string[][])
-  if (rows.length === 0) return [...mockAIInsights, ...sessionCache.insights]
   return rowsToObjects<Record<string, string>>(rows).map(parseInsight)
 }
 

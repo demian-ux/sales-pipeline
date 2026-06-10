@@ -1,6 +1,7 @@
 // Deep analysis prompt. Called once per article that passed classification.
 // Returns a structured JSON payload that maps onto the `discoveries` table.
 
+import { z } from 'zod'
 import { ai, MODEL, requireAnthropic } from '@/lib/ai/client'
 import { parseJson, extractText } from '@/lib/ai/parse'
 import { withTimeout } from '@/lib/ai/timeout'
@@ -138,18 +139,58 @@ Return this exact JSON structure (replace descriptions with actual values):
 }`
 }
 
+// Validation: required core (scores — a discovery without sub-scores is
+// garbage and should fail → retry); everything else degrades to a safe
+// default rather than discarding an otherwise-good analysis.
+const AnalysisSchema = z.object({
+  signal_tier: z.enum(['strong_opportunity', 'watchlist', 'archive']).catch('watchlist'),
+  is_relevant: z.boolean().catch(true),
+  title: z.string().catch(''),
+  city: z.string().catch(''),
+  country: z.string().catch(''),
+  region: z.string().catch('Other'),
+  sector: z.string().catch('other'),
+  project_type: z.string().catch(''),
+  investment_size: z.string().nullable().catch(null),
+  timeline: z.string().nullable().catch(null),
+  main_actors: z.array(z.string()).catch([]),
+  developer: z.string().nullable().catch(null),
+  architect: z.string().nullable().catch(null),
+  government_body: z.string().nullable().catch(null),
+  opportunity_type: z.array(z.string()).catch([]),
+  target_client_types: z.array(z.string()).catch([]),
+  brief_summary: z.string().catch(''),
+  why_it_matters: z.string().catch(''),
+  deep_analysis: z.string().catch(''),
+  suggested_action: z.string().catch(''),
+  tags: z.array(z.string()).catch([]),
+  scores: z.object({
+    opportunity_clarity: z.number(),
+    investment_size: z.number(),
+    timing: z.number(),
+    actors: z.number(),
+    sector_growth: z.number(),
+    region_strategic: z.number(),
+  }),
+  confidence_score: z.number().catch(50),
+  urgency_score: z.number().catch(50),
+})
+
+// Throws on any failure (API error, timeout, truncation, unparseable JSON).
+// Callers must treat a throw as RETRYABLE — never as "archive this article".
+// A transient 30-second outage must not permanently discard a signal.
 export async function analyzeArticle(
   title: string,
   content: string,
   url: string,
-): Promise<DiscoveryAnalysis | null> {
+): Promise<DiscoveryAnalysis> {
   requireAnthropic()
 
-  try {
-    const response = await withTimeout(
+  const call = (maxTokens: number) =>
+    withTimeout(
       ai.messages.create({
         model: MODEL,
-        max_tokens: 3000,
+        max_tokens: maxTokens,
         system: SYSTEM,
         messages: [{ role: 'user', content: userPrompt(title, content, url) }],
       }),
@@ -157,9 +198,16 @@ export async function analyzeArticle(
       'analyzeArticle',
     )
 
-    return parseJson<DiscoveryAnalysis>(extractText(response.content))
-  } catch (err) {
-    console.error('[analyzeArticle] error:', err instanceof Error ? err.message : err)
-    return null
+  let response = await call(3000)
+  if (response.stop_reason === 'max_tokens') {
+    // Truncated JSON would otherwise be "repaired" by jsonrepair into
+    // valid-but-incomplete data. Retry once with more headroom.
+    console.warn('[analyzeArticle] response truncated at 3000 tokens — retrying with 4500')
+    response = await call(4500)
+    if (response.stop_reason === 'max_tokens') {
+      throw new Error('analysis truncated even at 4500 max_tokens')
+    }
   }
+
+  return parseJson(extractText(response.content), AnalysisSchema) as DiscoveryAnalysis
 }

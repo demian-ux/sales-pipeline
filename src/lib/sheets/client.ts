@@ -70,15 +70,72 @@ export function getSheetsStatus(): SheetsStatus {
   return { mode: 'live', lastError: null, lastErrorAt: null }
 }
 
-export async function readTab(tabName: string): Promise<string[][]> {
+// ─── Retry + read cache ────────────────────────────────────────────────────
+
+// Retries transient Sheets API failures (rate limits + server errors) with
+// exponential backoff: 1s/2s/4s plus jitter. Anything else throws immediately.
+const RETRYABLE_STATUS = new Set([429, 500, 503])
+
+function getErrorStatus(e: unknown): number | null {
+  if (e && typeof e === 'object') {
+    const err = e as { code?: unknown; status?: unknown; response?: { status?: unknown } }
+    for (const candidate of [err.code, err.status, err.response?.status]) {
+      const n = typeof candidate === 'string' ? Number(candidate) : candidate
+      if (typeof n === 'number' && Number.isFinite(n)) return n
+    }
+  }
+  return null
+}
+
+async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
+  const MAX_RETRIES = 3
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn()
+    } catch (e) {
+      const status = getErrorStatus(e)
+      if (attempt >= MAX_RETRIES || status === null || !RETRYABLE_STATUS.has(status)) {
+        throw e
+      }
+      const backoffMs = 1000 * 2 ** attempt + Math.random() * 250
+      console.warn(`[Sheets] ${status} — retrying in ${Math.round(backoffMs)}ms (attempt ${attempt + 1}/${MAX_RETRIES})`)
+      await new Promise((resolve) => setTimeout(resolve, backoffMs))
+    }
+  }
+}
+
+// Short-TTL read cache, keyed by tab name. Avoids hammering the API when one
+// request fans out into several readTab calls. Every write helper invalidates
+// the touched tab BEFORE and AFTER the write; read-modify-write flows must
+// pass { fresh: true } so row indexes are never computed from stale data.
+const READ_CACHE_TTL_MS = 5_000
+const readCache = new Map<string, { rows: string[][]; at: number }>()
+
+export function invalidateTabCache(tabName: string): void {
+  readCache.delete(tabName)
+}
+
+export async function readTab(tabName: string, opts?: { fresh?: boolean }): Promise<string[][]> {
+  if (!opts?.fresh) {
+    const cached = readCache.get(tabName)
+    if (cached && Date.now() - cached.at < READ_CACHE_TTL_MS) {
+      return cached.rows
+    }
+  }
   const sheets = await getSheets()
   try {
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId: SHEET_ID!,
-      range: `${tabName}!A:ZZ`,
-    })
+    const res = await withRetry(() =>
+      sheets.spreadsheets.values.get({
+        spreadsheetId: SHEET_ID!,
+        range: `${tabName}!A:ZZ`,
+      })
+    )
     clearSheetsError()
-    return (res.data.values as string[][]) ?? []
+    const rows = (res.data.values as string[][]) ?? []
+    if (!opts?.fresh) {
+      readCache.set(tabName, { rows, at: Date.now() })
+    }
+    return rows
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e)
     if (msg.includes('Unable to parse range') || msg.includes('notFound')) {
@@ -96,17 +153,22 @@ export async function readTab(tabName: string): Promise<string[][]> {
 
 export async function appendRow(tabName: string, values: string[]): Promise<void> {
   const sheets = await getSheets()
+  invalidateTabCache(tabName)
   try {
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: SHEET_ID!,
-      range: `${tabName}!A1`,
-      valueInputOption: 'RAW',
-      requestBody: { values: [values] },
-    })
+    await withRetry(() =>
+      sheets.spreadsheets.values.append({
+        spreadsheetId: SHEET_ID!,
+        range: `${tabName}!A1`,
+        valueInputOption: 'RAW',
+        requestBody: { values: [values] },
+      })
+    )
     clearSheetsError()
   } catch (e) {
     markSheetsError(e instanceof Error ? e.message : String(e))
     throw e
+  } finally {
+    invalidateTabCache(tabName)
   }
 }
 
@@ -125,7 +187,7 @@ export async function appendRowByMap(
   valueMap: Record<string, string>,
   canonicalHeaders: readonly string[],
 ): Promise<void> {
-  const existing = await readTab(tabName)
+  const existing = await readTab(tabName, { fresh: true })
   let headers = existing[0]
 
   // Empty sheet (no header row, or all-blank row 1) — bootstrap with canonical headers
@@ -145,7 +207,7 @@ export async function withFallback<T>(fn: () => Promise<T>, fallback: T): Promis
     return await fn()
   } catch (e) {
     if (e instanceof SheetsError) {
-      console.warn(`[Sheets] Falling back to mock data: ${e.message}`)
+      console.warn(`[Sheets] Degraded — returning fallback value: ${e.message}`)
       markSheetsError(e.message)
       return fallback
     }
@@ -155,17 +217,22 @@ export async function withFallback<T>(fn: () => Promise<T>, fallback: T): Promis
 
 export async function updateRow(tabName: string, rowIndex: number, values: string[]): Promise<void> {
   const sheets = await getSheets()
+  invalidateTabCache(tabName)
   try {
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: SHEET_ID!,
-      range: `${tabName}!A${rowIndex}`,
-      valueInputOption: 'RAW',
-      requestBody: { values: [values] },
-    })
+    await withRetry(() =>
+      sheets.spreadsheets.values.update({
+        spreadsheetId: SHEET_ID!,
+        range: `${tabName}!A${rowIndex}`,
+        valueInputOption: 'RAW',
+        requestBody: { values: [values] },
+      })
+    )
     clearSheetsError()
   } catch (e) {
     markSheetsError(e instanceof Error ? e.message : String(e))
     throw e
+  } finally {
+    invalidateTabCache(tabName)
   }
 }
 
@@ -215,21 +282,26 @@ export async function deleteRowsAt(tabName: string, sheetRowIndices0: number[]):
   const sheets = await getSheets()
   const sheetId = await getSheetIdForTab(tabName)
   const sorted = [...sheetRowIndices0].sort((a, b) => b - a)
+  invalidateTabCache(tabName)
   try {
-    await sheets.spreadsheets.batchUpdate({
-      spreadsheetId: SHEET_ID!,
-      requestBody: {
-        requests: sorted.map((idx) => ({
-          deleteDimension: {
-            range: { sheetId, dimension: 'ROWS', startIndex: idx, endIndex: idx + 1 },
-          },
-        })),
-      },
-    })
+    await withRetry(() =>
+      sheets.spreadsheets.batchUpdate({
+        spreadsheetId: SHEET_ID!,
+        requestBody: {
+          requests: sorted.map((idx) => ({
+            deleteDimension: {
+              range: { sheetId, dimension: 'ROWS', startIndex: idx, endIndex: idx + 1 },
+            },
+          })),
+        },
+      })
+    )
     clearSheetsError()
   } catch (e) {
     markSheetsError(e instanceof Error ? e.message : String(e))
     throw e
+  } finally {
+    invalidateTabCache(tabName)
   }
 }
 
@@ -245,21 +317,27 @@ export interface CellUpdate {
 export async function batchUpdateCells(updates: CellUpdate[]): Promise<void> {
   if (updates.length === 0) return
   const sheets = await getSheets()
+  const touchedTabs = [...new Set(updates.map((u) => u.tab))]
+  touchedTabs.forEach(invalidateTabCache)
   try {
-    await sheets.spreadsheets.values.batchUpdate({
-      spreadsheetId: SHEET_ID!,
-      requestBody: {
-        valueInputOption: 'RAW',
-        data: updates.map((u) => ({
-          range: `${u.tab}!${u.col}${u.row}`,
-          values: [[u.value]],
-        })),
-      },
-    })
+    await withRetry(() =>
+      sheets.spreadsheets.values.batchUpdate({
+        spreadsheetId: SHEET_ID!,
+        requestBody: {
+          valueInputOption: 'RAW',
+          data: updates.map((u) => ({
+            range: `${u.tab}!${u.col}${u.row}`,
+            values: [[u.value]],
+          })),
+        },
+      })
+    )
     clearSheetsError()
   } catch (e) {
     markSheetsError(e instanceof Error ? e.message : String(e))
     throw e
+  } finally {
+    touchedTabs.forEach(invalidateTabCache)
   }
 }
 

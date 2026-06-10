@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Icon } from '@/components/ui/icons'
 
 interface Props {
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export default function AnalyzeThreadButton({ threadId, leadId }: Props) {
+  const router = useRouter()
   const [state, setState] = useState<'idle' | 'analyzing' | 'done' | 'error'>('idle')
   const [errorMsg, setErrorMsg] = useState('')
 
@@ -23,7 +25,7 @@ export default function AnalyzeThreadButton({ threadId, leadId }: Props) {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
       setState('done')
-      setTimeout(() => window.location.reload(), 600)
+      setTimeout(() => router.refresh(), 600)
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Failed')
       setState('error')

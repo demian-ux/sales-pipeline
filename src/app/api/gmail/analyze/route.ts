@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import { analyzeThread } from '@/lib/gmail/analyze'
+import { getGmailClient } from '@/lib/gmail/client'
+import { parseThread } from '@/lib/gmail/sync'
+import { getThread, saveThreadsForLead, saveAnalysis } from '@/lib/gmail/store'
 import { getLeadById, getCompanyById } from '@/lib/sheets'
-import { sessionCache } from '@/lib/sheets/cache'
 
 export async function POST(req: Request) {
   try {
@@ -11,21 +13,34 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'thread_id and lead_id are required' }, { status: 400 })
     }
 
-    const leadThreads = sessionCache.threads[lead_id] ?? []
-    const thread = leadThreads.find((t) => t.thread_id === thread_id)
-    if (!thread) {
-      return NextResponse.json({ error: 'Thread not found — sync first' }, { status: 404 })
-    }
-
     const lead = await getLeadById(lead_id)
     if (!lead) {
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
     }
 
+    // Read from the persistent store; if missing (e.g. never synced), fetch
+    // the thread live from Gmail instead of failing with "sync first".
+    let thread = await getThread(thread_id)
+    if (!thread) {
+      const gmail = await getGmailClient()
+      if (gmail) {
+        try {
+          const full = await gmail.users.threads.get({ userId: 'me', id: thread_id, format: 'full' })
+          thread = parseThread(full.data, lead)
+          if (thread) await saveThreadsForLead(lead_id, [thread])
+        } catch {
+          thread = null
+        }
+      }
+    }
+    if (!thread) {
+      return NextResponse.json({ error: 'Thread not found — sync first' }, { status: 404 })
+    }
+
     const company = await getCompanyById(lead.company_id)
     const analysis = await analyzeThread(thread, lead, company)
 
-    sessionCache.analyses[thread_id] = analysis
+    await saveAnalysis(analysis)
 
     return NextResponse.json({ analysis })
   } catch (err) {

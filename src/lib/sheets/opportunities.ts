@@ -41,7 +41,6 @@ export async function getOpportunities(): Promise<Opportunity[]> {
   }
   if (USE_MOCK) return mockResult()
   const rows = await withFallback(() => readTab(TAB), [] as string[][])
-  if (rows.length === 0) return mockResult()
   const opps = rowsToObjects<Opportunity>(rows)
   return opps.map((o) => ({ ...o, confidence: Number(o.confidence) }))
 }
@@ -74,26 +73,29 @@ export async function createOpportunity(opp: Opportunity): Promise<void> {
   await appendRowByMap(TAB, oppToMap(opp), OPPORTUNITY_COLUMNS)
 }
 
-export async function updateOpportunity(oppId: string, updates: Partial<Opportunity>): Promise<void> {
+// Returns false when the Opportunity row (or the tab's data) can't be found,
+// so callers can surface a 404 instead of silently pretending the write landed.
+export async function updateOpportunity(oppId: string, updates: Partial<Opportunity>): Promise<boolean> {
   if (USE_MOCK) {
     sessionCache.opportunityUpdates[oppId] = {
       ...(sessionCache.opportunityUpdates[oppId] ?? {}),
       ...updates,
       updated_at: new Date().toISOString(),
     }
-    return
+    return true
   }
-  const rows = await readTab(TAB)
-  if (rows.length < 2) return
+  const rows = await readTab(TAB, { fresh: true })
+  if (rows.length < 2) return false
   const headers = rows[0]
   const rowIndex = rows.findIndex((r) => r[0] === oppId)
-  if (rowIndex < 1) return
+  if (rowIndex < 1) return false
   const updated = [...rows[rowIndex]]
   Object.entries(updates).forEach(([key, val]) => {
     const colIndex = headers.indexOf(key)
     if (colIndex >= 0) updated[colIndex] = String(val ?? '')
   })
   await updateRow(TAB, rowIndex + 1, updated)
+  return true
 }
 
 export async function deleteOpportunity(oppId: string): Promise<boolean> {
@@ -103,7 +105,7 @@ export async function deleteOpportunity(oppId: string): Promise<boolean> {
     delete sessionCache.opportunityUpdates[oppId]
     return sessionCache.opportunities.length < before
   }
-  const rows = await readTab(TAB)
+  const rows = await readTab(TAB, { fresh: true })
   const rowIndex = rows.findIndex((r) => r[0] === oppId)
   if (rowIndex < 1) return false
   await deleteRowsAt(TAB, [rowIndex])
@@ -130,7 +132,7 @@ export async function clearOpportunityCampaign(campaignId: string): Promise<{ up
     return { updated: touched }
   }
 
-  const rows = await readTab(TAB)
+  const rows = await readTab(TAB, { fresh: true })
   if (rows.length < 2) return { updated: 0 }
   const headers = rows[0]
   const campaignColIdx = headers.indexOf('campaign_id')

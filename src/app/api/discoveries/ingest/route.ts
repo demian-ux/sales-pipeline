@@ -36,11 +36,14 @@ export async function GET(request: NextRequest) {
     return Response.json({ error: 'Supabase not configured' }, { status: 503 })
   }
 
-  if (request.headers.get('x-vercel-cron') === '1') return startBackgroundRun()
-
+  // Authorize FIRST — the cron header alone is client-spoofable. Vercel cron
+  // requests authenticate via `Authorization: Bearer ${CRON_SECRET}` (sent
+  // automatically when the env var is set); see lib/auth.ts.
   if (!(await isIngestAuthorized(request))) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 })
   }
+
+  if (request.headers.get('x-vercel-cron') === '1') return startBackgroundRun()
 
   const { data, error } = await getSupabaseAdmin()
     .from('ingestion_runs')
@@ -52,8 +55,47 @@ export async function GET(request: NextRequest) {
   return Response.json({ runs: data })
 }
 
+// A run that has shown no sign of life for this long is considered dead
+// (the serverless function was killed). Its candidates keep status='new'
+// and are reclaimed by the next run.
+const STALE_RUN_MINUTES = 15
+
+async function cleanupStaleRuns(): Promise<void> {
+  const supabase = getSupabaseAdmin()
+  const cutoff = new Date(Date.now() - STALE_RUN_MINUTES * 60_000).toISOString()
+  const { data } = await supabase
+    .from('ingestion_runs')
+    .update({
+      status: 'failed',
+      finished_at: new Date().toISOString(),
+      current_step: 'Marked stale — function was killed before finishing; unprocessed articles will be reclaimed',
+    })
+    .eq('status', 'running')
+    .lt('started_at', cutoff)
+    .select('id')
+  if (data && data.length > 0) {
+    console.warn(`[ingest] Cleaned up ${data.length} stale run(s) stuck at 'running'`)
+  }
+}
+
 async function startBackgroundRun(): Promise<Response> {
   const supabase = getSupabaseAdmin()
+
+  await cleanupStaleRuns()
+
+  // Refuse to start a second concurrent run — the previous one is still
+  // live (started within the staleness window and not finished).
+  const { data: liveRuns } = await supabase
+    .from('ingestion_runs')
+    .select('id')
+    .eq('status', 'running')
+    .limit(1)
+  if (liveRuns && liveRuns.length > 0) {
+    return Response.json(
+      { error: 'A research run is already in progress', run_id: liveRuns[0].id },
+      { status: 409 },
+    )
+  }
 
   // Create the run record up-front so the UI can immediately poll for it.
   const { data: run, error: runError } = await supabase
@@ -90,10 +132,13 @@ async function startBackgroundRun(): Promise<Response> {
   }
 
   // Schedule the heavy work to run after the response has been sent. The
-  // function keeps executing until `maxDuration` is reached or it returns.
+  // function keeps executing until `maxDuration` is reached or it returns —
+  // so give the pipeline a deadline 30s inside the wall: it stops cleanly,
+  // finalizes the run record, and defers leftovers to the next run.
+  const deadlineMs = Date.now() + (maxDuration - 30) * 1000
   after(async () => {
     try {
-      await runIngestion(sources, run.id)
+      await runIngestion(sources, run.id, undefined, deadlineMs)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       console.error('[ingest] background run crashed:', message)

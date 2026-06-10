@@ -111,7 +111,6 @@ export default function ApolloImportClient({ campaigns }: Props) {
   const [previewRows, setPreviewRows] = useState<ApolloImportRow[]>([])
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [campaignId, setCampaignId] = useState<string>('')
-  const [skipDuplicates, setSkipDuplicates] = useState(true)
   const [previewing, setPreviewing] = useState(false)
   const [result, setResult] = useState<{ created_leads: number; created_companies: number; skipped_duplicates: number; errors: string[] } | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -171,6 +170,8 @@ export default function ApolloImportClient({ campaigns }: Props) {
       )
       setSelectedIds(toSelect)
       setStep('review')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Network error during preview')
     } finally {
       setPreviewing(false)
     }
@@ -341,10 +342,6 @@ export default function ApolloImportClient({ campaigns }: Props) {
                 ))}
               </select>
             </div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text-muted)', cursor: 'pointer' }}>
-              <input type="checkbox" checked={skipDuplicates} onChange={(e) => setSkipDuplicates(e.target.checked)} />
-              Skip duplicates
-            </label>
           </div>
 
           {/* Row table */}
@@ -476,7 +473,7 @@ function StepBar({ step }: { step: Step }) {
             <div style={{
               width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 600,
               background: i < activeIdx ? 'var(--green)' : i === activeIdx ? 'var(--accent)' : 'var(--surface-2)',
-              color: i <= activeIdx ? 'white' : 'var(--text-faint)',
+              color: i < activeIdx ? 'white' : i === activeIdx ? '#141414' : 'var(--text-faint)',
               border: `1px solid ${i < activeIdx ? 'transparent' : i === activeIdx ? 'var(--accent)' : 'var(--border)'}`,
             }}>
               {i < activeIdx ? '✓' : i + 1}
@@ -549,7 +546,7 @@ function btnStyle(variant: 'primary' | 'secondary') {
     border: '1px solid',
   }
   if (variant === 'primary') {
-    return { ...base, background: 'var(--accent)', color: 'white', borderColor: 'var(--accent)' }
+    return { ...base, background: 'var(--accent)', color: '#141414', borderColor: 'var(--accent)' }
   }
   return { ...base, background: 'transparent', color: 'var(--text-muted)', borderColor: 'var(--border)' }
 }

@@ -14,7 +14,9 @@ const schema = z.object({
   // Anthropic
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
   ANTHROPIC_MODEL: z.string().default('claude-sonnet-4-6'),
-  ANTHROPIC_CLASSIFIER_MODEL: z.string().optional(),
+  // Cheap tier for the yes/no article triage — ~3× cheaper than Sonnet for a
+  // binary gate. Deep analysis still uses ANTHROPIC_MODEL.
+  ANTHROPIC_CLASSIFIER_MODEL: z.string().default('claude-haiku-4-5'),
   ANTHROPIC_TIMEOUT_MS: z.coerce.number().int().positive().default(90_000),
 
   // Google Sheets (service account)
@@ -37,6 +39,9 @@ const schema = z.object({
 
   // Discoveries ingestion
   INGEST_SECRET: z.string().min(16).optional(),
+  // Vercel cron auth: when set, Vercel sends `Authorization: Bearer ${CRON_SECRET}`
+  // on scheduled invocations. Replaces trust in the spoofable x-vercel-cron header.
+  CRON_SECRET: z.string().min(16).optional(),
 
   // Prospecting
   TAVILY_API_KEY: z.string().optional(),

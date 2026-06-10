@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { randomUUID } from 'crypto'
 import { z } from 'zod'
 import { getCampaigns, getLeads, getOpportunities, getInteractions, createCampaign } from '@/lib/sheets'
 import type { Campaign, CampaignChannel, CampaignCadence, CampaignStatus } from '@/lib/types'
@@ -89,7 +90,7 @@ export async function POST(request: Request) {
   }
 
   const nowIso = new Date().toISOString()
-  const campaignId = `cmp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+  const campaignId = `cmp_${randomUUID()}`
   const campaign: Campaign = {
     campaign_id:    campaignId,
     name:           parsed.data.name,

@@ -45,7 +45,15 @@ const STATE_BADGE: Record<ConversationState, { label: string; tone: Tone }> = {
   dormant:          { label: 'Cold',     tone: 'info' },
 }
 
-export default function ConversationsClient({ threads }: { threads: EnrichedThread[] }) {
+export default function ConversationsClient({
+  threads,
+  initialThreadId,
+}: {
+  threads: EnrichedThread[]
+  // Deep-link target (?thread= param) — opens that thread directly instead
+  // of making the user re-find it in the list.
+  initialThreadId?: string
+}) {
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: threads.length }
     CHIPS.forEach((ch) => {
@@ -54,9 +62,14 @@ export default function ConversationsClient({ threads }: { threads: EnrichedThre
     return c
   }, [threads])
 
-  const [filter, setFilter] = useState<string>(() => (counts.reply > 0 ? 'reply' : 'all'))
+  const deepLinked = initialThreadId
+    ? threads.some((t) => t.thread.thread_id === initialThreadId)
+    : false
+  const [filter, setFilter] = useState<string>(() =>
+    deepLinked ? 'all' : counts.reply > 0 ? 'reply' : 'all',
+  )
   const [search, setSearch] = useState('')
-  const [openId, setOpenId] = useState<string | null>(null)
+  const [openId, setOpenId] = useState<string | null>(deepLinked ? initialThreadId! : null)
 
   const filtered = useMemo(() => {
     const chip = CHIPS.find((c) => c.key === filter)

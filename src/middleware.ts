@@ -22,6 +22,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { isAuthConfigured, verifySessionCookieValue, SESSION_COOKIE_NAME } from '@/lib/auth'
+import { env } from '@/lib/env'
 
 const PUBLIC_PREFIXES = [
   '/login',
@@ -51,8 +52,20 @@ function unauthorizedJson(request: NextRequest): NextResponse {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Auth off → just inject the pathname header and continue.
-  if (!isAuthConfigured()) return passThrough(request)
+  // Auth off:
+  //   - development → pass through (frictionless local dev)
+  //   - production  → FAIL CLOSED. A deployed app with no APP_PASSWORD /
+  //     SESSION_SECRET would expose every page and paid API route publicly.
+  if (!isAuthConfigured()) {
+    if (env.NODE_ENV !== 'production') return passThrough(request)
+    // Cron/bearer-authenticated ingest does its own auth — let it through so
+    // a missing APP_PASSWORD doesn't silently stop scheduled research.
+    if (pathname.startsWith('/api/discoveries/ingest')) return passThrough(request)
+    return new NextResponse(
+      'Auth not configured: set APP_PASSWORD and SESSION_SECRET in the environment.',
+      { status: 503, headers: { 'content-type': 'text/plain' } },
+    )
+  }
 
   // Always let public paths through (login form, OAuth callback, cron).
   if (isPublic(pathname)) return passThrough(request)

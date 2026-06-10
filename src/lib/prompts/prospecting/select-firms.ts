@@ -49,20 +49,28 @@ ACCEPTED firm types:
 - Interior design studio
 - Real estate developer (a company that develops and promotes its own projects)
 
-EXCLUDED firm types (only exclude if you can clearly identify they are this type):
+EXCLUDED firm types — these must NEVER appear in results:
 - Construction firms or general contractors
 - Property management companies
 - Real estate investment funds, REITs, or investment firms
 - Asset management companies
 - Brokers, marketing agencies, media outlets, or magazines
 
+When in doubt about whether a firm is an excluded type, EXCLUDE it. A missed
+good firm costs little; a construction company or investment fund in the
+prospect list wastes outreach and damages list quality.
+
 Inclusion criteria:
-- If a firm appears in Tavily results in the context of architecture, design, or real estate development, include it. No additional verification needed.
+- A firm qualifies when the Tavily results show it designing or developing
+  projects (architecture, interiors, or its own developments).
 - Use any project mentioned in the Tavily results as that firm's reference. If no specific project is mentioned, use the article's project type as a general reference.
-- Only exclude a firm if you can CLEARLY identify it as a builder, investment fund, property manager, or broker — not for lack of information.
 - Do not include Oaki Studio.
+- Geography: prefer firms based in or active near the article's location.
+  Oaki's core markets are New York, Miami, and France — when candidates are
+  otherwise equal, prefer firms in those markets.
 - If there are more than 8 candidates, prioritize those working on projects similar in type and scale to the article.
-- If you find fewer than 5, return what you have.
+- If you find fewer than 5, return what you have. Never pad the list with
+  excluded firm types to reach 5.
 
 For the "website" field:
 - If the Tavily result includes the firm's official URL (their own domain, not ArchDaily/Dezeen/LinkedIn), use it.
@@ -110,6 +118,23 @@ Output format:
     }
   ]
 }`
+
+// Hard ICP enforcement in code — the prompt also excludes these, but Demian's
+// rule is absolute ("construction, investment, and management companies must
+// never appear"), so we don't rely on model judgment alone.
+const ICP_BLOCKLIST: Array<{ pattern: RegExp; reason: string }> = [
+  { pattern: /\b(construction|constructors?|contractors?|contracting|builders?|homebuilders?)\b/i, reason: 'construction/contractor' },
+  { pattern: /\b(property management|asset management|investment management|investments?|invest(?:ment)? fund|private equity|reit|capital partners)\b/i, reason: 'investment/management' },
+  { pattern: /\b(brokers?|brokerage|realtors?)\b/i, reason: 'broker' },
+]
+
+function violatesICP(name: string, projectType: string): string | null {
+  const haystack = `${name} ${projectType}`
+  for (const { pattern, reason } of ICP_BLOCKLIST) {
+    if (pattern.test(haystack)) return reason
+  }
+  return null
+}
 
 function userPrompt(params: {
   sourceUrl: string
@@ -160,6 +185,11 @@ export async function selectProspectingFirms(params: {
   const seen = new Map<string, FirmCandidate>()
   const discoveredAt = new Date().toISOString()
   for (const firm of raw.firms) {
+    const icpViolation = violatesICP(firm.name, firm.project_type)
+    if (icpViolation) {
+      console.warn(`[prospecting] ICP filter dropped "${firm.name}" (${icpViolation})`)
+      continue
+    }
     const key = firm.name.trim().toLowerCase()
     if (seen.has(key)) continue
     seen.set(key, {

@@ -22,7 +22,7 @@ export default async function MeetingPrepPage({ params }: { params: Promise<{ id
     getCompanyById(lead.company_id),
     getResearchForLead(id),
     getInteractionsForLead(id),
-    Promise.resolve(getMeetingPrep(id)),
+    getMeetingPrep(id),
   ])
 
   return (

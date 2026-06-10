@@ -65,7 +65,7 @@ function ProspectingPage() {
     if (didAutoRun.current) return
     if (!initialUrl) return
     didAutoRun.current = true
-    analyze(initialUrl)
+    analyze(initialUrl, discoveryId ?? undefined)
     // analyze is a stable closure from useProspecting; ESLint exhaustive-deps
     // would loop us if we listed it. The ref guard above prevents re-fires.
     // eslint-disable-next-line react-hooks/exhaustive-deps

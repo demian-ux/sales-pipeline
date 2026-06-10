@@ -10,6 +10,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import TodayCard from './cards/TodayCard'
+import SendQueueCard from './cards/SendQueueCard'
 import OpportunitiesCard from './cards/OpportunitiesCard'
 import AttentionCard from './cards/AttentionCard'
 import ConversationsCard from './cards/ConversationsCard'
@@ -18,7 +19,7 @@ import CandidatesCard from './cards/CandidatesCard'
 import { CARD_REGISTRY } from '@/lib/dashboard/cards'
 import { Icon } from '@/components/ui/icons'
 import type {
-  DashboardCardId, DashboardLayout, Lead, Company, Opportunity,
+  DashboardCardId, DashboardLayout, Lead, Company, Opportunity, Campaign,
   Discovery, FirmCandidateRow, SnoozedSignal, Thread,
 } from '@/lib/types'
 
@@ -26,10 +27,12 @@ export interface DashboardData {
   leads: Lead[]
   companies: Company[]
   opportunities: Opportunity[]
+  campaigns: Campaign[]
   threads: Thread[]
   strongDiscoveries: Discovery[]
   highCandidates: FirmCandidateRow[]
   snoozedSignals: SnoozedSignal[]
+  draftLeadIds: string[]
 }
 
 interface Props {
@@ -251,6 +254,14 @@ function renderCard(id: DashboardCardId, data: DashboardData): React.ReactNode {
           leads={data.leads}
           threads={data.threads}
           initialSnoozedSignals={data.snoozedSignals}
+        />
+      )
+    case 'send_queue':
+      return (
+        <SendQueueCard
+          leads={data.leads}
+          campaigns={data.campaigns}
+          draftLeadIds={data.draftLeadIds}
         />
       )
     case 'opportunities':

@@ -36,7 +36,7 @@ export default function ConversationsCard({ threads, leads }: Props) {
           {waiting.map((t) => {
             const lead = leadMap.get(t.lead_id)
             return (
-              <Link key={t.thread_id} className="stack-row" href="/conversations">
+              <Link key={t.thread_id} className="stack-row" href={`/conversations?thread=${encodeURIComponent(t.thread_id)}`}>
                 <div className="stack-row-main" style={{ gap: 6 }}>
                   <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
                     <span className="ink" style={{ fontSize: 13, fontWeight: 500 }}>

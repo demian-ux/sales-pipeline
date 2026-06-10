@@ -1,6 +1,6 @@
-import { getLeads, getCompanies, getOpportunities, USE_MOCK } from '@/lib/sheets'
+import { getLeads, getCompanies, getOpportunities, getCampaigns, USE_MOCK } from '@/lib/sheets'
 import { loadDashboardSupabaseData } from '@/lib/dashboard/data'
-import { sessionCache } from '@/lib/sheets/cache'
+import { getAllThreads } from '@/lib/gmail/store'
 import DashboardClient, { type DashboardData } from '@/components/dashboard/DashboardClient'
 import { ALL_CARD_IDS } from '@/lib/dashboard/cards'
 import { headers } from 'next/headers'
@@ -34,24 +34,26 @@ async function loadLayout(): Promise<DashboardLayout> {
 }
 
 export default async function DashboardPage() {
-  const [leads, companies, opportunities, supabaseData, layout] = await Promise.all([
+  const [leads, companies, opportunities, campaigns, supabaseData, layout, threads] = await Promise.all([
     getLeads(),
     getCompanies(),
     getOpportunities(),
+    getCampaigns(),
     loadDashboardSupabaseData(),
     loadLayout(),
+    getAllThreads(),
   ])
-
-  const threads = Object.values(sessionCache.threads).flat()
 
   const data: DashboardData = {
     leads,
     companies,
     opportunities,
+    campaigns,
     threads,
     strongDiscoveries: supabaseData.strongDiscoveries,
     highCandidates: supabaseData.highCandidates,
     snoozedSignals: supabaseData.snoozedSignals,
+    draftLeadIds: supabaseData.draftLeadIds,
   }
 
   return (

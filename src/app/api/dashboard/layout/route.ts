@@ -16,6 +16,7 @@ const LAYOUT_KEY = 'dashboard_layout'
 
 const CARD_IDS: DashboardCardId[] = [
   'today',
+  'send_queue',
   'opportunities',
   'attention',
   'conversations',
@@ -60,7 +61,9 @@ function normalizeLayout(input: DashboardLayout): DashboardLayout {
     if (!ordered.includes(id)) ordered.push(id)
   }
   return {
-    cards: ordered.map((id) => ({ id, visible: seen.get(id) ?? false })),
+    // Cards absent from the stored layout are NEW features (the user never
+    // explicitly hid them) — surface them visible by default.
+    cards: ordered.map((id) => ({ id, visible: seen.get(id) ?? true })),
   }
 }
 

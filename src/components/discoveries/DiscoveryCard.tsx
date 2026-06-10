@@ -1,11 +1,20 @@
+'use client'
+
+import { useState } from 'react'
 import Link from 'next/link'
 import { format } from 'date-fns'
 import { ScoreBlock, StatusBadge, Pill } from '@/components/ui/primitives'
 import { Icon } from '@/components/ui/icons'
+import { discoveryTier, TIER_META } from '@/lib/discoveries/tiers'
 import type { Discovery, DiscoverySector } from '@/lib/types'
 
 interface DiscoveryCardProps {
   discovery: Discovery
+  // Triage wiring (optional — the card renders read-only without it)
+  selected?: boolean
+  onToggleSelect?: () => void
+  onStatusChange?: (id: string, status: 'saved' | 'archived' | 'active') => Promise<void> | void
+  isNew?: boolean
 }
 
 const SECTOR_LABELS: Record<DiscoverySector, string> = {
@@ -26,15 +35,15 @@ const OPPORTUNITY_TYPE_LABELS: Record<string, string> = {
   trend:   'Strategic Trend',
 }
 
-// Signal tier derived from the 0–100 discovery score, per the design handoff.
-function signalTier(score: number): { label: string; tone: 'ok' | 'warn' | 'info' } {
-  if (score >= 85) return { label: 'Strong signal', tone: 'ok' }
-  if (score >= 75) return { label: 'Solid signal', tone: 'warn' }
-  return { label: 'Watch', tone: 'info' }
-}
-
-export default function DiscoveryCard({ discovery: d }: DiscoveryCardProps) {
-  const tier = signalTier(d.discovery_score)
+export default function DiscoveryCard({
+  discovery: d,
+  selected,
+  onToggleSelect,
+  onStatusChange,
+  isNew,
+}: DiscoveryCardProps) {
+  const [busy, setBusy] = useState<string | null>(null)
+  const tier = TIER_META[discoveryTier(d.discovery_score, d.signal_tier)]
 
   const rawDate = d.date_published || d.created_at
   let added: string | null = null
@@ -47,30 +56,61 @@ export default function DiscoveryCard({ discovery: d }: DiscoveryCardProps) {
     .map((t) => OPPORTUNITY_TYPE_LABELS[t] ?? t)
     .join(' · ')
 
+  async function setStatus(status: 'saved' | 'archived' | 'active') {
+    if (!onStatusChange || busy) return
+    setBusy(status)
+    try {
+      await onStatusChange(d.id, status)
+    } finally {
+      setBusy(null)
+    }
+  }
+
   return (
     <div
       className="card card-hover"
-      style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}
+      style={{
+        padding: 20,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 14,
+        borderColor: selected ? 'var(--accent)' : undefined,
+        opacity: d.status === 'archived' ? 0.55 : 1,
+      }}
     >
-      {/* Header — title + source / score */}
+      {/* Header — select + title + source / score */}
       <div className="between" style={{ alignItems: 'flex-start' }}>
-        <div className="col" style={{ gap: 4, minWidth: 0, flex: 1 }}>
-          <Link
-            href={`/discoveries/${d.id}`}
-            className="ink"
-            style={{
-              fontSize: 14,
-              fontWeight: 500,
-              letterSpacing: '-0.012em',
-              lineHeight: 1.35,
-              textWrap: 'pretty',
-            }}
-          >
-            {d.title}
-          </Link>
-          <div className="row" style={{ gap: 10, flexWrap: 'wrap', marginTop: 6 }}>
-            <span className="micro" style={{ color: 'var(--ink-2)' }}>{d.source}</span>
-            {added && <span className="ink-3" style={{ fontSize: 11 }}>· {added}</span>}
+        <div className="row" style={{ gap: 10, alignItems: 'flex-start', minWidth: 0, flex: 1 }}>
+          {onToggleSelect && (
+            <input
+              type="checkbox"
+              checked={!!selected}
+              onChange={onToggleSelect}
+              aria-label="Select discovery"
+              style={{ marginTop: 3, accentColor: 'var(--accent)', cursor: 'pointer', flexShrink: 0 }}
+            />
+          )}
+          <div className="col" style={{ gap: 4, minWidth: 0, flex: 1 }}>
+            <Link
+              href={`/discoveries/${d.id}`}
+              className="ink"
+              style={{
+                fontSize: 14,
+                fontWeight: 500,
+                letterSpacing: '-0.012em',
+                lineHeight: 1.35,
+                textWrap: 'pretty',
+              }}
+            >
+              {d.title}
+            </Link>
+            <div className="row" style={{ gap: 10, flexWrap: 'wrap', marginTop: 6 }}>
+              {isNew && (
+                <span className="micro" style={{ color: 'var(--accent)' }}>NEW</span>
+              )}
+              <span className="micro" style={{ color: 'var(--ink-2)' }}>{d.source}</span>
+              {added && <span className="ink-3" style={{ fontSize: 11 }}>· {added}</span>}
+            </div>
           </div>
         </div>
         <ScoreBlock value={d.discovery_score} />
@@ -79,6 +119,7 @@ export default function DiscoveryCard({ discovery: d }: DiscoveryCardProps) {
       {/* Signal tier + facets */}
       <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
         <StatusBadge tone={tier.tone}>{tier.label}</StatusBadge>
+        {d.status === 'saved' && <Pill tone="gold">Saved</Pill>}
         <Pill>{SECTOR_LABELS[d.sector] ?? d.sector}</Pill>
         {d.region && <Pill>{d.region}</Pill>}
         {d.city && <Pill>{d.city}</Pill>}
@@ -95,6 +136,26 @@ export default function DiscoveryCard({ discovery: d }: DiscoveryCardProps) {
       <div className="between" style={{ marginTop: 4 }}>
         <span className="ink-3" style={{ fontSize: 11.5 }}>{types || '—'}</span>
         <div className="row" style={{ gap: 6 }}>
+          {onStatusChange && d.status !== 'saved' && (
+            <button
+              className="btn btn-xs btn-ghost"
+              onClick={() => setStatus('saved')}
+              disabled={!!busy}
+              title="Keep this on the saved shortlist"
+            >
+              {busy === 'saved' ? '…' : 'Save'}
+            </button>
+          )}
+          {onStatusChange && d.status !== 'archived' && (
+            <button
+              className="btn btn-xs btn-ghost"
+              onClick={() => setStatus('archived')}
+              disabled={!!busy}
+              title="Archive — not relevant"
+            >
+              {busy === 'archived' ? '…' : 'Archive'}
+            </button>
+          )}
           <a
             className="btn btn-xs btn-ghost"
             href={d.source_url}
@@ -104,7 +165,7 @@ export default function DiscoveryCard({ discovery: d }: DiscoveryCardProps) {
             <Icon name="external" size={11} /> Source
           </a>
           <Link className="btn btn-xs" href={`/discoveries/${d.id}`}>
-            Convert to opportunity <Icon name="arrow" size={10} />
+            Open <Icon name="arrow" size={10} />
           </Link>
         </div>
       </div>

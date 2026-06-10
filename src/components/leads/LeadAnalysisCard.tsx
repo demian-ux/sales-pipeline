@@ -4,18 +4,25 @@ import { useState } from 'react'
 import { WhyNow, NextAction, StatusBadge, Pill } from '@/components/ui/primitives'
 import CopyButton from '@/components/ui/CopyButton'
 import DraftButton from './DraftButton'
+import { MarkSentButton, CreateGmailDraftButton } from './SendActions'
 import { relativeDate } from '@/lib/utils'
 import type { AIInsight } from '@/lib/types'
 
-type Tab = 'summary' | 'email' | 'dm' | 'questions'
+type Tab = 'summary' | 'letter' | 'email' | 'dm' | 'questions'
 
 interface Props {
   insight: AIInsight | null
   leadId: string
+  leadEmail?: string | null
+  letterContent: string | null
   emailContent: string | null
   linkedinContent: string | null
+  letterUpdatedAt?: string
   emailUpdatedAt?: string
   linkedinUpdatedAt?: string
+  letterSentAt?: string
+  emailSentAt?: string
+  linkedinSentAt?: string
 }
 
 const INTENT_TONE: Record<string, 'ok' | 'warn' | 'info'> = {
@@ -27,10 +34,16 @@ const INTENT_TONE: Record<string, 'ok' | 'warn' | 'info'> = {
 export default function LeadAnalysisCard({
   insight,
   leadId,
+  leadEmail,
+  letterContent,
   emailContent,
   linkedinContent,
+  letterUpdatedAt,
   emailUpdatedAt,
   linkedinUpdatedAt,
+  letterSentAt,
+  emailSentAt,
+  linkedinSentAt,
 }: Props) {
   const [tab, setTab] = useState<Tab>('summary')
 
@@ -49,9 +62,11 @@ export default function LeadAnalysisCard({
             assessment and discovery questions. You can still draft outreach below.
           </div>
           <div className="row" style={{ gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
+            <DraftButton leadId={leadId} kind="letter" hasInsight={false} hasExistingDraft={!!letterContent} />
             <DraftButton leadId={leadId} kind="email" hasInsight={false} hasExistingDraft={!!emailContent} />
             <DraftButton leadId={leadId} kind="linkedin" hasInsight={false} hasExistingDraft={!!linkedinContent} />
           </div>
+          {letterContent && <DraftBlock label="Letter draft" text={letterContent} />}
           {emailContent && <DraftBlock label="Email draft" text={emailContent} />}
           {linkedinContent && <DraftBlock label="LinkedIn DM" text={linkedinContent} />}
         </div>
@@ -83,6 +98,9 @@ export default function LeadAnalysisCard({
         <button className={`ai-tab ${tab === 'summary' ? 'active' : ''}`} onClick={() => setTab('summary')}>
           Summary
         </button>
+        <button className={`ai-tab ${tab === 'letter' ? 'active' : ''}`} onClick={() => setTab('letter')}>
+          Letter
+        </button>
         <button className={`ai-tab ${tab === 'email' ? 'active' : ''}`} onClick={() => setTab('email')}>
           Draft email
         </button>
@@ -106,12 +124,25 @@ export default function LeadAnalysisCard({
           </div>
         )}
 
+        {tab === 'letter' && (
+          <DraftTab
+            kind="letter"
+            leadId={leadId}
+            content={letterContent}
+            updatedAt={letterUpdatedAt}
+            sentAt={letterSentAt}
+            empty="Generate the physical letter — the first touch of the cold sequence."
+          />
+        )}
+
         {tab === 'email' && (
           <DraftTab
             kind="email"
             leadId={leadId}
+            leadEmail={leadEmail}
             content={emailContent}
             updatedAt={emailUpdatedAt}
+            sentAt={emailSentAt}
             empty="Generate an email draft from this analysis."
           />
         )}
@@ -122,6 +153,7 @@ export default function LeadAnalysisCard({
             leadId={leadId}
             content={linkedinContent}
             updatedAt={linkedinUpdatedAt}
+            sentAt={linkedinSentAt}
             empty="Generate a LinkedIn DM from this analysis."
           />
         )}
@@ -158,24 +190,33 @@ export default function LeadAnalysisCard({
 function DraftTab({
   kind,
   leadId,
+  leadEmail,
   content,
   updatedAt,
+  sentAt,
   empty,
 }: {
-  kind: 'email' | 'linkedin'
+  kind: 'email' | 'linkedin' | 'letter'
   leadId: string
+  leadEmail?: string | null
   content: string | null
   updatedAt?: string
+  sentAt?: string
   empty: string
 }) {
+  const sentLabel = sentAt ? ` · sent ${relativeDate(sentAt)}` : ' · not sent'
   return (
     <div className="col" style={{ gap: 14 }}>
       <div className="between">
-        <span className="micro">
-          {content ? `Draft${updatedAt ? ` · ${relativeDate(updatedAt)}` : ''} · not sent` : 'No draft yet'}
+        <span className="micro" style={sentAt ? { color: 'var(--ok, var(--green))' } : undefined}>
+          {content ? `Draft${updatedAt ? ` · ${relativeDate(updatedAt)}` : ''}${sentLabel}` : 'No draft yet'}
         </span>
-        <div className="row" style={{ gap: 6 }}>
+        <div className="row" style={{ gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           {content && <CopyButton text={content} label="Copy" />}
+          {content && kind === 'email' && leadEmail && (
+            <CreateGmailDraftButton leadId={leadId} leadEmail={leadEmail} content={content} />
+          )}
+          {content && !sentAt && <MarkSentButton leadId={leadId} kind={kind} content={content} />}
           <DraftButton leadId={leadId} kind={kind} hasInsight hasExistingDraft={!!content} />
         </div>
       </div>

@@ -3,6 +3,7 @@
 // (`discovered_from_id`, `discovered_from_url`) pointing back to the Discovery,
 // and updates the Discovery's `promoted_to_opportunity_id` for the reverse link.
 
+import { randomUUID } from 'crypto'
 import { type NextRequest } from 'next/server'
 import { getSupabaseAdmin, isSupabaseAdminConfigured } from '@/lib/supabase'
 import { getLeadById, createOpportunity } from '@/lib/sheets'
@@ -47,6 +48,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return Response.json({ error: 'Discovery not found' }, { status: 404 })
   }
 
+  // Idempotency: a Discovery promotes at most once. Without this check, a
+  // failed reverse-link on a previous attempt allowed duplicate Sheets rows.
+  if (discovery.promoted_to_opportunity_id) {
+    return Response.json({
+      already_promoted: true,
+      opportunity_id: discovery.promoted_to_opportunity_id,
+    })
+  }
+
   // 2. Load Lead (from Sheets)
   const lead = await getLeadById(leadId)
   if (!lead) {
@@ -55,7 +65,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   // 3. Build the Opportunity row
   const nowIso = new Date().toISOString()
-  const opportunityId = `opp_${Date.now()}`
+  const opportunityId = `opp_${randomUUID()}`
   const opportunity: Opportunity = {
     opportunity_id: opportunityId,
     company_id: lead.company_id,
@@ -78,11 +88,26 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   // 4. Write to Sheets
   await createOpportunity(opportunity)
 
-  // 5. Reverse-link on the Discovery
-  await supabase
+  // 5. Reverse-link on the Discovery. If this fails the Sheets row exists but
+  // the Discovery stays promotable — retry once, then surface loudly so the
+  // duplicate-promotion window is visible instead of silent.
+  const { error: linkErr } = await supabase
     .from('discoveries')
     .update({ promoted_to_opportunity_id: opportunityId, status: 'saved' })
     .eq('id', id)
+  if (linkErr) {
+    const { error: retryErr } = await supabase
+      .from('discoveries')
+      .update({ promoted_to_opportunity_id: opportunityId, status: 'saved' })
+      .eq('id', id)
+    if (retryErr) {
+      console.error('[promote] reverse-link failed twice:', retryErr.message)
+      return Response.json({
+        opportunity,
+        warning: 'Opportunity created, but the Discovery could not be marked as promoted — do not promote it again.',
+      })
+    }
+  }
 
   return Response.json({ opportunity })
 }

@@ -6,7 +6,7 @@ import {
   getInsightsForLead,
   getCampaigns,
 } from '@/lib/sheets'
-import { getEmailDraftForLead, getLinkedInDraftForLead } from '@/lib/drafts'
+import { getEmailDraftForLead, getLinkedInDraftForLead, getLetterDraftForLead } from '@/lib/drafts'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -42,7 +42,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
   const lead = await getLeadById(id)
   if (!lead) notFound()
 
-  const [company, opportunities, interactions, insights, emailDraft, linkedinDraft, campaigns] =
+  const [company, opportunities, interactions, insights, emailDraft, linkedinDraft, letterDraft, campaigns] =
     await Promise.all([
       getCompanyById(lead.company_id),
       getOpportunitiesForLead(id, lead.company_id),
@@ -50,6 +50,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
       getInsightsForLead(id),
       getEmailDraftForLead(id),
       getLinkedInDraftForLead(id),
+      getLetterDraftForLead(id),
       getCampaigns(),
     ])
 
@@ -70,6 +71,20 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
   const sortedInteractions = [...interactions].sort(
     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
   )
+
+  // Latest outbound send per channel — drives the sent-state on the draft tabs.
+  const lastOutboundAt = (channel: 'Email' | 'LinkedIn') =>
+    sortedInteractions.find((i) => i.channel === channel && i.direction === 'Outbound')
+      ?.sent_at ?? undefined
+
+  // Letters log as channel 'Other' with a "Physical letter" subject (see
+  // the mark-sent route's channel map).
+  const lastLetterSentAt = sortedInteractions.find(
+    (i) =>
+      i.channel === 'Other' &&
+      i.direction === 'Outbound' &&
+      (i.subject ?? '').toLowerCase().includes('letter'),
+  )?.sent_at ?? undefined
 
   const scores: [string, number | undefined][] = [
     ['Priority', lead.priority_score],
@@ -144,10 +159,16 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
           <LeadAnalysisCard
             insight={latestInsight}
             leadId={lead.lead_id}
+            leadEmail={lead.email ?? null}
+            letterContent={letterDraft?.content ?? null}
             emailContent={emailContent}
             linkedinContent={linkedinContent}
+            letterUpdatedAt={letterDraft?.updated_at}
             emailUpdatedAt={emailDraft?.updated_at}
             linkedinUpdatedAt={linkedinDraft?.updated_at}
+            letterSentAt={lastLetterSentAt}
+            emailSentAt={lastOutboundAt('Email')}
+            linkedinSentAt={lastOutboundAt('LinkedIn')}
           />
 
           {/* Opportunities */}

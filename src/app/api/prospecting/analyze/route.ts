@@ -15,6 +15,9 @@ export const maxDuration = 180
 
 const BodySchema = z.object({
   url: z.string().url('Must be a valid URL'),
+  // Provenance: set when prospecting was launched from a Discovery, so
+  // firm_candidates.source_discovery_id links back to the signal.
+  discovery_id: z.string().uuid().optional(),
 })
 
 export async function POST(request: NextRequest) {
@@ -38,7 +41,9 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const response = await runProspectingAnalysis(parsed.data.url)
+    const response = await runProspectingAnalysis(parsed.data.url, {
+      sourceDiscoveryId: parsed.data.discovery_id,
+    })
     return Response.json(response)
   } catch (err) {
     if (err instanceof UnsafeUrlError) {

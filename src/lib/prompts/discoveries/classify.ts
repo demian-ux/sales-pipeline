@@ -1,6 +1,7 @@
 // Cheap first-pass classifier. Decides whether an article is worth the
 // (more expensive) deep-analysis pass.
 
+import { z } from 'zod'
 import { ai, MODEL, requireAnthropic } from '@/lib/ai/client'
 import { parseJson, extractText, ClaudeParseError } from '@/lib/ai/parse'
 import { withTimeout } from '@/lib/ai/timeout'
@@ -13,6 +14,13 @@ export interface DiscoveryClassification {
   confidence_score: number
   reason: string
 }
+
+const ClassificationSchema = z.object({
+  should_analyze: z.boolean(),
+  signal_tier: z.enum(['strong_opportunity', 'watchlist', 'archive']).catch('watchlist'),
+  confidence_score: z.number().catch(0),
+  reason: z.string().catch(''),
+})
 
 const SYSTEM = `You are a fast triage analyst for a market intelligence tool.
 
@@ -64,7 +72,7 @@ export async function classifyArticle(
       'classifyArticle',
     )
 
-    return parseJson<DiscoveryClassification>(extractText(response.content))
+    return parseJson(extractText(response.content), ClassificationSchema) as DiscoveryClassification
   } catch (err) {
     if (err instanceof ClaudeParseError) {
       console.warn('[classify] Unparseable response — treating as inconclusive')

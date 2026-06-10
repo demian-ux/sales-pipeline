@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import type { DiscoveryClientType } from '@/lib/types'
 import { IconCopy, IconCheck, IconLoader, IconChevronDown } from '@/components/ui/icons'
 
@@ -9,6 +9,7 @@ interface GenerateOutreachProps {
 }
 
 type OutputType = 'letter' | 'email' | 'linkedin'
+type SequencePosition = 'first_touch' | 'after_letter' | 'after_letter_email'
 
 const CLIENT_TYPE_OPTIONS: { value: DiscoveryClientType; label: string }[] = [
   { value: 'architecture_firm',     label: 'Architecture Firm' },
@@ -22,6 +23,18 @@ const OUTPUT_TYPES: { value: OutputType; label: string }[] = [
   { value: 'email',    label: 'Email' },
   { value: 'linkedin', label: 'LinkedIn' },
 ]
+
+const SEQUENCE_OPTIONS: { value: SequencePosition; label: string }[] = [
+  { value: 'first_touch',        label: 'First touch — nothing sent yet' },
+  { value: 'after_letter',       label: 'Follows the letter' },
+  { value: 'after_letter_email', label: 'Follows letter + email' },
+]
+
+interface LeadOption {
+  lead_id: string
+  full_name: string
+  company_name: string
+}
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
@@ -38,11 +51,35 @@ export default function GenerateOutreach({ discoveryId }: GenerateOutreachProps)
   const [recipientName, setRecipientName]     = useState('')
   const [recipientCompany, setRecipientCompany] = useState('')
   const [clientType, setClientType]           = useState<DiscoveryClientType>('architecture_firm')
+  const [sequence, setSequence]               = useState<SequencePosition>('first_touch')
   const [activeTab, setActiveTab]             = useState<OutputType>('letter')
   const [outputs, setOutputs] = useState<Record<OutputType, string>>({ letter: '', email: '', linkedin: '' })
   const [loading, setLoading] = useState<Record<OutputType, boolean>>({ letter: false, email: false, linkedin: false })
   const [errors,  setErrors]  = useState<Record<OutputType, string>>({ letter: '', email: '', linkedin: '' })
   const [copied,  setCopied]  = useState(false)
+  const [leadOptions, setLeadOptions] = useState<LeadOption[]>([])
+  const leadsLoaded = useRef(false)
+
+  // Lazy-load the roster the first time the recipient field is focused —
+  // picking an existing lead autofills the company.
+  async function loadLeads() {
+    if (leadsLoaded.current) return
+    leadsLoaded.current = true
+    try {
+      const res = await fetch('/api/leads')
+      const data = await res.json()
+      const leads = (data.leads ?? data ?? []) as LeadOption[]
+      setLeadOptions(leads.filter((l) => l.full_name))
+    } catch {
+      // picker degrades to free text
+    }
+  }
+
+  function onRecipientChange(value: string) {
+    setRecipientName(value)
+    const match = leadOptions.find((l) => l.full_name === value)
+    if (match?.company_name) setRecipientCompany(match.company_name)
+  }
 
   async function generate(type: OutputType) {
     setLoading((p) => ({ ...p, [type]: true }))
@@ -55,6 +92,7 @@ export default function GenerateOutreach({ discoveryId }: GenerateOutreachProps)
           recipient_name:    recipientName || undefined,
           recipient_company: recipientCompany || undefined,
           client_type:       clientType,
+          sequence_position: sequence,
         }),
       })
       const data = await res.json()
@@ -116,10 +154,17 @@ export default function GenerateOutreach({ discoveryId }: GenerateOutreachProps)
             <input
               type="text"
               value={recipientName}
-              onChange={(e) => setRecipientName(e.target.value)}
-              placeholder="John Smith"
+              onChange={(e) => onRecipientChange(e.target.value)}
+              onFocus={loadLeads}
+              placeholder="Pick a lead or type a name"
+              list="outreach-lead-options"
               style={inputStyle}
             />
+            <datalist id="outreach-lead-options">
+              {leadOptions.map((l) => (
+                <option key={l.lead_id} value={l.full_name}>{l.company_name}</option>
+              ))}
+            </datalist>
           </Field>
           <Field label="Company">
             <input
@@ -131,6 +176,30 @@ export default function GenerateOutreach({ discoveryId }: GenerateOutreachProps)
             />
           </Field>
         </div>
+
+        <Field label="Sequence position">
+          <div style={{ position: 'relative' }}>
+            <select
+              value={sequence}
+              onChange={(e) => setSequence(e.target.value as SequencePosition)}
+              style={{ ...inputStyle, appearance: 'none', paddingRight: 24, cursor: 'pointer' }}
+              title="Tells email/LinkedIn drafts whether to reference earlier touches"
+            >
+              {SEQUENCE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value} style={{ background: 'var(--surface)' }}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            <IconChevronDown
+              size={12}
+              style={{
+                position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                color: 'var(--text-faint)', pointerEvents: 'none',
+              }}
+            />
+          </div>
+        </Field>
 
         <Field label="Client type">
           <div style={{ position: 'relative' }}>

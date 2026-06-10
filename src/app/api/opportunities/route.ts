@@ -1,6 +1,25 @@
 import { NextResponse } from 'next/server'
+import { randomUUID } from 'crypto'
+import { z } from 'zod'
 import { getOpportunities, getLeads, getCompanies, createOpportunity } from '@/lib/sheets'
 import type { Opportunity } from '@/lib/types'
+
+const CreateOpportunityBody = z
+  .object({
+    lead_id: z.string().optional(),
+    company_id: z.string().optional(),
+    campaign_id: z.string().optional(),
+    opportunity_type: z.string().min(1, 'opportunity_type is required'),
+    source: z.string().optional(),
+    summary: z.string().min(1, 'summary is required'),
+    why_now: z.string().min(1, 'why_now is required'),
+    recommended_action: z.string().min(1, 'recommended_action is required'),
+    urgency: z.enum(['High', 'Medium', 'Low']).optional(),
+    confidence: z.coerce.number().min(0, 'confidence must be between 0 and 100').max(100, 'confidence must be between 0 and 100').optional(),
+  })
+  .refine((b) => !!b.lead_id || !!b.company_id, {
+    message: 'At least one of lead_id or company_id is required',
+  })
 
 export async function GET() {
   try {
@@ -28,21 +47,25 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json()
-    const { lead_id, company_id, summary, why_now, recommended_action, opportunity_type } = body
-
-    if (!lead_id || !company_id || !summary || !why_now || !recommended_action || !opportunity_type) {
-      return NextResponse.json(
-        { error: 'lead_id, company_id, summary, why_now, recommended_action, and opportunity_type are required' },
-        { status: 400 }
-      )
+    let json: unknown
+    try {
+      json = await req.json()
+    } catch {
+      return NextResponse.json({ error: 'Body must be JSON' }, { status: 400 })
     }
+
+    const parsed = CreateOpportunityBody.safeParse(json)
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Invalid body' }, { status: 400 })
+    }
+    const body = parsed.data
+    const { lead_id, company_id, summary, why_now, recommended_action, opportunity_type } = body
 
     const now = new Date().toISOString()
     const opp: Opportunity = {
-      opportunity_id: `opp_${Date.now()}`,
+      opportunity_id: `opp_${randomUUID()}`,
       lead_id,
-      company_id,
+      company_id: company_id ?? '',
       campaign_id: body.campaign_id || undefined,
       opportunity_type,
       source: body.source || undefined,
@@ -50,7 +73,7 @@ export async function POST(req: Request) {
       why_now,
       recommended_action,
       urgency: body.urgency || 'Medium',
-      confidence: Number(body.confidence) || 50,
+      confidence: body.confidence ?? 50,
       status: 'Open',
       created_at: now,
       updated_at: now,

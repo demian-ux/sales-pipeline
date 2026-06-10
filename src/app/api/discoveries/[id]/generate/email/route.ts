@@ -1,7 +1,10 @@
 import { type NextRequest } from 'next/server'
 import { getSupabaseAdmin, isSupabaseAdminConfigured } from '@/lib/supabase'
 import { generateEmail } from '@/lib/prompts/discoveries/generate-email'
+import type { SequencePosition } from '@/lib/prompts/brand'
 import type { DiscoveryClientType } from '@/lib/types'
+
+const SEQUENCE_POSITIONS: SequencePosition[] = ['first_touch', 'after_letter', 'after_letter_email']
 
 export const maxDuration = 120
 
@@ -15,20 +18,24 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const { id } = await params
   const body = await request.json().catch(() => ({}))
-  const { recipient_name, recipient_company, client_type } = body as {
+  const { recipient_name, recipient_company, client_type, sequence_position } = body as {
     recipient_name?: string
     recipient_company?: string
     client_type?: DiscoveryClientType
+    sequence_position?: SequencePosition
   }
 
   if (!client_type) {
     return Response.json({ error: 'client_type required' }, { status: 400 })
   }
+  const position: SequencePosition = SEQUENCE_POSITIONS.includes(sequence_position as SequencePosition)
+    ? (sequence_position as SequencePosition)
+    : 'after_letter'
 
   const supabase = getSupabaseAdmin()
   const { data: discovery, error } = await supabase
     .from('discoveries')
-    .select('title')
+    .select('title, brief_summary, deep_analysis, city, country, sector, investment_size, main_actors, source_url')
     .eq('id', id)
     .single()
 
@@ -39,10 +46,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   let email: string
   try {
     email = await generateEmail(
-      discovery.title,
-      recipient_name ?? 'Dear Sir or Madam',
-      recipient_company ?? 'your organisation',
+      discovery,
+      recipient_name || 'the lead contact',
+      recipient_company || 'the recipient firm',
       client_type,
+      position,
     )
   } catch (err) {
     console.error('[generate/email] error:', err instanceof Error ? err.message : err)

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 
 interface Props {
   oppId: string
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export default function OppStatusButton({ oppId, status, label, variant = 'default' }: Props) {
+  const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [done, setDone] = useState(false)
 
@@ -25,7 +27,7 @@ export default function OppStatusButton({ oppId, status, label, variant = 'defau
         body: JSON.stringify({ status }),
       })
       setDone(true)
-      setTimeout(() => window.location.reload(), 600)
+      setTimeout(() => router.refresh(), 600)
     } finally {
       setLoading(false)
     }
