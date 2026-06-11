@@ -11,6 +11,7 @@ import { getSupabaseAdmin } from '@/lib/supabase'
 import { classifyArticle } from '@/lib/prompts/discoveries/classify'
 import { analyzeArticle } from '@/lib/prompts/discoveries/analyze'
 import { computeDiscoveryScore, scoreToTier } from './scoring'
+import { isInTargetGeo, OUT_OF_GEO_SCORE_CAP } from './target-geo'
 import { fetchRSSFeed, type RawArticleFromRSS } from './rss'
 import { resolveGoogleNewsUrl, isGoogleNewsUrl } from './googleNewsResolver'
 import type { DiscoverySignalTier } from '@/lib/types'
@@ -352,8 +353,17 @@ async function processArticle(article: RawArticleFromRSS, resolvedUrl: string): 
   const supabase = getSupabaseAdmin()
   const analysis = await analyzeArticle(article.title, article.content, article.link)
 
-  const discoveryScore = computeDiscoveryScore(analysis.scores)
-  const tier: DiscoverySignalTier = analysis.signal_tier ?? scoreToTier(discoveryScore)
+  let discoveryScore = computeDiscoveryScore(analysis.scores)
+  let tier: DiscoverySignalTier = analysis.signal_tier ?? scoreToTier(discoveryScore)
+
+  // Deterministic geo cap: out-of-target discoveries can never be strong
+  // opportunities, however good the project. Enforced in code — not in the
+  // prompt — so rubric drift can't reintroduce geography bleed (Brisbane /
+  // Chicago / Dubai articles were tiering strong at 65–79).
+  if (!isInTargetGeo(analysis.region)) {
+    discoveryScore = Math.min(discoveryScore, OUT_OF_GEO_SCORE_CAP)
+    if (tier === 'strong_opportunity') tier = 'watchlist'
+  }
 
   if (tier === 'archive') {
     await recordAnalyzed(article, 'archive')

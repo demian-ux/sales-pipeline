@@ -344,9 +344,10 @@ create index if not exists idx_linkedin_drafts_lead on linkedin_drafts(lead_id);
 insert into sources (name, url, source_type, region, sector, active, sort_order) values
   ('GNews Real Estate NY', 'https://news.google.com/rss/search?q=real+estate+new+york+development&hl=en&gl=US&ceid=US:en',       'rss', 'new_york', 'general',           true,  10),
   ('GNews Real Estate MIA','https://news.google.com/rss/search?q=real+estate+miami+development&hl=en&gl=US&ceid=US:en',          'rss', 'miami',    'general',           true,  20),
-  ('GNews Airport Design', 'https://news.google.com/rss/search?q=airport+modernization+design+architecture&hl=en&gl=US&ceid=US:en','rss','global',  'airports',          true,  30),
+  -- Geo-qualified (June 2026): the unqualified queries pulled worldwide articles — 31% of discoveries were out of target geography.
+  ('GNews Airport Design', 'https://news.google.com/rss/search?q=airport+modernization+design+architecture+(%22New+York%22+OR+%22JFK%22+OR+%22LaGuardia%22+OR+Miami+OR+Paris+OR+France+OR+Europe)&hl=en&gl=US&ceid=US:en','rss','global',  'airports',          true,  30),
   ('GNews Hospitality EU', 'https://news.google.com/rss/search?q=hotel+hospitality+development+europe&hl=en&gl=US&ceid=US:en',   'rss', 'europe',   'hospitality',       true,  40),
-  ('GNews Luxury Resi',    'https://news.google.com/rss/search?q=luxury+residential+development+architecture&hl=en&gl=US&ceid=US:en','rss','global','luxury_residential', true,  50),
+  ('GNews Luxury Resi',    'https://news.google.com/rss/search?q=luxury+residential+development+architecture+(%22New+York%22+OR+Manhattan+OR+Brooklyn+OR+Miami+OR+Paris+OR+France+OR+Europe)&hl=en&gl=US&ceid=US:en','rss','global','luxury_residential', true,  50),
   ('GNews France RE',      'https://news.google.com/rss/search?q=immobilier+developpement+france&hl=fr&gl=FR&ceid=FR:fr',        'rss', 'france',   'general',           true,  60),
   ('Urbanize Miami',       'https://miami.urbanize.city/feed',                           'rss', 'miami',    'general',      true,  70),
   ('Urbanize NYC',         'https://ny.urbanize.city/feed',                              'rss', 'new_york', 'general',      true,  80),

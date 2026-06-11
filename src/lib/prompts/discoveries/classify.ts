@@ -7,6 +7,7 @@ import { parseJson, extractText, ClaudeParseError } from '@/lib/ai/parse'
 import { withTimeout } from '@/lib/ai/timeout'
 import { env } from '@/lib/env'
 import type { DiscoverySignalTier } from '@/lib/types'
+import { TARGET_GEO_DESCRIPTION } from '@/lib/discoveries/target-geo'
 
 export interface DiscoveryClassification {
   should_analyze: boolean
@@ -31,6 +32,14 @@ Decide whether a news article deserves full opportunity analysis for architectur
 Use should_analyze = true when the title/snippet suggests any plausible development, project, investment, planning, zoning, construction, real estate, hotel, airport, infrastructure, office, mixed-use, residential, cultural, retail, or urban regeneration signal.
 
 Use should_analyze = false only when the article is clearly unrelated, stale commentary without project/business signal, sports, entertainment, celebrity, weather, pure politics, health, generic finance, or market news with no built-environment angle.
+
+━━━ GEOGRAPHY GATE ━━━
+
+Target markets: ${TARGET_GEO_DESCRIPTION}.
+
+Use should_analyze = false when the article is clearly about a project located OUTSIDE the target markets (e.g. Australia, the Middle East, Africa, South America, Asia, or US cities other than the New York and Miami metros). The PROJECT's location is what matters, not where the firms involved are headquartered — a Miami developer building in Dubai is out of target; a Dubai investor building in Manhattan is in target.
+
+When the location is unclear, unstated, or the story spans both target and non-target markets, do NOT reject on geography.
 
 When unsure, choose should_analyze = true.`
 

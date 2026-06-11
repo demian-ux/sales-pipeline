@@ -1,13 +1,17 @@
 import type { DiscoveryScoreBreakdown, DiscoverySignalTier } from '@/lib/types'
 
-// Weights must sum to 1.0
+// Weights must sum to 1.0.
+// region_strategic was raised 0.10 → 0.20 (June 2026): at 10%, an
+// out-of-target location cost at most ~5 points, so Brisbane/Chicago articles
+// tiered as strong opportunities. The hard guarantee is the geo cap in
+// processor.ts; this weight makes the ranking inside each tier geo-aware too.
 const WEIGHTS = {
-  opportunity_clarity: 0.35,
-  investment_size:     0.20,
+  opportunity_clarity: 0.30,
+  investment_size:     0.15,
   timing:              0.15,
   actors:              0.10,
   sector_growth:       0.10,
-  region_strategic:    0.10,
+  region_strategic:    0.20,
 } as const
 
 // Sub-score shape used by the Claude analyzer — un-prefixed (matches the JSON

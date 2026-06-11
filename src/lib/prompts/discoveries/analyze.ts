@@ -86,9 +86,13 @@ development-related word = watchlist minimum.
 - timing: 90+ = imminent | 70+ = within 12 months | 50+ = 1–3 years | 30+ = 3+ years | 15 = unclear
 - actors: 80+ = 3+ named orgs | 60+ = 1–2 named | 30+ = vague/unnamed | 10 = none
 - sector_growth: How actively is this sector investing right now? Use market knowledge.
-- region_strategic: NYC/Paris/London/major EU = 90+ | Miami/secondary EU = 75+ | other major metro = 60+ | other = 40+
+- region_strategic: score by the PROJECT's location, not where the firms are headquartered.
+  In-target (New York metro, Miami / South Florida, France, major European cities) = 75–100
+  Adjacent (other US gateway cities, secondary European cities) = 40–60
+  Out-of-target (everywhere else: rest of US, Australia, Middle East, Africa, Asia, South America) = 0–25
 
 Regions: "New York" | "Miami" | "France" | "Europe" | "Other"
+Assign "Other" whenever the project is outside the four target regions — out-of-target discoveries are capped at watchlist downstream, so do not stretch a region label to fit.
 Sectors: "hospitality" | "luxury_residential" | "mixed_use" | "airports" | "office" | "transport" | "cultural" | "retail" | "other"
 Opportunity types: "service" | "tender" | "trend"
 Client types: "architecture_firm" | "real_estate_developer" | "interior_designer" | "urban_planner"`
