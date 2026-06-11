@@ -12,6 +12,7 @@ import type {
   LinkedInWarmth,
 } from '@/lib/types'
 import CopyButton from '@/components/ui/CopyButton'
+import { logInteraction, todayYMD } from '@/lib/client/interactions'
 
 type ManualAction = {
   label: string
@@ -120,24 +121,20 @@ export default function LinkedInPanel({
   async function logAction(action: ManualAction) {
     setLogging(action.label)
     setError(null)
-    const touchedAt = new Date().toISOString()
+    const touchedAt = todayYMD()
     try {
-      const interactionRes = await fetch('/api/interactions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          lead_id: lead.lead_id,
-          company_id: lead.company_id,
-          channel: 'LinkedIn',
-          direction: action.direction,
-          subject: action.subject,
-          body_summary: action.summary,
-          linkedin_manual_status: action.interactionStatus,
-          sent_at: touchedAt,
-        }),
+      // Single write path: POST /api/leads/{id}/interactions, which also
+      // updates last_touch_date server-side. The old version posted to the
+      // legacy /api/interactions route, which skipped the touch-date update —
+      // that's how inbound entries appeared while last_touch_date stayed empty.
+      await logInteraction(lead.lead_id, {
+        channel: 'LinkedIn',
+        direction: action.direction,
+        subject: action.subject,
+        body_summary: action.summary,
+        linkedin_manual_status: action.interactionStatus,
+        sent_at: touchedAt,
       })
-      const interactionData = await interactionRes.json()
-      if (!interactionRes.ok) throw new Error(interactionData.error ?? 'Could not log action')
 
       const leadRes = await fetch(`/api/leads/${lead.lead_id}`, {
         method: 'PATCH',
@@ -147,8 +144,8 @@ export default function LinkedInPanel({
           last_linkedin_touch_date: touchedAt,
         }),
       })
-      const leadData = await leadRes.json()
-      if (!leadRes.ok) throw new Error(leadData.error ?? 'Could not update LinkedIn status')
+      const leadData = await leadRes.json().catch(() => null)
+      if (!leadRes.ok) throw new Error(leadData?.error ?? `Could not update LinkedIn status (HTTP ${leadRes.status})`)
 
       router.refresh()
     } catch (err) {

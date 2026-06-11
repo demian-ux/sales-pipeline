@@ -31,8 +31,18 @@ const PostBody = z.object({
   summary: z.string().optional(),
   body_summary: z.string().optional(),
   link: z.string().optional(),
+  gmail_thread_id: z.string().optional(),
+  gmail_message_id: z.string().optional(),
+  linkedin_manual_status: z.string().optional(),
   meaningful: z.boolean().optional(),
 }).refine((b) => b.channel || b.type, { message: 'channel or type is required' })
+
+// Canonical sent_at format is date-only (YYYY-MM-DD). Existing data mixes
+// date-only (imports, API logs) and full ISO (old LinkedIn panel writes) —
+// truncate ISO inputs so all new writes are uniform.
+function normalizeSentAt(s: string): string {
+  return /^\d{4}-\d{2}-\d{2}T/.test(s) ? s.slice(0, 10) : s
+}
 
 // POST /api/leads/[id]/interactions — log an event. Side effect: bumps the
 // lead's last_touch_date (and last_meaningful_touch when meaningful: true).
@@ -54,7 +64,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
     const body = parsed.data
 
-    const sentAt = body.sent_at ?? body.date ?? new Date().toISOString()
+    const sentAt = normalizeSentAt(body.sent_at ?? body.date ?? new Date().toISOString())
     const summary = body.body_summary ?? body.summary
     const interaction: Interaction = {
       interaction_id: `int_${randomUUID()}`,
@@ -64,6 +74,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       direction: body.direction ?? 'Outbound',
       subject: body.subject,
       body_summary: body.link ? `${summary ?? ''}${summary ? ' ' : ''}(${body.link})` : summary,
+      gmail_thread_id: body.gmail_thread_id,
+      gmail_message_id: body.gmail_message_id,
+      linkedin_manual_status: body.linkedin_manual_status,
       sent_at: sentAt,
       created_at: new Date().toISOString(),
     }

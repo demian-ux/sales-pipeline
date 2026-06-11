@@ -1,10 +1,11 @@
 'use client'
 /* eslint-disable react/no-unescaped-entities */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { OPP_TYPES } from '@/lib/constants/opportunity-types'
 import { Icon } from '@/components/ui/icons'
+import { logInteraction, fetchMeta, todayYMD, type MetaVocab } from '@/lib/client/interactions'
 
 interface Props {
   leadId: string
@@ -375,38 +376,60 @@ function ResearchForm({ leadId, companyId }: { leadId: string; companyId: string
   )
 }
 
-function LogForm({ leadId, companyId }: { leadId: string; companyId: string }) {
+function LogForm({ leadId }: { leadId: string; companyId: string }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showAdvanced, setShowAdvanced] = useState(false)
+  const [meta, setMeta] = useState<MetaVocab | null>(null)
   const [form, setForm] = useState({
     channel: 'Email',
     direction: 'Outbound',
+    sent_at: todayYMD(),
     subject: '',
     body_summary: '',
     linkedin_manual_status: '',
+    gmail_thread_id: '',
+    gmail_message_id: '',
   })
+
+  // Channel/direction options come from GET /api/meta at runtime — never
+  // hardcoded, so the form can't drift from what the server accepts.
+  useEffect(() => {
+    if (!open || meta) return
+    fetchMeta()
+      .then(setMeta)
+      .catch((err) => setError(err instanceof Error ? err.message : 'Could not load field options'))
+  }, [open, meta])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!form.body_summary.trim() && !form.subject.trim()) return
+    if (!form.body_summary.trim()) {
+      setError('Summary is required.')
+      return
+    }
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/interactions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, lead_id: leadId, company_id: companyId }),
+      // Single write path — updates the lead's last_touch_date server-side.
+      await logInteraction(leadId, {
+        channel: form.channel as 'Email' | 'LinkedIn' | 'Phone' | 'Meeting' | 'Other',
+        direction: form.direction as 'Inbound' | 'Outbound',
+        sent_at: form.sent_at,
+        subject: form.subject.trim() || undefined,
+        body_summary: form.body_summary.trim(),
+        linkedin_manual_status: form.linkedin_manual_status || undefined,
+        gmail_thread_id: form.gmail_thread_id.trim() || undefined,
+        gmail_message_id: form.gmail_message_id.trim() || undefined,
       })
-      if (!res.ok) {
-        const data = await res.json().catch(() => null)
-        throw new Error(data?.error ?? 'Could not log interaction')
-      }
-      setForm({ channel: 'Email', direction: 'Outbound', subject: '', body_summary: '', linkedin_manual_status: '' })
+      // Success: reset, close, and refetch server state so the card renders
+      // the saved record, not the local draft.
+      setForm({ channel: 'Email', direction: 'Outbound', sent_at: todayYMD(), subject: '', body_summary: '', linkedin_manual_status: '', gmail_thread_id: '', gmail_message_id: '' })
       setOpen(false)
       router.refresh()
     } catch (err) {
+      // Failure: keep the form populated, show the error, do NOT render as saved.
       setError(err instanceof Error ? err.message : 'Could not log interaction')
     } finally {
       setLoading(false)
@@ -429,25 +452,36 @@ function LogForm({ leadId, companyId }: { leadId: string; companyId: string }) {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
         <div>
           <Label>Channel</Label>
-          <select value={form.channel} onChange={(e) => setForm((f) => ({ ...f, channel: e.target.value }))} style={inputStyle}>
-            {['Email', 'LinkedIn', 'Phone', 'Meeting', 'Other'].map((c) => <option key={c} value={c}>{c}</option>)}
+          <select value={form.channel} onChange={(e) => setForm((f) => ({ ...f, channel: e.target.value }))} style={inputStyle} disabled={!meta}>
+            {(meta?.interaction_channel ?? [form.channel]).map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
         <div>
           <Label>Direction</Label>
-          <select value={form.direction} onChange={(e) => setForm((f) => ({ ...f, direction: e.target.value }))} style={inputStyle}>
-            <option value="Outbound">Outbound</option>
-            <option value="Inbound">Inbound</option>
+          <select value={form.direction} onChange={(e) => setForm((f) => ({ ...f, direction: e.target.value }))} style={inputStyle} disabled={!meta}>
+            {(meta?.interaction_direction ?? [form.direction]).map((d) => <option key={d} value={d}>{d}</option>)}
           </select>
         </div>
       </div>
-      <div>
-        <Label>Subject</Label>
-        <input value={form.subject} onChange={(e) => setForm((f) => ({ ...f, subject: e.target.value }))} placeholder="Email subject or topic" style={inputStyle} />
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        <div>
+          <Label>Date</Label>
+          <input
+            type="date"
+            value={form.sent_at}
+            onChange={(e) => setForm((f) => ({ ...f, sent_at: e.target.value }))}
+            style={{ ...inputStyle, colorScheme: 'dark' }}
+          />
+        </div>
+        <div>
+          <Label>Subject (optional)</Label>
+          <input value={form.subject} onChange={(e) => setForm((f) => ({ ...f, subject: e.target.value }))} placeholder="Email subject or topic" style={inputStyle} />
+        </div>
       </div>
       <div>
-        <Label>Summary</Label>
+        <Label>Summary *</Label>
         <textarea
+          required
           value={form.body_summary}
           onChange={(e) => setForm((f) => ({ ...f, body_summary: e.target.value }))}
           placeholder="What was said or done?"
@@ -464,6 +498,25 @@ function LogForm({ leadId, companyId }: { leadId: string; companyId: string }) {
             <option value="Replied">Replied</option>
             <option value="Connected">Connected</option>
           </select>
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={() => setShowAdvanced((v) => !v)}
+        style={{ fontSize: 11, color: 'var(--text-faint)', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', padding: 0 }}
+      >
+        {showAdvanced ? '▾ Advanced' : '▸ Advanced (Gmail IDs)'}
+      </button>
+      {showAdvanced && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          <div>
+            <Label>Gmail thread ID</Label>
+            <input value={form.gmail_thread_id} onChange={(e) => setForm((f) => ({ ...f, gmail_thread_id: e.target.value }))} style={inputStyle} />
+          </div>
+          <div>
+            <Label>Gmail message ID</Label>
+            <input value={form.gmail_message_id} onChange={(e) => setForm((f) => ({ ...f, gmail_message_id: e.target.value }))} style={inputStyle} />
+          </div>
         </div>
       )}
       {error && (

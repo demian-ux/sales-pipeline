@@ -94,8 +94,12 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     ? campaigns.find((c) => c.campaign_id === lead.campaign_id)
     : undefined
 
+  // sent_at desc (the date the touch happened), tiebreak created_at desc.
+  // sent_at mixes YYYY-MM-DD and full ISO historically — Date() parses both.
+  const sortKey = (i: { sent_at?: string; created_at: string }) =>
+    new Date(i.sent_at || i.created_at).getTime() || 0
   const sortedInteractions = [...interactions].sort(
-    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    (a, b) => sortKey(b) - sortKey(a) || new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
   )
 
   // Latest outbound send per channel — drives the sent-state on the draft tabs.

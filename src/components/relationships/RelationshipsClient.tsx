@@ -8,6 +8,7 @@ import { Empty } from '@/components/ui/primitives'
 import { relativeDate } from '@/lib/utils'
 import { STAGE_ORDER } from '@/lib/types'
 import type { Lead, Company, Campaign, PipelineStage, RelationshipTemperature } from '@/lib/types'
+import { logInteraction, type InteractionPayload } from '@/lib/client/interactions'
 
 const CATEGORY_GROUPS = [
   {
@@ -420,6 +421,7 @@ function LeadRow({
       </div>
 
       <div className="rs-meta">
+        <QuickLog leadId={lead.lead_id} leadName={lead.full_name} />
         {openOpps > 0 && (
           <span
             title={`${openOpps} open opportunit${openOpps === 1 ? 'y' : 'ies'}`}
@@ -452,6 +454,82 @@ function LeadRow({
         </span>
       ) : (
         <span className="rs-score empty">&mdash;</span>
+      )}
+    </div>
+  )
+}
+
+// One-click logging for the 90% case (Tue/Thu outreach passes). Each action
+// goes through the same single write function as the full form, so
+// last_touch_date always updates and failures are always visible.
+const QUICK_LOG_ACTIONS: { key: string; label: string; payload: InteractionPayload }[] = [
+  {
+    key: 'dm',
+    label: 'Log outbound DM today',
+    payload: { channel: 'LinkedIn', direction: 'Outbound', body_summary: 'Outbound LinkedIn DM (quick log).', linkedin_manual_status: 'DM Sent' },
+  },
+  {
+    key: 'email',
+    label: 'Log outbound email today',
+    payload: { channel: 'Email', direction: 'Outbound', body_summary: 'Outbound email (quick log).' },
+  },
+  {
+    key: 'reply',
+    label: 'Log inbound reply today',
+    payload: { channel: 'LinkedIn', direction: 'Inbound', body_summary: 'Inbound reply received (quick log).' },
+  },
+]
+
+function QuickLog({ leadId, leadName }: { leadId: string; leadName: string }) {
+  const router = useRouter()
+  const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+
+  async function run(action: (typeof QUICK_LOG_ACTIONS)[number]) {
+    setBusy(action.key)
+    setError(null)
+    try {
+      await logInteraction(leadId, action.payload)
+      setSaved(true)
+      setOpen(false)
+      router.refresh()
+      setTimeout(() => setSaved(false), 2500)
+    } catch (e) {
+      // Keep the menu open with the error visible — never pretend it saved.
+      setError(e instanceof Error ? e.message : 'Save failed')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <div style={{ position: 'relative' }} onClick={(e) => e.stopPropagation()}>
+      <button
+        className="btn btn-xs btn-ghost"
+        onClick={() => { setOpen((o) => !o); setError(null) }}
+        title={`Quick-log an interaction for ${leadName}`}
+        aria-label={`Quick-log an interaction for ${leadName}`}
+      >
+        {saved ? '✓ Logged' : '+ Log'}
+      </button>
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 20 }} />
+          <div className="menu" style={{ minWidth: 230, right: 0 }}>
+            {QUICK_LOG_ACTIONS.map((a) => (
+              <button key={a.key} className="menu-item" onClick={() => run(a)} disabled={busy !== null}>
+                <span>{busy === a.key ? 'Saving…' : a.label}</span>
+              </button>
+            ))}
+            {error && (
+              <div className="risk" style={{ padding: '8px 10px', fontSize: 11.5, maxWidth: 260, lineHeight: 1.4 }}>
+                {error}
+              </div>
+            )}
+          </div>
+        </>
       )}
     </div>
   )
