@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState, useCallback, type ReactNode } from 'react'
 import Link from 'next/link'
 import { Icon } from '@/components/ui/icons'
 import type { Lead, Campaign } from '@/lib/types'
@@ -14,6 +14,9 @@ interface Props {
   campaigns: Campaign[]
   // lead_ids that have a generated draft ready (from Supabase draft tables)
   draftLeadIds: string[]
+  // lead_id → markable email draft id (lead_drafts). When present, a staged
+  // row gets a one-click "Mark sent" via the unified /mark-sent hook.
+  emailDraftIdByLead: Record<string, string>
 }
 
 function isSendDay(d: Date): boolean {
@@ -37,8 +40,38 @@ function parseDate(value?: string): Date | null {
   return isNaN(d.getTime()) ? null : d
 }
 
-export default function SendQueueCard({ leads, campaigns, draftLeadIds }: Props) {
+export default function SendQueueCard({ leads, campaigns, draftLeadIds, emailDraftIdByLead }: Props) {
   const draftSet = useMemo(() => new Set(draftLeadIds), [draftLeadIds])
+
+  // Optimistic "Mark sent" state for staged email rows.
+  const [sentLeads, setSentLeads] = useState<Set<string>>(new Set())
+  const [busyLeads, setBusyLeads] = useState<Set<string>>(new Set())
+  const [actionError, setActionError] = useState<string | null>(null)
+
+  const markEmailSent = useCallback(async (leadId: string, draftId: string) => {
+    if (busyLeads.has(leadId)) return
+    setBusyLeads((s) => new Set(s).add(leadId))
+    setSentLeads((s) => new Set(s).add(leadId)) // optimistic hide
+    try {
+      const res = await fetch(`/api/drafts/${draftId}/mark-sent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      })
+      if (!res.ok) {
+        setSentLeads((s) => { const n = new Set(s); n.delete(leadId); return n })
+        const j = await res.json().catch(() => null)
+        setActionError(j?.error ?? 'Failed to mark sent.')
+      } else {
+        setActionError(null)
+      }
+    } catch (e) {
+      setSentLeads((s) => { const n = new Set(s); n.delete(leadId); return n })
+      setActionError(e instanceof Error ? e.message : 'Network error')
+    } finally {
+      setBusyLeads((s) => { const n = new Set(s); n.delete(leadId); return n })
+    }
+  }, [busyLeads])
 
   const { sendDay, sendDayIsToday, staged, needsDraft, dueThisWeek } = useMemo(() => {
     const now = new Date()
@@ -86,6 +119,9 @@ export default function SendQueueCard({ leads, campaigns, draftLeadIds }: Props)
     return { sendDay, sendDayIsToday, staged, needsDraft, dueThisWeek }
   }, [leads, campaigns, draftSet])
 
+  // Hide rows optimistically marked sent this session.
+  const displayStaged = staged.filter((l) => !sentLeads.has(l.lead_id))
+
   return (
     <div className="card">
       <div className="card-head">
@@ -98,12 +134,18 @@ export default function SendQueueCard({ leads, campaigns, draftLeadIds }: Props)
       </div>
 
       <div className="counter-strip">
-        <Counter n={staged.length} l="Staged" tone="ok" />
+        <Counter n={displayStaged.length} l="Staged" tone="ok" />
         <Counter n={needsDraft.length} l="Needs draft" tone="warn" />
         <Counter n={dueThisWeek.length} l="Due this week" tone="info" />
       </div>
 
-      {staged.length === 0 && needsDraft.length === 0 && dueThisWeek.length === 0 ? (
+      {actionError && (
+        <div style={{ padding: '0 20px 8px' }}>
+          <span className="risk" style={{ fontSize: 12 }}>{actionError}</span>
+        </div>
+      )}
+
+      {displayStaged.length === 0 && needsDraft.length === 0 && dueThisWeek.length === 0 ? (
         <div className="empty">
           <div className="empty-title">Nothing staged.</div>
           Cold leads with a ready draft appear here on send days; scheduled follow-ups show up
@@ -111,7 +153,7 @@ export default function SendQueueCard({ leads, campaigns, draftLeadIds }: Props)
         </div>
       ) : (
         <div>
-          {staged.map((l) => (
+          {displayStaged.map((l) => (
             <Row
               key={l.lead_id}
               href={`/leads/${l.lead_id}`}
@@ -120,6 +162,18 @@ export default function SendQueueCard({ leads, campaigns, draftLeadIds }: Props)
               tag="READY"
               tagColor="var(--ok, var(--green))"
               note={sendDayIsToday ? 'Draft ready — send today' : `Draft ready for ${fmtDay(sendDay)}`}
+              action={
+                emailDraftIdByLead[l.lead_id] ? (
+                  <button
+                    className="btn btn-xs"
+                    disabled={busyLeads.has(l.lead_id)}
+                    onClick={() => markEmailSent(l.lead_id, emailDraftIdByLead[l.lead_id])}
+                    title="Log this email as sent"
+                  >
+                    {busyLeads.has(l.lead_id) ? '…' : 'Mark sent'}
+                  </button>
+                ) : undefined
+              }
             />
           ))}
           {needsDraft.map((l) => (
@@ -166,7 +220,7 @@ function Counter({ n, l, tone }: { n: number; l: string; tone: 'ok' | 'warn' | '
 }
 
 function Row({
-  href, title, subtitle, tag, tagColor, note, last,
+  href, title, subtitle, tag, tagColor, note, last, action,
 }: {
   href: string
   title: string
@@ -175,6 +229,7 @@ function Row({
   tagColor: string
   note: string
   last?: boolean
+  action?: ReactNode
 }) {
   return (
     <div
@@ -197,9 +252,12 @@ function Row({
           <span className="ink-3" style={{ fontSize: 11.5 }}>{note}</span>
         </div>
       </div>
-      <Link className="btn btn-xs" href={href} style={{ flexShrink: 0 }}>
-        Open <Icon name="arrow" size={10} />
-      </Link>
+      <div className="row" style={{ gap: 6, flexShrink: 0 }}>
+        {action}
+        <Link className="btn btn-xs" href={href}>
+          Open <Icon name="arrow" size={10} />
+        </Link>
+      </div>
     </div>
   )
 }

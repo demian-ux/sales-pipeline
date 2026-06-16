@@ -63,6 +63,10 @@ export default function DiscoveriesPage() {
     if (f.date_to)          params.set('date_to', f.date_to)
     if (f.status)           params.set('status', f.status)
     if (f.search)           params.set('search', f.search)
+    if (f.fit_tier)         params.set('fit_tier', f.fit_tier)
+    if (f.tenure)           params.set('tenure', f.tenure)
+    if (f.sector_fit)       params.set('sector_fit', f.sector_fit)
+    if (!f.hide_disqualified) params.set('hide_disqualified', 'false')
     params.set('sort_by', f.sort_by)
     params.set('limit', '50')
 
@@ -322,14 +326,23 @@ export default function DiscoveriesPage() {
               <span className="micro" style={{ color: 'var(--ink-3)' }}>Sort</span>
               <div className="seg">
                 <button
+                  className={`seg-btn ${filters.sort_by === 'combined' ? 'active' : ''}`}
+                  onClick={() => setFilters((f) => ({ ...f, sort_by: 'combined' }))}
+                  title="Best match — ICP fit blended with deal score"
+                >
+                  Best
+                </button>
+                <button
                   className={`seg-btn ${filters.sort_by === 'score' ? 'active' : ''}`}
                   onClick={() => setFilters((f) => ({ ...f, sort_by: 'score' }))}
+                  title="Raw deal score (discovery_score)"
                 >
-                  Score
+                  Deal
                 </button>
                 <button
                   className={`seg-btn ${filters.sort_by === 'date' ? 'active' : ''}`}
                   onClick={() => setFilters((f) => ({ ...f, sort_by: 'date' }))}
+                  title="Newest first"
                 >
                   Date
                 </button>

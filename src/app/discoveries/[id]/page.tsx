@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { format } from 'date-fns'
 import { getSupabaseAdmin, isSupabaseAdminConfigured } from '@/lib/supabase'
 import DiscoveryScoreBadge from '@/components/discoveries/DiscoveryScoreBadge'
+import FitTierBadge from '@/components/discoveries/FitTierBadge'
 import StatusUpdater from '@/components/discoveries/StatusUpdater'
 import GenerateOutreach from '@/components/discoveries/GenerateOutreach'
 import { IconArrowLeft, IconExternalLink, IconCheck } from '@/components/ui/icons'
@@ -35,6 +36,41 @@ const OPPORTUNITY_TYPE_LABELS: Record<string, string> = {
   service: 'Service',
   tender:  'Tender / RFP',
   trend:   'Strategic Trend',
+}
+
+const TENURE_LABELS: Record<string, string> = {
+  for_sale:       'For-sale',
+  rental:         'Rental',
+  owner_occupied: 'Owner-occupied',
+  mixed:          'Mixed-use',
+  unknown:        'Unknown',
+}
+
+const STAGE_LABELS: Record<string, string> = {
+  pre_entitlement:    'Pre-entitlement',
+  entitled_no_design: 'Entitled, no design',
+  design_in_hand:     'Design in hand',
+  sales_launch:       'Sales launch',
+  under_construction: 'Under construction',
+  built_stabilized:   'Built / stabilized',
+  financing_only:     'Financing only',
+}
+
+const SECTOR_FIT_LABELS: Record<string, string> = { high: 'High', medium: 'Medium', low: 'Low' }
+
+const VIZ_BUYER_LABELS: Record<string, string> = {
+  developer_marketing: 'Developer marketing',
+  developer_principal: 'Developer principal',
+  architect:           'Architect',
+  broker:              'Broker',
+  none_identified:     'None identified',
+}
+
+const SCALE_LABELS: Record<string, string> = {
+  above:   'Above floor',
+  near:    'Near floor',
+  below:   'Below floor',
+  unknown: 'Unknown',
 }
 
 export default async function DiscoveryDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -263,6 +299,30 @@ export default async function DiscoveryDetailPage({ params }: { params: Promise<
               <p style={{ fontSize: 11, color: 'var(--text-faint)', margin: 0, lineHeight: 1.5 }}>
                 Verify who is actually buying/building before attaching — promote to the entity of record.
               </p>
+            </Panel>
+          )}
+
+          {/* ICP fit — the second axis: can oaki sell into this deal? */}
+          {d.fit_tier && (
+            <Panel title="ICP fit">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <FitTierBadge tier={d.fit_tier} score={d.icp_fit_score} size="md" />
+                {d.partner_radar && <Tag>Partner radar</Tag>}
+              </div>
+              {d.fit_reason && (
+                <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0, lineHeight: 1.5 }}>
+                  {d.fit_reason}
+                </p>
+              )}
+              <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 10, marginTop: 2, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {d.tenure            && <MetaRow label="Tenure"       value={TENURE_LABELS[d.tenure] ?? d.tenure} />}
+                {d.project_stage     && <MetaRow label="Stage"        value={STAGE_LABELS[d.project_stage] ?? d.project_stage} />}
+                {d.sector_fit        && <MetaRow label="Sector fit"   value={SECTOR_FIT_LABELS[d.sector_fit] ?? d.sector_fit} />}
+                {d.viz_buyer_role    && <MetaRow label="Viz buyer"    value={VIZ_BUYER_LABELS[d.viz_buyer_role] ?? d.viz_buyer_role} />}
+                {d.viz_buyer_entity  && <MetaRow label="Buyer entity" value={d.viz_buyer_entity} />}
+                {d.est_scale_vs_floor && <MetaRow label="Scale"       value={SCALE_LABELS[d.est_scale_vs_floor] ?? d.est_scale_vs_floor} />}
+                {d.incumbent_viz     && <MetaRow label="Incumbent"    value={d.incumbent_viz} />}
+              </div>
             </Panel>
           )}
 

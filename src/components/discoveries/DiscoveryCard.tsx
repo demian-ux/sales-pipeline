@@ -6,6 +6,7 @@ import { format } from 'date-fns'
 import { ScoreBlock, StatusBadge, Pill } from '@/components/ui/primitives'
 import { Icon } from '@/components/ui/icons'
 import { discoveryTier, TIER_META } from '@/lib/discoveries/tiers'
+import FitTierBadge from '@/components/discoveries/FitTierBadge'
 import type { Discovery, DiscoverySector } from '@/lib/types'
 
 interface DiscoveryCardProps {
@@ -33,6 +34,15 @@ const OPPORTUNITY_TYPE_LABELS: Record<string, string> = {
   service: 'Service',
   tender:  'Tender / RFP',
   trend:   'Strategic Trend',
+}
+
+// Shown on the card only for an actionable buyer (a real person/role to reach);
+// 'none_identified' is left to the why-line so the card stays uncluttered.
+const VIZ_BUYER_LABELS: Record<string, string> = {
+  developer_marketing: 'Dev marketing',
+  developer_principal: 'Principal',
+  architect:           'Architect',
+  broker:              'Broker',
 }
 
 export default function DiscoveryCard({
@@ -116,14 +126,41 @@ export default function DiscoveryCard({
         <ScoreBlock value={d.discovery_score} />
       </div>
 
-      {/* Signal tier + facets */}
+      {/* Fit tier + signal tier + facets */}
       <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+        {d.fit_tier && <FitTierBadge tier={d.fit_tier} score={d.icp_fit_score} />}
+        {d.incumbent_viz && (
+          <span
+            title={`Incumbent visualization vendor: ${d.incumbent_viz}`}
+            style={{
+              fontSize: 10.5,
+              fontWeight: 600,
+              color: 'var(--accent)',
+              background: 'var(--accent-dim)',
+              border: '1px solid rgba(200,169,110,0.3)',
+              borderRadius: 'var(--r-xs)',
+              padding: '2px 6px',
+            }}
+          >
+            ⚑ Incumbent
+          </span>
+        )}
+        {d.viz_buyer_role && VIZ_BUYER_LABELS[d.viz_buyer_role] && (
+          <Pill>{VIZ_BUYER_LABELS[d.viz_buyer_role]}</Pill>
+        )}
         <StatusBadge tone={tier.tone}>{tier.label}</StatusBadge>
         {d.status === 'saved' && <Pill tone="gold">Saved</Pill>}
         <Pill>{SECTOR_LABELS[d.sector] ?? d.sector}</Pill>
         {d.region && <Pill>{d.region}</Pill>}
         {d.city && <Pill>{d.city}</Pill>}
       </div>
+
+      {/* Why-fit / why-not — the dimension that moved the fit score most */}
+      {d.fit_reason && (
+        <div className="ink-3" style={{ fontSize: 11.5, lineHeight: 1.5, fontStyle: 'italic' }}>
+          {d.fit_reason}
+        </div>
+      )}
 
       {/* Summary */}
       {d.brief_summary && (

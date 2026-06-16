@@ -23,6 +23,9 @@ const LIST_COLUMNS =
   'investment_size, timeline, main_actors, developer, architect, government_body, ' +
   'brief_summary, why_it_matters, suggested_action, tags, ' +
   'signal_tier, discovery_score, urgency_score, confidence_score, ' +
+  'tenure, has_for_sale_residential, project_stage, sector_fit, ' +
+  'viz_buyer_role, viz_buyer_entity, incumbent_viz, est_scale_vs_floor, ' +
+  'icp_fit_score, fit_tier, fit_reason, partner_radar, combined_score, ' +
   'status, promoted_to_opportunity_id'
 
 export async function GET(request: NextRequest) {
@@ -43,7 +46,15 @@ export async function GET(request: NextRequest) {
   const dateTo     = sp.get('date_to')          ?? ''
   const status     = sp.get('status')           ?? 'active'
   const search     = sp.get('search')           ?? ''
-  const sortBy     = sp.get('sort_by') === 'date' ? 'date' : 'score'
+  // Sort: 'combined' (blended fit×deal, default) | 'score' (raw discovery_score) | 'date'.
+  const sortParam  = sp.get('sort_by')
+  const sortBy     = sortParam === 'date' ? 'date' : sortParam === 'score' ? 'score' : 'combined'
+  const tenure     = sp.get('tenure')            ?? ''
+  const sectorFit  = sp.get('sector_fit')        ?? ''
+  const fitTier    = sp.get('fit_tier')          ?? ''
+  // Hide disqualified is ON unless explicitly disabled, but never overrides an
+  // explicit fit_tier filter (so you can still inspect disqualified rows).
+  const hideDisq   = sp.get('hide_disqualified') !== 'false'
   const limit      = Math.min(parseInt(sp.get('limit') ?? '50', 10), 100)
   const offset     = parseInt(sp.get('offset') ?? '0', 10)
 
@@ -54,10 +65,14 @@ export async function GET(request: NextRequest) {
   if (sortBy === 'date') {
     query = query
       .order('date_published', { ascending: false, nullsFirst: false })
-      .order('discovery_score', { ascending: false, nullsFirst: false })
-  } else {
+      .order('combined_score', { ascending: false, nullsFirst: false })
+  } else if (sortBy === 'score') {
     query = query
       .order('discovery_score', { ascending: false, nullsFirst: false })
+      .order('date_published', { ascending: false, nullsFirst: false })
+  } else {
+    query = query
+      .order('combined_score', { ascending: false, nullsFirst: false })
       .order('date_published', { ascending: false, nullsFirst: false })
   }
 
@@ -72,6 +87,11 @@ export async function GET(request: NextRequest) {
   if (dateTo)        query = query.lte('date_published', dateTo + 'T23:59:59')
   if (oppType)       query = query.contains('opportunity_type', [oppType])
   if (clientType)    query = query.contains('target_client_types', [clientType])
+  if (tenure)        query = query.eq('tenure', tenure)
+  if (sectorFit)     query = query.eq('sector_fit', sectorFit)
+  if (fitTier)       query = query.eq('fit_tier', fitTier)
+  // Drop disqualified rows but KEEP legacy null-tier rows (going-forward only).
+  if (hideDisq && !fitTier) query = query.or('fit_tier.is.null,fit_tier.neq.disqualified')
   if (search)        query = query.or(`title.ilike.%${search}%,brief_summary.ilike.%${search}%`)
 
   query = query.range(offset, offset + limit - 1)

@@ -10,6 +10,10 @@ import type {
   DiscoveryClientType,
   DiscoveryType,
   DiscoverySignalTier,
+  Tenure,
+  ProjectStage,
+  VizBuyerRole,
+  EstScaleVsFloor,
 } from '@/lib/types'
 import type { ScoreBreakdownRaw } from '@/lib/discoveries/scoring'
 
@@ -28,6 +32,14 @@ export interface DiscoveryAnalysis {
   developer: string | null
   architect: string | null
   government_body: string | null
+  // ICP-fit signals (scored deterministically in lib/discoveries/icp.ts)
+  tenure: Tenure
+  has_for_sale_residential: boolean
+  project_stage: ProjectStage
+  viz_buyer_role: VizBuyerRole
+  viz_buyer_entity: string | null
+  incumbent_viz: string | null
+  est_scale_vs_floor: EstScaleVsFloor
   opportunity_type: DiscoveryType[]
   target_client_types: DiscoveryClientType[]
   brief_summary: string
@@ -91,6 +103,34 @@ development-related word = watchlist minimum.
   Adjacent (other US gateway cities, secondary European cities) = 40–60
   Out-of-target (everywhere else: rest of US, Australia, Middle East, Africa, Asia, South America) = 0–25
 
+━━━ ICP-FIT EXTRACTION — read carefully ━━━
+
+oaki sells editorial visualization for projects SOLD FROM IMAGERY before they exist:
+for-sale condos, branded residences, and hospitality that run image-led pre-sales
+campaigns. Rentals, owner-occupied buildings, and pure financing plays do not commission
+this. Extract these signals literally from the article — do NOT infer the favorable answer:
+
+- tenure: Is the residential product FOR SALE (condos, branded residences), RENTAL
+  (apartments, lease-up, multifamily), OWNER_OCCUPIED (a corporate HQ / build-to-own), or
+  MIXED? **If the article does not state it, return "unknown" — do NOT assume for_sale —
+  and lower confidence_score accordingly.** This is the single highest-signal field; getting
+  it wrong (e.g. calling a rental tower for-sale) is the worst error you can make here.
+- has_for_sale_residential: true only if there is an explicit for-sale residential component.
+- project_stage: pre_entitlement (no approvals, years out) | entitled_no_design | design_in_hand |
+  sales_launch (actively marketing units) | under_construction | built_stabilized | financing_only
+  (a capital-markets / refinancing / leasing story with no product to market).
+- viz_buyer_entity + viz_buyer_role: name the entity that would actually COMMISSION sales/marketing
+  visualization, and classify it. This is usually NOT the lender, fund, sponsor, or capital-markets
+  actor named in the headline — it is the DEVELOPER's marketing/development lead (developer_marketing)
+  or the founder/principal of a design-led developer (developer_principal). architect if only the
+  design firm is identifiable; broker if only a sales broker; **none_identified if only a financial
+  sponsor/lender/fund can be named.** Do not promote a lender into the buyer slot.
+- incumbent_viz: any visualization / rendering / CGI vendor already credited on THIS project — parse
+  image credits and phrasing like "renderings by X", "visuals by X", "CGI by X". null if none found.
+- est_scale_vs_floor: is the project large enough to support a real viz commission?
+  above (100+ units, branded residences, GDV $100M+, flagship) | near (mid-size) |
+  below (boutique / <20 units / small) | unknown.
+
 Regions: "New York" | "Miami" | "France" | "Europe" | "Other"
 Assign "Other" whenever the project is outside the four target regions — out-of-target discoveries are capped at watchlist downstream, so do not stretch a region label to fit.
 Sectors: "hospitality" | "luxury_residential" | "mixed_use" | "airports" | "office" | "transport" | "cultural" | "retail" | "other"
@@ -123,6 +163,13 @@ Return this exact JSON structure (replace descriptions with actual values):
   "developer": "developer name or null — the ENTITY OF RECORD actually buying/building/commissioning, as stated in the article. Do NOT guess from adjacent mentions: if the article names only a seller, broker, lender, or neighboring firm but not the actual buyer/developer, use null.",
   "architect": "architect/designer name or null",
   "government_body": "government body name or null",
+  "tenure": "for_sale|rental|owner_occupied|mixed|unknown — use unknown if the article does not say",
+  "has_for_sale_residential": true,
+  "project_stage": "pre_entitlement|entitled_no_design|design_in_hand|sales_launch|under_construction|built_stabilized|financing_only",
+  "viz_buyer_entity": "the developer marketing/dev lead or principal who would commission viz, or null — NOT the lender/fund",
+  "viz_buyer_role": "developer_marketing|developer_principal|architect|broker|none_identified",
+  "incumbent_viz": "rendering/CGI vendor already credited on this project, or null",
+  "est_scale_vs_floor": "above|near|below|unknown",
   "opportunity_type": ["service", "tender", "trend"],
   "target_client_types": ["architecture_firm", "real_estate_developer", "interior_designer", "urban_planner"],
   "brief_summary": "3–5 sentence summary: what happened, where, why it matters, who benefits, suggested action",
@@ -161,6 +208,19 @@ const AnalysisSchema = z.object({
   developer: z.string().nullable().catch(null),
   architect: z.string().nullable().catch(null),
   government_body: z.string().nullable().catch(null),
+  // ICP-fit signals — each degrades to a conservative default (never assume
+  // for_sale / a reachable buyer) so a malformed field can't inflate fit.
+  tenure: z.enum(['for_sale', 'rental', 'owner_occupied', 'mixed', 'unknown']).catch('unknown'),
+  has_for_sale_residential: z.boolean().catch(false),
+  project_stage: z
+    .enum(['pre_entitlement', 'entitled_no_design', 'design_in_hand', 'sales_launch', 'under_construction', 'built_stabilized', 'financing_only'])
+    .catch('pre_entitlement'),
+  viz_buyer_entity: z.string().nullable().catch(null),
+  viz_buyer_role: z
+    .enum(['developer_marketing', 'developer_principal', 'architect', 'broker', 'none_identified'])
+    .catch('none_identified'),
+  incumbent_viz: z.string().nullable().catch(null),
+  est_scale_vs_floor: z.enum(['above', 'near', 'below', 'unknown']).catch('unknown'),
   opportunity_type: z.array(z.string()).catch([]),
   target_client_types: z.array(z.string()).catch([]),
   brief_summary: z.string().catch(''),

@@ -97,6 +97,29 @@ create table if not exists discoveries (
   score_sector_growth        integer,
   score_region_strategic     integer,
 
+  -- ICP-fit layer (2026-06-16) — second axis: can oaki sell into this deal?
+  -- Extracted signals from the analyze prompt:
+  tenure                     text,                          -- for_sale | rental | owner_occupied | mixed | unknown
+  has_for_sale_residential   boolean,
+  project_stage              text,                          -- pre_entitlement | entitled_no_design | design_in_hand | sales_launch | under_construction | built_stabilized | financing_only
+  sector_fit                 text,                          -- high | medium | low
+  viz_buyer_role             text,                          -- developer_marketing | developer_principal | architect | broker | none_identified
+  viz_buyer_entity           text,                          -- named actor that would commission viz (≠ lender/fund)
+  incumbent_viz              text,                          -- render/image-credit vendor, if any
+  est_scale_vs_floor         text,                          -- above | near | below | unknown
+  -- Computed in code (lib/discoveries/icp.ts) at insert time:
+  icp_fit_score              integer,                       -- 0–100, NULL on legacy rows
+  fit_tier                   text,                          -- prime | workable | complement | weak | disqualified
+  fit_reason                 text,                          -- one-line why-fit / why-not
+  partner_radar              boolean not null default false,
+  -- Blended sort key. Falls back to discovery_score when icp_fit_score is NULL.
+  combined_score             integer generated always as (
+    case
+      when icp_fit_score is null then discovery_score
+      else round(0.6 * icp_fit_score + 0.4 * discovery_score)::int
+    end
+  ) stored,
+
   status                     text not null default 'active',   -- 'active' | 'saved' | 'archived'
   raw_content                text,
 
@@ -112,6 +135,8 @@ create index if not exists idx_discoveries_status  on discoveries(status);
 create index if not exists idx_discoveries_date    on discoveries(date_published desc);
 create index if not exists idx_discoveries_created on discoveries(created_at desc);
 create index if not exists idx_discoveries_tier    on discoveries(signal_tier);
+create index if not exists idx_discoveries_combined on discoveries(combined_score desc);
+create index if not exists idx_discoveries_fit_tier on discoveries(fit_tier);
 
 -- ============================================================================
 -- INGESTION_RUNS — one row per ingest cycle

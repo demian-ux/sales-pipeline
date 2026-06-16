@@ -54,6 +54,7 @@ export default async function DashboardPage() {
     highCandidates: supabaseData.highCandidates,
     snoozedSignals: supabaseData.snoozedSignals,
     draftLeadIds: supabaseData.draftLeadIds,
+    emailDraftIdByLead: supabaseData.emailDraftIdByLead,
   }
 
   return (

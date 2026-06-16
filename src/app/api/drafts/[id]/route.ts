@@ -6,6 +6,14 @@ import { getLeadById, saveInteraction, updateLead } from '@/lib/sheets'
 import type { Interaction, Lead } from '@/lib/types'
 import { DRAFT_STATUSES, INTERACTION_TYPE_TO_CHANNEL } from '@/lib/vocab'
 
+// Touch-log subject when a draft is marked sent and carries no subject of its
+// own (letters / LinkedIn DMs have none). Email keeps its real subject line.
+const SENT_SUBJECTS: Record<string, string> = {
+  linkedin_dm: 'LinkedIn DM sent',
+  email: 'Email sent',
+  letter: 'Letter sent',
+}
+
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   if (!isSupabaseAdminConfigured()) {
     return NextResponse.json({ error: 'Supabase not configured' }, { status: 503 })
@@ -72,7 +80,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
           company_id: lead.company_id,
           channel: INTERACTION_TYPE_TO_CHANNEL[draft.channel] ?? 'Other',
           direction: 'Outbound',
-          subject: draft.subject ?? `${draft.channel} draft sent`,
+          subject: draft.subject ?? SENT_SUBJECTS[draft.channel] ?? `${draft.channel} sent`,
           body_summary: (updates.body ?? draft.body).slice(0, 300),
           sent_at: nowIso,
           created_at: nowIso,

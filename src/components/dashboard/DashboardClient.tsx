@@ -11,6 +11,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import TodayCard from './cards/TodayCard'
 import SendQueueCard from './cards/SendQueueCard'
+import LinkedInQueueCard from './cards/LinkedInQueueCard'
 import OpportunitiesCard from './cards/OpportunitiesCard'
 import AttentionCard from './cards/AttentionCard'
 import ConversationsCard from './cards/ConversationsCard'
@@ -33,6 +34,7 @@ export interface DashboardData {
   highCandidates: FirmCandidateRow[]
   snoozedSignals: SnoozedSignal[]
   draftLeadIds: string[]
+  emailDraftIdByLead: Record<string, string>
 }
 
 interface Props {
@@ -262,8 +264,11 @@ function renderCard(id: DashboardCardId, data: DashboardData): React.ReactNode {
           leads={data.leads}
           campaigns={data.campaigns}
           draftLeadIds={data.draftLeadIds}
+          emailDraftIdByLead={data.emailDraftIdByLead}
         />
       )
+    case 'linkedin_dm_queue':
+      return <LinkedInQueueCard />
     case 'opportunities':
       return <OpportunitiesCard opportunities={data.opportunities} leads={data.leads} />
     case 'attention':

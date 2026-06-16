@@ -385,6 +385,34 @@ export type DiscoveryClientType =
   | 'interior_designer'
   | 'urban_planner'
 
+// ── ICP-fit layer (additive to discovery_score; see lib/discoveries/icp.ts) ──
+// A second scoring axis: does this signal match the kind of deal oaki sells
+// into (pre-sale, image-led residential / hospitality)? Extracted by the
+// analyze prompt, scored deterministically in icp.ts, blended into combined_score.
+export type Tenure = 'for_sale' | 'rental' | 'owner_occupied' | 'mixed' | 'unknown'
+
+export type ProjectStage =
+  | 'pre_entitlement'
+  | 'entitled_no_design'
+  | 'design_in_hand'
+  | 'sales_launch'
+  | 'under_construction'
+  | 'built_stabilized'
+  | 'financing_only'
+
+export type SectorFit = 'high' | 'medium' | 'low'
+
+export type VizBuyerRole =
+  | 'developer_marketing'
+  | 'developer_principal'
+  | 'architect'
+  | 'broker'
+  | 'none_identified'
+
+export type EstScaleVsFloor = 'above' | 'near' | 'below' | 'unknown'
+
+export type FitTier = 'prime' | 'workable' | 'complement' | 'weak' | 'disqualified'
+
 export interface DiscoveryScoreBreakdown {
   score_opportunity_clarity: number
   score_investment_size: number
@@ -422,6 +450,22 @@ export interface Discovery extends DiscoveryScoreBreakdown {
   discovery_score: number
   urgency_score: number
   confidence_score: number
+
+  // ICP-fit layer — all optional so legacy (pre-migration) rows type-check.
+  tenure?: Tenure
+  has_for_sale_residential?: boolean
+  project_stage?: ProjectStage
+  sector_fit?: SectorFit
+  viz_buyer_role?: VizBuyerRole
+  viz_buyer_entity?: string | null
+  incumbent_viz?: string | null
+  est_scale_vs_floor?: EstScaleVsFloor
+  icp_fit_score?: number | null
+  fit_tier?: FitTier | null
+  fit_reason?: string | null
+  partner_radar?: boolean
+  combined_score?: number | null
+
   status: DiscoveryStatus
   raw_content?: string
   created_at: string
@@ -619,6 +663,7 @@ export interface LetterDraft {
 export type DashboardCardId =
   | 'today'
   | 'send_queue'
+  | 'linkedin_dm_queue'
   | 'opportunities'
   | 'attention'
   | 'conversations'

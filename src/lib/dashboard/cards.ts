@@ -25,6 +25,12 @@ export const CARD_REGISTRY: Record<DashboardCardId, CardMeta> = {
     description: 'Tue/Thu cold sends staged with drafts + follow-ups due this week.',
     removable: true,
   },
+  linkedin_dm_queue: {
+    id: 'linkedin_dm_queue',
+    title: 'LinkedIn DM queue',
+    description: 'Pending LinkedIn DM drafts — copy, open profile, mark sent.',
+    removable: true,
+  },
   opportunities: {
     id: 'opportunities',
     title: 'Strategic opportunities',
@@ -60,6 +66,7 @@ export const CARD_REGISTRY: Record<DashboardCardId, CardMeta> = {
 export const ALL_CARD_IDS: DashboardCardId[] = [
   'today',
   'send_queue',
+  'linkedin_dm_queue',
   'opportunities',
   'attention',
   'conversations',

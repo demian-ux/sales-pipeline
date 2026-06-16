@@ -11,6 +11,7 @@ import { getSupabaseAdmin } from '@/lib/supabase'
 import { classifyArticle } from '@/lib/prompts/discoveries/classify'
 import { analyzeArticle } from '@/lib/prompts/discoveries/analyze'
 import { computeDiscoveryScore, scoreToTier } from './scoring'
+import { computeIcpFit, sectorFitFromSector } from './icp'
 import { isInTargetGeo, OUT_OF_GEO_SCORE_CAP } from './target-geo'
 import { fetchRSSFeed, type RawArticleFromRSS } from './rss'
 import { resolveGoogleNewsUrl, isGoogleNewsUrl } from './googleNewsResolver'
@@ -370,6 +371,21 @@ async function processArticle(article: RawArticleFromRSS, resolvedUrl: string): 
     return 'archived'
   }
 
+  // ICP-fit: a second, additive axis — does this match the kind of deal oaki
+  // sells into? sector_fit is derived from the sector the analyzer picked; the
+  // rest are extracted ICP signals. combined_score is DB-generated (not written).
+  const sectorFit = sectorFitFromSector(analysis.sector)
+  const icp = computeIcpFit({
+    tenure: analysis.tenure,
+    has_for_sale_residential: analysis.has_for_sale_residential,
+    project_stage: analysis.project_stage,
+    sector_fit: sectorFit,
+    viz_buyer_role: analysis.viz_buyer_role,
+    est_scale_vs_floor: analysis.est_scale_vs_floor,
+    incumbent_viz: analysis.incumbent_viz,
+    region: analysis.region,
+  })
+
   const { error } = await supabase.from('discoveries').insert({
     title: analysis.title || article.title,
     date_published: article.pubDate ? safeIsoDate(article.pubDate) : null,
@@ -410,6 +426,20 @@ async function processArticle(article: RawArticleFromRSS, resolvedUrl: string): 
     score_actors:              analysis.scores.actors,
     score_sector_growth:       analysis.scores.sector_growth,
     score_region_strategic:    analysis.scores.region_strategic,
+
+    // ICP-fit layer (combined_score is DB-generated — never inserted)
+    tenure:                   analysis.tenure,
+    has_for_sale_residential: analysis.has_for_sale_residential,
+    project_stage:            analysis.project_stage,
+    sector_fit:               sectorFit,
+    viz_buyer_role:           analysis.viz_buyer_role,
+    viz_buyer_entity:         analysis.viz_buyer_entity,
+    incumbent_viz:            analysis.incumbent_viz,
+    est_scale_vs_floor:       analysis.est_scale_vs_floor,
+    icp_fit_score:            icp.icp_fit_score,
+    fit_tier:                 icp.fit_tier,
+    fit_reason:               icp.fit_reason,
+    partner_radar:            icp.partner_radar,
 
     status: 'active',
     raw_content: article.content.slice(0, 5000),

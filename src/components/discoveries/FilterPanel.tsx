@@ -13,7 +13,13 @@ export interface DiscoveryFilterState {
   date_to: string
   status: string
   search: string
-  sort_by: 'score' | 'date'
+  // ICP-fit filters
+  fit_tier: string
+  tenure: string
+  sector_fit: string
+  hide_disqualified: boolean
+  // 'combined' = blended fit×deal (default) | 'score' = raw deal score | 'date'
+  sort_by: 'combined' | 'score' | 'date'
 }
 
 interface FilterPanelProps {
@@ -63,6 +69,31 @@ const STATUS_OPTIONS = [
   { value: 'archived', label: 'Archived' },
 ]
 
+const FIT_TIER_OPTIONS = [
+  { value: '',             label: 'All fit tiers' },
+  { value: 'prime',        label: 'Prime fit' },
+  { value: 'complement',   label: 'Complement' },
+  { value: 'workable',     label: 'Workable' },
+  { value: 'weak',         label: 'Weak fit' },
+  { value: 'disqualified', label: 'Disqualified' },
+]
+
+const TENURE_OPTIONS = [
+  { value: '',               label: 'All tenures' },
+  { value: 'for_sale',       label: 'For-sale' },
+  { value: 'rental',         label: 'Rental' },
+  { value: 'owner_occupied', label: 'Owner-occupied' },
+  { value: 'mixed',          label: 'Mixed' },
+  { value: 'unknown',        label: 'Unknown' },
+]
+
+const SECTOR_FIT_OPTIONS = [
+  { value: '',       label: 'All sector fit' },
+  { value: 'high',   label: 'High' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'low',    label: 'Low' },
+]
+
 // Aligned with the tier thresholds in lib/discoveries/scoring.ts (70/40).
 const SCORE_OPTIONS = [
   { value: 0,  label: 'All scores' },
@@ -83,7 +114,11 @@ const DEFAULT_FILTERS: DiscoveryFilterState = {
   date_to: '',
   status: 'active',
   search: '',
-  sort_by: 'score',
+  fit_tier: '',
+  tenure: '',
+  sector_fit: '',
+  hide_disqualified: true,
+  sort_by: 'combined',
 }
 
 export default function FilterPanel({ filters, onChange }: FilterPanelProps) {
@@ -92,7 +127,8 @@ export default function FilterPanel({ filters, onChange }: FilterPanelProps) {
   }
 
   const hasActive = Object.entries(filters).some(
-    ([k, v]) => k !== 'status' && k !== 'sort_by' && v !== '' && v !== 0,
+    ([k, v]) =>
+      k !== 'status' && k !== 'sort_by' && k !== 'hide_disqualified' && v !== '' && v !== 0,
   )
 
   return (
@@ -129,6 +165,31 @@ export default function FilterPanel({ filters, onChange }: FilterPanelProps) {
             </button>
           ))}
         </div>
+      </div>
+
+      {/* ICP fit — the headline lens: can oaki sell into this deal? */}
+      <div className="filter-section">
+        <span className="filter-label">Fit tier</span>
+        <Select value={filters.fit_tier} options={FIT_TIER_OPTIONS} onChange={(v) => set('fit_tier', v)} />
+      </div>
+      <div className="filter-section">
+        <span className="filter-label">Tenure</span>
+        <Select value={filters.tenure} options={TENURE_OPTIONS} onChange={(v) => set('tenure', v)} />
+      </div>
+      <div className="filter-section">
+        <span className="filter-label">Sector fit</span>
+        <Select value={filters.sector_fit} options={SECTOR_FIT_OPTIONS} onChange={(v) => set('sector_fit', v)} />
+      </div>
+      <div className="filter-section">
+        <label className="row" style={{ gap: 8, cursor: 'pointer', alignItems: 'center' }}>
+          <input
+            type="checkbox"
+            checked={filters.hide_disqualified}
+            onChange={(e) => set('hide_disqualified', e.target.checked)}
+            style={{ accentColor: 'var(--accent)', cursor: 'pointer' }}
+          />
+          <span className="filter-label" style={{ marginBottom: 0 }}>Hide disqualified</span>
+        </label>
       </div>
 
       <div className="filter-section">

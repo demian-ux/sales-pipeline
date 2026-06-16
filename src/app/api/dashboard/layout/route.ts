@@ -17,6 +17,7 @@ const LAYOUT_KEY = 'dashboard_layout'
 const CARD_IDS: DashboardCardId[] = [
   'today',
   'send_queue',
+  'linkedin_dm_queue',
   'opportunities',
   'attention',
   'conversations',
@@ -52,13 +53,24 @@ function normalizeLayout(input: DashboardLayout): DashboardLayout {
   if (!seen.has('today')) {
     seen.set('today', true)
   }
-  // Preserve client-supplied order, then append any known cards the client omitted.
+  // Preserve client-supplied order, then slot in any known cards the client
+  // omitted (newly shipped features) at their canonical position — right after
+  // their predecessor in CARD_IDS — so a new card lands in its intended
+  // neighborhood (e.g. the LinkedIn DM queue below the Send queue) instead of
+  // at the very bottom. Falls back to append when no predecessor is present.
   const ordered: DashboardCardId[] = []
   for (const entry of input.cards) {
     if (!ordered.includes(entry.id)) ordered.push(entry.id)
   }
-  for (const id of CARD_IDS) {
-    if (!ordered.includes(id)) ordered.push(id)
+  for (let i = 0; i < CARD_IDS.length; i++) {
+    const id = CARD_IDS[i]
+    if (ordered.includes(id)) continue
+    let insertAt = ordered.length
+    for (let j = i - 1; j >= 0; j--) {
+      const predIdx = ordered.indexOf(CARD_IDS[j])
+      if (predIdx !== -1) { insertAt = predIdx + 1; break }
+    }
+    ordered.splice(insertAt, 0, id)
   }
   return {
     // Cards absent from the stored layout are NEW features (the user never
