@@ -47,6 +47,8 @@ export default function LinkedInQueueCard() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState<Record<string, string | null>>({})
   const [copied, setCopied] = useState<string | null>(null)
+  // Draft id whose Dismiss is awaiting confirmation (one row at a time).
+  const [confirming, setConfirming] = useState<string | null>(null)
 
   // Mount fetch. setState lives in the async callbacks (never synchronously in
   // the effect body) so it doesn't trip react-hooks/set-state-in-effect.
@@ -159,6 +161,31 @@ export default function LinkedInQueueCard() {
     }
   }, [busy])
 
+  // Dismiss: a discard, not a send. Hard-deletes ONLY this draft row (the
+  // endpoint never touches the lead, its interactions, or other-channel
+  // drafts). Idempotent — a 404 means it's already gone, which we treat as
+  // success.
+  const dismiss = useCallback(async (draft: DmDraft) => {
+    if (busy[draft.id]) return
+    setBusy((b) => ({ ...b, [draft.id]: 'dismiss' }))
+    setConfirming(null)
+    setDrafts((cur) => cur.filter((d) => d.id !== draft.id)) // optimistic
+    try {
+      const res = await fetch(`/api/drafts/${draft.id}`, { method: 'DELETE' })
+      if (!res.ok && res.status !== 404) {
+        restoreRow(setDrafts, draft)
+        setError((await safeErr(res)) ?? 'Failed to dismiss the draft.')
+        return
+      }
+      setError(null)
+    } catch (e) {
+      restoreRow(setDrafts, draft)
+      setError(e instanceof Error ? e.message : 'Something went wrong')
+    } finally {
+      setBusy((b) => ({ ...b, [draft.id]: null }))
+    }
+  }, [busy])
+
   return (
     <div className="card">
       <div className="card-head">
@@ -247,52 +274,87 @@ export default function LinkedInQueueCard() {
                     </span>
                   )}
 
-                  {/* Actions */}
-                  <div className="row" style={{ gap: 6, flexWrap: 'wrap', marginTop: 2 }}>
-                    {canExpand && (
-                      <button className="btn btn-xs btn-ghost" onClick={() => toggleExpand(d.id)}>
-                        {isExpanded ? 'Show less' : 'Show more'}
-                      </button>
-                    )}
-                    <button className="btn btn-xs btn-ghost" onClick={() => copyDm(d)}>
-                      <Icon name="copy" size={11} /> {copied === d.id ? 'Copied' : 'Copy DM'}
-                    </button>
-                    {hasUrl ? (
-                      <a
-                        className="btn btn-xs btn-ghost"
-                        href={lead!.linkedin_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <Icon name="external" size={11} /> Open LinkedIn
-                      </a>
-                    ) : (
+                  {/* Actions — or the inline Dismiss confirm */}
+                  {confirming === d.id ? (
+                    <div className="row" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 2 }}>
+                      <span className="ink-3" style={{ fontSize: 11.5 }}>
+                        Remove this DM draft? This can&apos;t be undone.
+                      </span>
                       <button
                         className="btn btn-xs btn-ghost"
-                        disabled
-                        title="No LinkedIn URL on this lead"
-                        style={{ opacity: 0.5 }}
+                        onClick={() => setConfirming(null)}
+                        disabled={rowBusy === 'dismiss'}
                       >
-                        <Icon name="external" size={11} /> Open LinkedIn
+                        Cancel
                       </button>
-                    )}
-                    {needsConnect && (
                       <button
                         className="btn btn-xs btn-ghost"
-                        onClick={() => markConnectionSent(d)}
+                        onClick={() => dismiss(d)}
+                        disabled={rowBusy === 'dismiss'}
+                        style={{ color: 'var(--red)' }}
+                      >
+                        {rowBusy === 'dismiss' ? '…' : 'Remove'}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="row" style={{ gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 2 }}>
+                      {canExpand && (
+                        <button className="btn btn-xs btn-ghost" onClick={() => toggleExpand(d.id)}>
+                          {isExpanded ? 'Show less' : 'Show more'}
+                        </button>
+                      )}
+                      <button className="btn btn-xs btn-ghost" onClick={() => copyDm(d)}>
+                        <Icon name="copy" size={11} /> {copied === d.id ? 'Copied' : 'Copy DM'}
+                      </button>
+                      {hasUrl ? (
+                        <a
+                          className="btn btn-xs btn-ghost"
+                          href={lead!.linkedin_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <Icon name="external" size={11} /> Open LinkedIn
+                        </a>
+                      ) : (
+                        <button
+                          className="btn btn-xs btn-ghost"
+                          disabled
+                          title="No LinkedIn URL on this lead"
+                          style={{ opacity: 0.5 }}
+                        >
+                          <Icon name="external" size={11} /> Open LinkedIn
+                        </button>
+                      )}
+                      {needsConnect && (
+                        <button
+                          className="btn btn-xs btn-ghost"
+                          onClick={() => markConnectionSent(d)}
+                          disabled={!!rowBusy}
+                        >
+                          {rowBusy === 'conn' ? '…' : 'Mark connection sent'}
+                        </button>
+                      )}
+                      <button
+                        className="btn btn-xs"
+                        onClick={() => markSent(d)}
                         disabled={!!rowBusy}
                       >
-                        {rowBusy === 'conn' ? '…' : 'Mark connection sent'}
+                        {rowBusy === 'sent' ? '…' : <><Icon name="check" size={11} /> Mark sent</>}
                       </button>
-                    )}
-                    <button
-                      className="btn btn-xs"
-                      onClick={() => markSent(d)}
-                      disabled={!!rowBusy}
-                    >
-                      {rowBusy === 'sent' ? '…' : <><Icon name="check" size={11} /> Mark sent</>}
-                    </button>
-                  </div>
+                      {/* Dismiss — low-prominence, pushed to the far end so it
+                          can't be confused with Mark sent. */}
+                      <button
+                        className="btn btn-xs btn-ghost"
+                        onClick={() => setConfirming(d.id)}
+                        disabled={!!rowBusy}
+                        aria-label="Dismiss this DM draft"
+                        title="Dismiss — remove this draft from the queue"
+                        style={{ marginLeft: 'auto', color: 'var(--ink-3)' }}
+                      >
+                        <Icon name="trash" size={11} />
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             )
