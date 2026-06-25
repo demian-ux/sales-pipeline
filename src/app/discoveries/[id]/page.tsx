@@ -251,6 +251,7 @@ export default async function DiscoveryDetailPage({ params }: { params: Promise<
                   <div key={`${f.firm}-${i}`} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                     <div style={{ fontSize: 13, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 6 }}>
                       <strong>{f.firm}</strong>
+                      {f.already_named && <span style={{ fontSize: 10, color: 'var(--accent)' }} title="Already named on this project — the strongest lead">★ named</span>}
                       {f.in_crm && <span style={{ fontSize: 10, color: 'var(--blue)' }}>◆ in CRM</span>}
                       {f.geography && <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>· {f.geography}</span>}
                     </div>

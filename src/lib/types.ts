@@ -466,6 +466,10 @@ export interface SuggestedTargetFirm {
   why_fit: string
   geography: string
   in_crm: boolean
+  // true when the article already named this firm as the designer/developer
+  // attached to the work (a stronger, specific lead) vs a candidate the
+  // analyzer surfaced for an open brief.
+  already_named?: boolean
   apollo_org_id?: string | null
 }
 

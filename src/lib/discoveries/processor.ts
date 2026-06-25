@@ -654,6 +654,9 @@ async function processOpportunitySignal(
     seenFirm.add(key)
     return true
   })
+  // Surface a firm the article already named (the stronger, specific lead) ahead
+  // of analyzer-suggested candidates for an open brief. Stable within each group.
+  cleanFirms.sort((a, b) => Number(b.already_named) - Number(a.already_named))
 
   // CRM cross-reference on the TARGET FIRMS (the prospects), not the source org.
   // Tag already_engaged when a suggested firm is already a Company, and flag
@@ -665,6 +668,7 @@ async function processOpportunitySignal(
     why_fit: f.why_fit,
     geography: f.geography,
     in_crm: roster.length > 0 && roster.some((c) => c.company_name && entityMatches(f.firm, c.company_name)),
+    already_named: f.already_named,
     apollo_org_id: null,
   }))
 

@@ -238,6 +238,7 @@ export default function DiscoveryCard({
                       alignItems: 'center',
                     }}
                   >
+                    {f.already_named && <span style={{ color: 'var(--accent)', fontSize: 9 }} title="Already named on this project — the strongest lead">★</span>}
                     {f.firm}
                     {f.in_crm && <span style={{ color: 'var(--blue)', fontSize: 9 }}>◆ CRM</span>}
                   </span>

@@ -28,6 +28,9 @@ export interface SuggestedTargetFirmRaw {
   firm: string
   why_fit: string
   geography: string
+  // true when the article already names this firm as the designer/developer
+  // attached to the work (the strongest, most specific lead).
+  already_named: boolean
 }
 
 export type DecisionMakerRole = 'principal' | 'design_director' | 'marketing_bd'
@@ -76,12 +79,12 @@ The outreach target is ALWAYS a designer or developer (a firm oaki sells visuali
 Worked example: "An airport operator will renovate all its lounges" → the target is aviation-interior / experiential DESIGN firms (the kind that designs lounges), NOT the airport. The angle is written to that design firm: "the lounge program is moving — you're built for this, and we make the imagery you'll pitch and win with."
 
 ━━━ WHAT COUNTS AS AN OPPORTUNITY SIGNAL ━━━
-A just-announced or upcoming event that GUARANTEES design work in a segment oaki serves, where the winning designer is NOT YET NAMED or is up for grabs. The test: "Will this event cause a designer or developer to get hired, and is that the kind of firm oaki works with?"
+A just-announced or upcoming event that GUARANTEES design work in a segment oaki serves. The test: "Will this event cause a designer or developer to get hired, and is that the kind of firm oaki works with?" The winning firm may be already named OR still up for grabs — either way it is a lead (a named firm is the STRONGER lead, see TARGET FIRMS).
 
 Set is_opportunity_signal = false (and the row will be dropped) when:
-- The winning design team is ALREADY named/awarded (that is a "Project Launch", a different mode — not this one).
-- It is not a demand-creating event (a pure transaction, financing, market roundup, opinion, or completed/opened project — the design work is already done or there is none).
+- It is not a demand-creating event (a pure transaction, financing, market roundup, opinion, loyalty/program tweak, or completed/opened project — the design work is already done or there is none).
 - It is outside oaki's served segments (below) or clearly outside the target geography with no in-target angle.
+- The only nameable firm IS the source organization (the airport/brand/museum/government/owner) and no separate design or development firm can be identified or inferred — there is no one to sell to.
 
 ━━━ SEGMENTS oaki serves (pick the closest for "segment") ━━━
 - aviation — airport/airline lounge or terminal renovation/expansion programs → aviation-interior & experiential firms.
@@ -93,7 +96,9 @@ Set is_opportunity_signal = false (and the row will be dropped) when:
 - other — a served-adjacent event that fits none cleanly.
 
 ━━━ TARGET FIRMS ━━━
-In suggested_target_firms, name real design/development firms that would pursue THIS work and that fit oaki (imagery-led, high-aesthetic). Name them only when you genuinely know a specialist in this segment + geography (e.g. iCrave for aviation/experiential interiors). If you cannot name a real firm with confidence, return an empty array — do NOT invent firms, and NEVER list the source organization. An empty array is fine; it means "segment known, firms to be found".
+FIRST, check whether the article itself NAMES the designer or developer who will do the work — e.g. "interior designer X", "designed by X", "X Architects to design", "developed by X", "X is the development partner". If it does, that firm is the STRONGEST lead: list it FIRST in suggested_target_firms with "already_named": true and a why_fit that says it is already attached to this project (so it is targeted specifically, not as a guess). Set "timing": "in_progress" or "awarded" and "targets": "named" accordingly.
+THEN, if the brief is genuinely open (no design/dev firm named yet), list real CANDIDATE firms that would pursue THIS work and fit oaki (imagery-led, high-aesthetic), each with "already_named": false — name them only when you genuinely know a specialist in this segment + geography (e.g. iCrave for aviation/experiential interiors). You may add a couple of candidates alongside a named firm too.
+NEVER list the source organization (the airport / hotel brand / museum / university / government / owner that announced the event). Do NOT invent firms. If you can name neither a named firm nor a real candidate, return an empty array — it means "segment known, firms to be found".
 
 ━━━ GEOGRAPHY ━━━
 Target markets: ${TARGET_GEO_DESCRIPTION}. The Middle East is NOT a target market — classify it region "Other". Score the event by where the WORK is, not where firms are headquartered.
@@ -130,7 +135,7 @@ Return this exact JSON structure (replace descriptions with actual values):
   "segment": "aviation|hospitality|cultural|competitions|experiential|branded_residences|other",
   "beneficiary_segment": "free-text label, e.g. 'aviation interior design'",
   "suggested_target_firms": [
-    { "firm": "real design/dev firm name", "why_fit": "one line why they'd win this", "geography": "where they are" }
+    { "firm": "real design/dev firm name", "why_fit": "one line why they'd win this (note if already attached)", "geography": "where they are", "already_named": false }
   ],
   "decision_maker_role": "principal|design_director|marketing_bd",
   "outreach_angle": "2-3 sentence hook written TO the target firm — calm, specific, references the real event; never generic",
@@ -152,6 +157,7 @@ const FirmRawSchema = z.object({
   firm: z.string().min(1),
   why_fit: z.string().catch(''),
   geography: z.string().catch(''),
+  already_named: z.boolean().catch(false),
 })
 
 // Required core: the raw scoring signals (a signal without them can't be scored
