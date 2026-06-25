@@ -11,15 +11,18 @@ import { getSupabaseAdmin } from '@/lib/supabase'
 import { getCompanies } from '@/lib/sheets'
 import { classifyArticle } from '@/lib/prompts/discoveries/classify'
 import { analyzeArticle } from '@/lib/prompts/discoveries/analyze'
+import { analyzeOpportunitySignal } from '@/lib/prompts/discoveries/analyze-opportunity-signal'
 import { computeDiscoveryScore, scoreToTier } from './scoring'
 import { computeIcpFit, sectorFitFromSector } from './icp'
+import { computeOpportunityScore, fitTierFromScore } from './opportunity-score'
+import { segmentToSector, getSegmentConfig } from './opportunity-segments'
 import { isInTargetGeo, OUT_OF_GEO_SCORE_CAP } from './target-geo'
 import { isDropSignalType } from './signal-type'
 import { makeProjectKey } from './project-key'
-import { extractDiscoveryEntities, matchEntitiesToCompanies } from './roster-match'
+import { extractDiscoveryEntities, matchEntitiesToCompanies, entityMatches } from './roster-match'
 import { fetchRSSFeed, type RawArticleFromRSS } from './rss'
 import { resolveGoogleNewsUrl, isGoogleNewsUrl } from './googleNewsResolver'
-import type { DiscoverySignalTier, Company } from '@/lib/types'
+import type { DiscoverySignalTier, Company, DiscoveryKind, SuggestedTargetFirm, FitTier } from '@/lib/types'
 
 // Lightweight company roster snapshot, loaded once per run for already_engaged
 // cross-reference (avoids a Sheets read per article).
@@ -123,10 +126,14 @@ export async function runIngestion(
   // and unprocessed candidates are stranded. We stop cleanly before the wall;
   // deferred candidates keep status='new' and are reclaimed by the next run.
   deadlineMs?: number,
+  // Which discovery mode this run is for. 'project_launch' = the original
+  // direct-ICP pipeline; 'opportunity_signal' = upstream demand events mapped
+  // to target design/dev firms (a different analyzer + scorer + no DROP gate).
+  mode: DiscoveryKind = 'project_launch',
 ): Promise<IngestResult> {
   const supabase = getSupabaseAdmin()
 
-  console.log(`[ingest] Starting — ${sources.length} sources | max ${MAX_NEW_PER_RUN} candidates | max ${MAX_PER_SOURCE}/source`)
+  console.log(`[ingest] Starting (${mode}) — ${sources.length} sources | max ${MAX_NEW_PER_RUN} candidates | max ${MAX_PER_SOURCE}/source`)
   await updateRunProgress(runId, progress, 'Starting research', 1)
 
   // Load the CRM company roster once for already_engaged cross-reference.
@@ -171,27 +178,34 @@ export async function runIngestion(
   }
 
   const processCandidate = async ({ source, article, priorAttempts }: CandidateArticle): Promise<void> => {
-    const classification = await classifyArticle(article.title, article.content, article.link)
-    if (classification && !classification.should_analyze) {
-      progress.articles_skipped_irrelevant++
-      await updateRawArticleStatus(article.link, 'skipped_classifier', classification.reason)
-      console.log(`[ingest] Classifier skipped: "${article.title.slice(0, 70)}" — ${classification.reason}`)
-      return
-    }
-
-    if (!classification) {
-      console.log(`[ingest] Classifier inconclusive, analyzing: "${article.title.slice(0, 70)}"`)
+    // Opportunity-signal mode skips the cheap classifier: it is tuned for the
+    // launch lens ("is there a development signal") and would wrongly drop
+    // upstream demand events (a museum expansion, a competition, an airport
+    // program). Opp volume is lower, so we analyze every prepared candidate.
+    if (mode === 'project_launch') {
+      const classification = await classifyArticle(article.title, article.content, article.link)
+      if (classification && !classification.should_analyze) {
+        progress.articles_skipped_irrelevant++
+        await updateRawArticleStatus(article.link, 'skipped_classifier', classification.reason)
+        console.log(`[ingest] Classifier skipped: "${article.title.slice(0, 70)}" — ${classification.reason}`)
+        return
+      }
+      if (!classification) {
+        console.log(`[ingest] Classifier inconclusive, analyzing: "${article.title.slice(0, 70)}"`)
+      }
     }
 
     progress.articles_analyzed++
-    console.log(`[ingest] Analyzing: "${article.title.slice(0, 70)}"`)
+    console.log(`[ingest] Analyzing (${mode}): "${article.title.slice(0, 70)}"`)
 
     try {
       // Resolve Google News redirect URLs FIRST so enrichment fetches the
       // real publisher page, not Google's interstitial.
       const resolvedUrl = await resolveSourceUrlSafe(article.link)
       const enrichedArticle = await enrichArticleForAnalysis(article, resolvedUrl)
-      const result = await processArticle(enrichedArticle, resolvedUrl, roster, seenProjectKeys)
+      const result = mode === 'opportunity_signal'
+        ? await processOpportunitySignal(enrichedArticle, resolvedUrl, roster, seenProjectKeys)
+        : await processArticle(enrichedArticle, resolvedUrl, roster, seenProjectKeys)
       // articles_new counts new ACTIVE discoveries only. Off-type (DROP) rows are
       // still inserted, but as status='archived' and return 'archived', so they
       // don't inflate this count.
@@ -420,6 +434,7 @@ async function processArticle(article: RawArticleFromRSS, resolvedUrl: string, r
       .from('discoveries')
       .select('id')
       .eq('project_key', projectKey)
+      .eq('discovery_kind', 'project_launch')   // never dedup a launch against an opp row
       .neq('status', 'archived')
       .limit(1)
       .maybeSingle()
@@ -545,6 +560,171 @@ async function processArticle(article: RawArticleFromRSS, resolvedUrl: string, r
   }
 
   console.log(`[ingest] Saved ${tier === 'strong_opportunity' ? 'STRONG' : 'WATCHLIST'}${engaged ? ` [engaged: ${engaged.company_name}]` : ''}: "${article.title.slice(0, 60)}"`)
+  return tier === 'strong_opportunity' ? 'saved_strong' : 'saved_watchlist'
+}
+
+// Opportunity-signal counterpart to processArticle. Uses the opportunity-signal
+// analyzer + the dedicated (non-dollar-weighted) opportunity score, BYPASSES the
+// launch-mode DROP gate and the ICP-fit axis (both score the source org, which
+// is never the prospect here), and cross-references the suggested TARGET FIRMS
+// (not the source org's actors) against the CRM roster. opportunity_score is
+// mirrored into discovery_score so the DB-generated combined_score and every
+// existing board sort/index/filter work unchanged for opp rows.
+async function processOpportunitySignal(
+  article: RawArticleFromRSS,
+  resolvedUrl: string,
+  roster: CompanyRoster,
+  seenProjectKeys: Set<string>,
+): Promise<ProcessResult> {
+  const supabase = getSupabaseAdmin()
+  const analysis = await analyzeOpportunitySignal(article.title, article.content, article.link)
+
+  // Not a real upstream demand signal (named/awarded design team, not a
+  // demand-creating event, or off-segment) — record and drop, never inserted.
+  if (!analysis.is_opportunity_signal) {
+    console.log(`[ingest] Not an opportunity signal: "${article.title.slice(0, 60)}"`)
+    await recordAnalyzed(article, 'archive')
+    return 'archived'
+  }
+
+  const cfg = getSegmentConfig(analysis.segment)
+  const opp = computeOpportunityScore({
+    segment: analysis.segment,
+    creates_design_demand: analysis.creates_design_demand,
+    design_scope: analysis.design_scope,
+    timing: analysis.timing,
+    targets: analysis.targets,
+    region: analysis.region,
+  })
+
+  // Deterministic geo cap — same guarantee as launch mode: out-of-target work
+  // can never tier strong, however good the signal.
+  let score = opp.opportunity_score
+  let fitTier: FitTier = opp.fit_tier
+  if (!isInTargetGeo(analysis.region)) {
+    score = Math.min(score, OUT_OF_GEO_SCORE_CAP)
+    // The cap lowered the score below its original band — re-derive fit_tier
+    // from the capped score so the card badge can never contradict the stored
+    // opportunity_score ("Prime 55"). Only downgrade; a hard disqualifier stays.
+    if (fitTier !== 'disqualified') fitTier = fitTierFromScore(score)
+  }
+
+  // Surfacing + board tier are driven by the opportunity fit_tier (the axis the
+  // card shows), NOT scoreToTier — so the badge and the board never disagree.
+  // Weak/disqualified signals are recorded but not surfaced (mirrors launch's
+  // archive-but-recoverable posture).
+  if (fitTier === 'weak' || fitTier === 'disqualified') {
+    await recordAnalyzed(article, 'archive')
+    return 'archived'
+  }
+  const tier: DiscoverySignalTier = fitTier === 'prime' ? 'strong_opportunity' : 'watchlist'
+
+  // Event-level dedup — the same program arriving via a second outlet shouldn't
+  // appear twice. Scoped to opportunity-signal rows so it never collides with a
+  // launch project of a similar name.
+  const projectKey = makeProjectKey(analysis.event_name, analysis.city)
+  if (projectKey) {
+    const { data: dupe } = await supabase
+      .from('discoveries')
+      .select('id')
+      .eq('project_key', projectKey)
+      .eq('discovery_kind', 'opportunity_signal')
+      .neq('status', 'archived')
+      .limit(1)
+      .maybeSingle()
+    if (dupe || seenProjectKeys.has(projectKey)) {
+      console.log(`[ingest] Duplicate opportunity event: "${analysis.event_name}" — "${article.title.slice(0, 50)}"`)
+      await recordAnalyzed(article, tier)
+      return 'archived'
+    }
+    seenProjectKeys.add(projectKey)
+  }
+
+  // LOCKED RULE (deterministic, not prompt-dependent): never propose emailing
+  // the source org. Drop any suggested "target firm" that name-matches the
+  // source org BEFORE it can reach the card or the CRM cross-ref, and dedup by
+  // name so the list is clean. Mirrors the launch-side posture of keeping safety
+  // gates in code (see signal-type.ts), not in the analyzer prompt alone.
+  const seenFirm = new Set<string>()
+  const cleanFirms = analysis.suggested_target_firms.filter((f) => {
+    if (!f.firm) return false
+    if (analysis.source_org && entityMatches(f.firm, analysis.source_org)) return false
+    const key = f.firm.trim().toLowerCase()
+    if (seenFirm.has(key)) return false
+    seenFirm.add(key)
+    return true
+  })
+
+  // CRM cross-reference on the TARGET FIRMS (the prospects), not the source org.
+  // Tag already_engaged when a suggested firm is already a Company, and flag
+  // each firm's in_crm for the card badge.
+  const firmNames = cleanFirms.map((f) => f.firm)
+  const engaged = roster.length ? matchEntitiesToCompanies(firmNames, roster) : null
+  const suggestedFirms: SuggestedTargetFirm[] = cleanFirms.map((f) => ({
+    firm: f.firm,
+    why_fit: f.why_fit,
+    geography: f.geography,
+    in_crm: roster.length > 0 && roster.some((c) => c.company_name && entityMatches(f.firm, c.company_name)),
+    apollo_org_id: null,
+  }))
+
+  const { error } = await supabase.from('discoveries').insert({
+    title: analysis.title || article.title,
+    date_published: article.pubDate ? safeIsoDate(article.pubDate) : null,
+    source: article.sourceName,
+    source_url: resolvedUrl,
+    source_type: 'rss',
+
+    region: analysis.region,
+    city: analysis.city,
+    country: analysis.country,
+    sector: segmentToSector(analysis.segment),
+
+    brief_summary: analysis.brief_summary,
+    why_it_matters: analysis.why_it_matters,
+    deep_analysis: analysis.deep_analysis,
+    suggested_action: analysis.suggested_action,
+    tags: analysis.tags,
+
+    signal_tier: tier,
+    discovery_score: score,         // mirror → drives combined_score + sort
+    opportunity_score: score,
+    urgency_score: analysis.urgency_score,
+    confidence_score: analysis.confidence_score,
+
+    // Opportunity-signal columns
+    discovery_kind: 'opportunity_signal',
+    source_org: analysis.source_org,
+    signal_event: analysis.signal_event,
+    beneficiary_segment: analysis.beneficiary_segment || cfg.label,
+    outreach_angle: analysis.outreach_angle,
+    suggested_target_firms: suggestedFirms,
+
+    // Reused identity + CRM-cross-ref + fit columns
+    project_name: analysis.event_name,
+    project_key: projectKey,
+    already_engaged: !!engaged,
+    engaged_company_id: engaged?.company_id ?? null,
+    engaged_company_name: engaged?.company_name ?? null,
+    fit_tier: fitTier,
+    fit_reason: opp.fit_reason,
+
+    status: 'active',
+    raw_content: article.content.slice(0, 5000),
+  })
+
+  if (error) {
+    if (error.code === '23505') {
+      console.log(`[ingest] Duplicate opportunity (already saved): "${article.title.slice(0, 60)}"`)
+      await recordAnalyzed(article, tier)
+      return 'archived'
+    }
+    console.error('[ingest] opportunity insert error:', error.message)
+    return 'error'
+  }
+
+  await recordAnalyzed(article, tier)
+  console.log(`[ingest] Saved OPPORTUNITY ${tier === 'strong_opportunity' ? 'STRONG' : 'WATCHLIST'} [${cfg.label}]${engaged ? ` [engaged: ${engaged.company_name}]` : ''}: "${article.title.slice(0, 60)}"`)
   return tier === 'strong_opportunity' ? 'saved_strong' : 'saved_watchlist'
 }
 
@@ -821,6 +1001,11 @@ const RELEVANCE_KEYWORDS = [
   'project', 'property', 'public realm', 'real estate', 'redevelopment',
   'renovation', 'residential', 'resort', 'rezoning', 'rfp', 'tender',
   'transit', 'urban', 'urbanism', 'zoning',
+  // Opportunity-signal lanes — demand-creating events the launch keyword set
+  // would otherwise pre-drop (museums, lounges, competitions, flagships, …).
+  'lounge', 'terminal', 'museum', 'gallery', 'library', 'university', 'civic',
+  'cultural', 'competition', 'flagship', 'experience center', 'branded residences',
+  'exhibition', 'performing arts', 'hospitality',
   'aeroport', 'amenagement', 'chantier', 'developpement', 'immobilier',
   'logement', 'urbanisme',
 ]

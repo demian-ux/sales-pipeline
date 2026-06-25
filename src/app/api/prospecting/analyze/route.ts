@@ -18,6 +18,10 @@ const BodySchema = z.object({
   // Provenance: set when prospecting was launched from a Discovery, so
   // firm_candidates.source_discovery_id links back to the signal.
   discovery_id: z.string().uuid().optional(),
+  // Opportunity Signals: the beneficiary segment to steer the firm-search. An
+  // advisory hint — never length-reject it (it comes from LLM free-text); it's
+  // trimmed/clamped server-side below so a verbose label can't 400 the request.
+  segment: z.string().trim().min(1).optional(),
 })
 
 export async function POST(request: NextRequest) {
@@ -43,6 +47,7 @@ export async function POST(request: NextRequest) {
   try {
     const response = await runProspectingAnalysis(parsed.data.url, {
       sourceDiscoveryId: parsed.data.discovery_id,
+      segment: parsed.data.segment?.slice(0, 120),
     })
     return Response.json(response)
   } catch (err) {

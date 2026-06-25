@@ -1,6 +1,11 @@
 'use client'
 
+import type { DiscoveryKind } from '@/lib/types'
+
 export interface DiscoveryFilterState {
+  // Which discovery mode's board to show. Driven by the board's mode toggle,
+  // not a sidebar filter; sent as the discovery_kind query param.
+  discovery_kind: DiscoveryKind
   region: string
   country: string
   city: string
@@ -28,6 +33,10 @@ export interface DiscoveryFilterState {
 interface FilterPanelProps {
   filters: DiscoveryFilterState
   onChange: (filters: DiscoveryFilterState) => void
+  // The active board mode. In opportunity_signal mode the launch-only controls
+  // (Signal, Type, Client, Tenure, Sector fit) are hidden — those columns are
+  // NULL on opp rows, so the filters would only ever empty the board.
+  mode?: DiscoveryKind
 }
 
 const REGION_OPTIONS = [
@@ -134,6 +143,7 @@ const SCORE_OPTIONS = [
 ]
 
 const DEFAULT_FILTERS: DiscoveryFilterState = {
+  discovery_kind: 'project_launch',
   region: '',
   country: '',
   city: '',
@@ -155,14 +165,17 @@ const DEFAULT_FILTERS: DiscoveryFilterState = {
   sort_by: 'combined',
 }
 
-export default function FilterPanel({ filters, onChange }: FilterPanelProps) {
+export default function FilterPanel({ filters, onChange, mode }: FilterPanelProps) {
+  const isOpp = mode === 'opportunity_signal'
+
   function set<K extends keyof DiscoveryFilterState>(key: K, value: DiscoveryFilterState[K]) {
     onChange({ ...filters, [key]: value })
   }
 
   const hasActive = Object.entries(filters).some(
     ([k, v]) =>
-      k !== 'status' && k !== 'sort_by' && k !== 'hide_disqualified' && v !== '' && v !== 0,
+      k !== 'status' && k !== 'sort_by' && k !== 'hide_disqualified' &&
+      k !== 'discovery_kind' && v !== '' && v !== 0,
   )
 
   return (
@@ -170,7 +183,10 @@ export default function FilterPanel({ filters, onChange }: FilterPanelProps) {
       <div className="between" style={{ marginBottom: 4 }}>
         <span className="micro micro-ink">Filters</span>
         {hasActive && (
-          <button className="btn btn-xs btn-ghost" onClick={() => onChange(DEFAULT_FILTERS)}>
+          <button
+            className="btn btn-xs btn-ghost"
+            onClick={() => onChange({ ...DEFAULT_FILTERS, discovery_kind: filters.discovery_kind })}
+          >
             Reset
           </button>
         )}
@@ -206,14 +222,18 @@ export default function FilterPanel({ filters, onChange }: FilterPanelProps) {
         <span className="filter-label">Fit tier</span>
         <Select value={filters.fit_tier} options={FIT_TIER_OPTIONS} onChange={(v) => set('fit_tier', v)} />
       </div>
-      <div className="filter-section">
-        <span className="filter-label">Tenure</span>
-        <Select value={filters.tenure} options={TENURE_OPTIONS} onChange={(v) => set('tenure', v)} />
-      </div>
-      <div className="filter-section">
-        <span className="filter-label">Sector fit</span>
-        <Select value={filters.sector_fit} options={SECTOR_FIT_OPTIONS} onChange={(v) => set('sector_fit', v)} />
-      </div>
+      {!isOpp && (
+        <>
+          <div className="filter-section">
+            <span className="filter-label">Tenure</span>
+            <Select value={filters.tenure} options={TENURE_OPTIONS} onChange={(v) => set('tenure', v)} />
+          </div>
+          <div className="filter-section">
+            <span className="filter-label">Sector fit</span>
+            <Select value={filters.sector_fit} options={SECTOR_FIT_OPTIONS} onChange={(v) => set('sector_fit', v)} />
+          </div>
+        </>
+      )}
       <div className="filter-section">
         <label className="row" style={{ gap: 8, cursor: 'pointer', alignItems: 'center' }}>
           <input
@@ -238,18 +258,22 @@ export default function FilterPanel({ filters, onChange }: FilterPanelProps) {
         <span className="filter-label">Sector</span>
         <Select value={filters.sector} options={SECTOR_OPTIONS} onChange={(v) => set('sector', v)} />
       </div>
-      <div className="filter-section">
-        <span className="filter-label">Signal</span>
-        <Select value={filters.signal_type} options={SIGNAL_TYPE_OPTIONS} onChange={(v) => set('signal_type', v)} />
-      </div>
-      <div className="filter-section">
-        <span className="filter-label">Type</span>
-        <Select value={filters.opportunity_type} options={OPP_TYPE_OPTIONS} onChange={(v) => set('opportunity_type', v)} />
-      </div>
-      <div className="filter-section">
-        <span className="filter-label">Client</span>
-        <Select value={filters.client_type} options={CLIENT_TYPE_OPTIONS} onChange={(v) => set('client_type', v)} />
-      </div>
+      {!isOpp && (
+        <>
+          <div className="filter-section">
+            <span className="filter-label">Signal</span>
+            <Select value={filters.signal_type} options={SIGNAL_TYPE_OPTIONS} onChange={(v) => set('signal_type', v)} />
+          </div>
+          <div className="filter-section">
+            <span className="filter-label">Type</span>
+            <Select value={filters.opportunity_type} options={OPP_TYPE_OPTIONS} onChange={(v) => set('opportunity_type', v)} />
+          </div>
+          <div className="filter-section">
+            <span className="filter-label">Client</span>
+            <Select value={filters.client_type} options={CLIENT_TYPE_OPTIONS} onChange={(v) => set('client_type', v)} />
+          </div>
+        </>
+      )}
       <div className="filter-section">
         <span className="filter-label">Min score</span>
         <Select

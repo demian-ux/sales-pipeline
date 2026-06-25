@@ -51,6 +51,7 @@ export default function DiscoveriesPage() {
     setFetchError(null)
 
     const params = new URLSearchParams()
+    params.set('discovery_kind', f.discovery_kind)
     if (f.region)           params.set('region', f.region)
     if (f.country)          params.set('country', f.country)
     if (f.city)             params.set('city', f.city)
@@ -151,11 +152,11 @@ export default function DiscoveriesPage() {
     [lastVisit],
   )
 
-  async function handleIngest() {
+  async function handleIngest(mode: 'project_launch' | 'opportunity_signal') {
     setIngesting(true)
-    setIngestMsg('Starting research…')
+    setIngestMsg(mode === 'opportunity_signal' ? 'Finding opportunities…' : 'Starting research…')
     try {
-      const res = await fetch('/api/discoveries/ingest', { method: 'POST' })
+      const res = await fetch(`/api/discoveries/ingest?mode=${mode}`, { method: 'POST' })
       if (res.status === 401) {
         setIngestMsg('Session expired — please log in again.')
         setIngesting(false)
@@ -232,6 +233,27 @@ export default function DiscoveriesPage() {
     setIngesting(false)
   }
 
+  const mode = filters.discovery_kind
+  const isOpp = mode === 'opportunity_signal'
+
+  function setMode(kind: 'project_launch' | 'opportunity_signal') {
+    if (kind === mode) return
+    setSelected(new Set())
+    // Launch-only filters (signal_type, opportunity_type, client_type, tenure,
+    // sector_fit) map to columns that are NULL on opportunity_signal rows, so a
+    // stale value would silently empty the opp board (eq/contains never match
+    // NULL). Clear them on every mode switch; cross-mode fields are preserved.
+    setFilters((f) => ({
+      ...f,
+      discovery_kind: kind,
+      signal_type: '',
+      opportunity_type: '',
+      client_type: '',
+      tenure: '',
+      sector_fit: '',
+    }))
+  }
+
   return (
     <div className="page">
       {/* Header */}
@@ -240,7 +262,9 @@ export default function DiscoveriesPage() {
           <div className="page-eyebrow">Intelligence</div>
           <div className="page-title">Discoveries</div>
           <div className="page-sub">
-            Market signals — articles classified as opportunities. The radar.
+            {isOpp
+              ? 'Opportunity Signals — upstream events that create design work, mapped to the firms who would win it.'
+              : 'Project Launches — market signals where the prospect is the source of the project. The radar.'}
           </div>
         </div>
         <div className="page-actions">
@@ -251,12 +275,40 @@ export default function DiscoveriesPage() {
             </div>
           )}
           <button
-            className="btn btn-primary"
-            onClick={handleIngest}
+            className={`btn ${isOpp ? 'btn-ghost' : 'btn-primary'}`}
+            onClick={() => handleIngest('project_launch')}
             disabled={ingesting || supabaseMissing}
+            title="Ingest the Project Launches sources"
           >
             {ingesting ? <IconLoader size={12} /> : <Icon name="sparkle" size={12} />}
-            {ingesting ? 'Researching…' : 'Run research'}
+            Run research
+          </button>
+          <button
+            className={`btn ${isOpp ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => handleIngest('opportunity_signal')}
+            disabled={ingesting || supabaseMissing}
+            title="Ingest the Opportunity Signals sources"
+          >
+            {ingesting ? <IconLoader size={12} /> : <Icon name="sparkle" size={12} />}
+            Find opportunities
+          </button>
+        </div>
+      </div>
+
+      {/* Mode toggle — Project Launches | Opportunity Signals */}
+      <div className="row" style={{ marginBottom: 20 }}>
+        <div className="seg">
+          <button
+            className={`seg-btn ${!isOpp ? 'active' : ''}`}
+            onClick={() => setMode('project_launch')}
+          >
+            Project Launches
+          </button>
+          <button
+            className={`seg-btn ${isOpp ? 'active' : ''}`}
+            onClick={() => setMode('opportunity_signal')}
+          >
+            Opportunity Signals
           </button>
         </div>
       </div>
@@ -281,7 +333,7 @@ export default function DiscoveriesPage() {
 
       {/* Body — filters + result list */}
       <div style={{ display: 'flex', gap: 32, alignItems: 'flex-start' }}>
-        <FilterPanel filters={filters} onChange={setFilters} />
+        <FilterPanel filters={filters} onChange={setFilters} mode={mode} />
 
         <div style={{ flex: 1, minWidth: 0 }}>
           {/* Result toolbar */}

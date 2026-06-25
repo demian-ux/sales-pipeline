@@ -44,6 +44,9 @@ function ProspectingPage() {
   // the plain /import/prospecting flow continues to work unchanged.
   const initialUrl   = searchParams.get('url') ?? ''
   const discoveryId  = searchParams.get('discoveryId')
+  // Opportunity Signals: the beneficiary segment steers the firm-search toward
+  // the firms who'd win the work, not the org that announced the event.
+  const segment      = searchParams.get('segment')
 
   const {
     data,
@@ -65,7 +68,7 @@ function ProspectingPage() {
     if (didAutoRun.current) return
     if (!initialUrl) return
     didAutoRun.current = true
-    analyze(initialUrl, discoveryId ?? undefined)
+    analyze(initialUrl, discoveryId ?? undefined, segment ?? undefined)
     // analyze is a stable closure from useProspecting; ESLint exhaustive-deps
     // would loop us if we listed it. The ref guard above prevents re-fires.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -134,7 +137,9 @@ function ProspectingPage() {
           {discoveryId ? (
             <>
               Same pipeline as the Import flow — Jina → Claude → Tavily → Claude — using the
-              Discovery&apos;s source URL. Discard misses, then either export to Apollo CSV or promote the
+              Discovery&apos;s source URL.{' '}
+              {segment && <>Targeting <strong>{segment}</strong> firms — the designers/developers who&apos;d win this work, not the org that announced it. </>}
+              Discard misses, then either export to Apollo CSV or promote the
               kept firms to Opportunities attached to this Discovery.
             </>
           ) : (

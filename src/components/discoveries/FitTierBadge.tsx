@@ -7,18 +7,21 @@ import type { FitTier } from '@/lib/types'
 
 interface FitTierBadgeProps {
   tier: FitTier
-  // When provided, the icp_fit_score is shown inline (e.g. "Prime fit 92").
+  // When provided, the score is shown inline (e.g. "Prime fit 92").
   score?: number | null
+  // Tooltip label before the score (default "ICP fit"). Opportunity Signals
+  // pass "Opportunity" since they rank on opportunity_score, not ICP fit.
+  scoreLabel?: string
   size?: 'sm' | 'md'
 }
 
-export default function FitTierBadge({ tier, score, size = 'sm' }: FitTierBadgeProps) {
+export default function FitTierBadge({ tier, score, scoreLabel = 'ICP fit', size = 'sm' }: FitTierBadgeProps) {
   const meta = FIT_TIER_META[tier]
   if (!meta) return null
 
   return (
     <span
-      title={score != null ? `ICP fit ${score}/100` : meta.label}
+      title={score != null ? `${scoreLabel} ${score}/100` : meta.label}
       style={{
         display: 'inline-flex',
         alignItems: 'center',

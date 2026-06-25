@@ -22,7 +22,7 @@ export function useProspecting() {
     return data.firms.filter((f) => !discarded.has(f.candidate_id))
   }, [data, discarded])
 
-  async function analyze(url: string, discoveryId?: string) {
+  async function analyze(url: string, discoveryId?: string, segment?: string) {
     setIsLoading(true)
     setError(null)
     setData(null)
@@ -33,7 +33,7 @@ export function useProspecting() {
       const res = await fetch('/api/prospecting/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, discovery_id: discoveryId || undefined }),
+        body: JSON.stringify({ url, discovery_id: discoveryId || undefined, segment: segment || undefined }),
       })
       const json = (await res.json()) as Partial<AnalyzeResponse> & { error?: string }
 

@@ -439,6 +439,36 @@ export type EstScaleVsFloor = 'above' | 'near' | 'below' | 'unknown'
 
 export type FitTier = 'prime' | 'workable' | 'complement' | 'weak' | 'disqualified'
 
+// ── Opportunity Signals (second discovery mode; see project_oaki_opportunity_signals) ──
+// 'project_launch' = the original direct-ICP pipeline (the prospect IS the source
+// of the event). 'opportunity_signal' = upstream demand-creating events mapped to
+// the design/dev firm that would WIN the resulting work (the prospect is never
+// the source org).
+export type DiscoveryKind = 'project_launch' | 'opportunity_signal'
+
+// The beneficiary segment a demand-creating event maps to. Drives the
+// deterministic opportunity score (segment fit + imagery-heaviness) and the
+// on-demand firm-search. See lib/discoveries/opportunity-segments.ts.
+export type OpportunitySegment =
+  | 'aviation'            // airport / airline lounge & terminal programs → aviation-interior firms
+  | 'hospitality'         // hotel-brand rollouts, resorts, F&B → hospitality architects/designers
+  | 'cultural'            // museum / university / civic expansions → cultural-institutional architects
+  | 'competitions'        // design competitions & masterplan RFPs → competition specialists (Naos lane)
+  | 'experiential'        // flagships, brand experience centers, themed/entertainment → experiential designers
+  | 'branded_residences'  // hospitality-flagged for-sale residential → luxury residential architects
+  | 'other'
+
+// A target firm proposed by the opportunity-signal analyzer — ALWAYS a designer
+// or developer (the prospect), never the source org. Persisted as JSONB on the
+// discovery; enriched on demand by the Tavily find-firms flow.
+export interface SuggestedTargetFirm {
+  firm: string
+  why_fit: string
+  geography: string
+  in_crm: boolean
+  apollo_org_id?: string | null
+}
+
 export interface DiscoveryScoreBreakdown {
   score_opportunity_clarity: number
   score_investment_size: number
@@ -501,6 +531,17 @@ export interface Discovery extends DiscoveryScoreBreakdown {
   partner_radar?: boolean
   combined_score?: number | null
 
+  // Opportunity Signals mode (2026-06-25). All optional so launch rows and
+  // legacy (pre-migration) rows type-check. discovery_kind defaults to
+  // 'project_launch' in the DB, so an absent value means a launch row.
+  discovery_kind?: DiscoveryKind
+  source_org?: string | null
+  signal_event?: string | null
+  beneficiary_segment?: string | null
+  outreach_angle?: string | null
+  opportunity_score?: number | null
+  suggested_target_firms?: SuggestedTargetFirm[] | null
+
   status: DiscoveryStatus
   raw_content?: string
   created_at: string
@@ -547,6 +588,9 @@ export interface Source {
   sector?: DiscoverySector
   active: boolean
   sort_order: number
+  // Which discovery mode this feed belongs to. Defaults to 'project_launch' in
+  // the DB; opportunity-signal feeds are tagged 'opportunity_signal'.
+  discovery_kind?: DiscoveryKind
   created_at: string
 }
 

@@ -37,10 +37,12 @@ create table if not exists sources (
   sector      text,
   active      boolean not null default true,
   sort_order  integer not null default 100,
+  discovery_kind text not null default 'project_launch',  -- 'project_launch' | 'opportunity_signal'
   created_at  timestamptz not null default now()
 );
 
 create index if not exists idx_sources_active on sources(active, sort_order);
+create index if not exists idx_sources_kind   on sources(discovery_kind, active, sort_order);
 
 -- ============================================================================
 -- DISCOVERIES — main table, one row per analyzed article
@@ -128,6 +130,17 @@ create table if not exists discoveries (
   engaged_company_id         text,                          -- matched Sheets company_id, when already_engaged
   engaged_company_name       text,                          -- matched Company name, for the card badge
 
+  -- Opportunity Signals mode (2026-06-25) — second discovery mode. Upstream
+  -- demand events mapped to the design/dev firm that would WIN the work (the
+  -- prospect is never the source org). Launch rows keep discovery_kind default.
+  discovery_kind             text not null default 'project_launch',  -- 'project_launch' | 'opportunity_signal'
+  source_org                 text,                          -- the org that announced the event (NOT the target)
+  signal_event               text,                          -- one-line description of the upstream event
+  beneficiary_segment        text,                          -- the segment that captures the resulting work
+  outreach_angle             text,                          -- the hook framed TO the target firm
+  opportunity_score          integer,                       -- opp-mode score (NULL for launch rows)
+  suggested_target_firms     jsonb,                         -- [{firm,why_fit,geography,in_crm,apollo_org_id}]
+
   status                     text not null default 'active',   -- 'active' | 'saved' | 'archived'
   raw_content                text,
 
@@ -148,6 +161,7 @@ create index if not exists idx_discoveries_fit_tier on discoveries(fit_tier);
 create index if not exists idx_discoveries_signal_type on discoveries(signal_type);
 create index if not exists idx_discoveries_project_key on discoveries(project_key);
 create index if not exists idx_discoveries_engaged    on discoveries(already_engaged);
+create index if not exists idx_discoveries_kind       on discoveries(discovery_kind);
 
 -- ============================================================================
 -- INGESTION_RUNS — one row per ingest cycle
@@ -404,6 +418,22 @@ insert into sources (name, url, source_type, region, sector, active, sort_order)
   ('Le Moniteur',          'https://www.lemoniteur.fr/rss/actualites',                   'rss', 'france',   'general',      false, 200),
   ('Building Design',      'https://www.bdonline.co.uk/rss',                             'rss', 'europe',   'architecture', false, 200)
 on conflict (url) do update set active = excluded.active, sort_order = excluded.sort_order;
+
+-- ── Opportunity-signal sources (discovery_kind='opportunity_signal') ─────────
+-- Demand-creating event feeds mapped to the firms who'd win the work. Google
+-- News RSS queries shaped per lane + Skift. See migrations/2026-06-25_opportunity_signals.sql.
+insert into sources (name, url, source_type, region, sector, active, sort_order, discovery_kind) values
+  ('Opp · Aviation Programs',     'https://news.google.com/rss/search?q=(airport+OR+airline+OR+terminal)+(lounge+OR+%22terminal+renovation%22+OR+%22terminal+redevelopment%22+OR+%22terminal+expansion%22+OR+overhaul+OR+modernization)+(program+OR+plan+OR+RFP+OR+%22design+team%22)+(%22New+York%22+OR+JFK+OR+Newark+OR+Miami+OR+London+OR+Paris+OR+Europe)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'aviation_hospitality', true, 300, 'opportunity_signal'),
+  ('Opp · Hospitality Rollouts',  'https://news.google.com/rss/search?q=(hotel+OR+resort+OR+hospitality)+(%22brand+enters%22+OR+%22to+open%22+OR+flag+OR+rollout+OR+%22new+property%22+OR+pipeline+OR+%22signs+deal%22)+(%22New+York%22+OR+Miami+OR+%22South+Florida%22+OR+London+OR+Paris+OR+Europe)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'hospitality', true, 310, 'opportunity_signal'),
+  ('Opp · Cultural / Institutional', 'https://news.google.com/rss/search?q=(museum+OR+university+OR+library+OR+%22performing+arts%22+OR+civic+OR+cultural)+(expansion+OR+%22new+building%22+OR+renovation+OR+%22capital+project%22+OR+%22to+build%22+OR+%22new+wing%22)+(Europe+OR+London+OR+Paris+OR+%22New+York%22+OR+Miami)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'cultural', true, 320, 'opportunity_signal'),
+  ('Opp · Competitions & RFPs',    'https://news.google.com/rss/search?q=(%22design+competition%22+OR+%22architecture+competition%22+OR+%22open+call%22+OR+%22request+for+proposals%22+OR+RFP+OR+masterplan)+(architecture+OR+design+OR+redevelopment+OR+waterfront)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'other', true, 330, 'opportunity_signal'),
+  ('Opp · Experiential / Flagship', 'https://news.google.com/rss/search?q=(flagship+OR+%22experience+center%22+OR+%22brand+experience%22+OR+immersive+OR+%22themed+entertainment%22+OR+%22entertainment+district%22)+(design+OR+architecture+OR+%22to+open%22)+(%22New+York%22+OR+Miami+OR+London+OR+Paris+OR+Europe)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'retail', true, 340, 'opportunity_signal'),
+  ('Opp · Branded Residences',     'https://news.google.com/rss/search?q=%22branded+residences%22+(announce+OR+plans+OR+launch+OR+partnership+OR+%22to+develop%22)+(%22New+York%22+OR+Miami+OR+%22South+Florida%22+OR+London+OR+Paris+OR+Europe)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'luxury_residential', true, 350, 'opportunity_signal'),
+  ('Opp · Skift',                  'https://skift.com/feed/', 'rss', 'global', 'aviation_hospitality', true, 360, 'opportunity_signal')
+on conflict (url) do update set
+  name = excluded.name, region = excluded.region, sector = excluded.sector,
+  active = excluded.active, sort_order = excluded.sort_order,
+  discovery_kind = excluded.discovery_kind;
 
 -- ============================================================================
 -- WORKFLOW_ACTIONS — durable sent/copied/dismissed tracking (P0, 2026-06-09).

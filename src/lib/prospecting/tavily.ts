@@ -56,16 +56,36 @@ const COUNTRY_ALIASES = new Map<string, string>([
 
 const MAX_RESULT_CONTENT_CHARS = 600
 
-export async function discoverCandidateSources(article: ProspectingArticle): Promise<TavilySearch[]> {
+export async function discoverCandidateSources(
+  article: ProspectingArticle,
+  // When set (Opportunity Signals), steer the search toward firms in this
+  // beneficiary segment ("aviation interior design") rather than re-deriving
+  // the firm type from the source article.
+  segment?: string,
+): Promise<TavilySearch[]> {
   if (!env.TAVILY_API_KEY) {
     throw new TavilyError('TAVILY_API_KEY is not configured', 'TAVILY_API_KEY_MISSING')
   }
 
   const country = extractCountry(article.location)
   const countryParam = normalizeCountryForTavily(country)
-  const queries = buildCandidateQueries(article, country)
+  const queries = segment?.trim()
+    ? buildSegmentQueries(article, country, segment.trim())
+    : buildCandidateQueries(article, country)
 
   return Promise.all(queries.map((query) => searchTavily(query, countryParam)))
+}
+
+// Opportunity-signal firm-search: hunt firms in the beneficiary segment that
+// would WIN the work the event creates, near the project's location.
+function buildSegmentQueries(article: ProspectingArticle, country: string, segment: string): string[] {
+  const place = searchPlace(article, country)
+  const where = place ? ` in ${place}` : ''
+  return [
+    `${segment} firms${where}`,
+    `award-winning ${segment} studios${where}`,
+    `top ${segment} firms portfolio${where}`,
+  ]
 }
 
 // Where to look for firms. City-level when the article gives one; when the

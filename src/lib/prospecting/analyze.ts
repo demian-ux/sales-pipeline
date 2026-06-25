@@ -30,7 +30,11 @@ export interface ProspectingResponse {
 
 export async function runProspectingAnalysis(
   sourceUrl: string,
-  options: { sourceDiscoveryId?: string } = {},
+  // `segment` (the beneficiary segment of an Opportunity Signal, e.g. "aviation
+  // interior design") steers the firm-search toward the kind of firm that would
+  // WIN the resulting work, rather than re-deriving the target from the source
+  // article (which, for an opp signal, is about the org that announced the event).
+  options: { sourceDiscoveryId?: string; segment?: string } = {},
 ): Promise<ProspectingResponse> {
   const startedAt = Date.now()
 
@@ -40,8 +44,9 @@ export async function runProspectingAnalysis(
   // 2. Claude extracts title / project_type / scale / location
   const extraction = await extractArticleMetadata({ sourceUrl, articleText })
 
-  // 3. Tavily searches for candidate firms in 3 dimensions
-  const candidateSources = await discoverCandidateSources(extraction.article)
+  // 3. Tavily searches for candidate firms in 3 dimensions (segment-steered when
+  //    we have a beneficiary segment to target)
+  const candidateSources = await discoverCandidateSources(extraction.article, options.segment)
 
   // 4. Claude scores and selects 5–8 firms from the Tavily haul
   const selection = await selectProspectingFirms({
@@ -49,6 +54,7 @@ export async function runProspectingAnalysis(
     articleText,
     article: extraction.article,
     candidateSources,
+    segment: options.segment,
   })
 
   // 5. Persist firm candidates to Supabase (silent no-op if not configured).

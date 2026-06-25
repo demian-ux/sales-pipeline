@@ -107,6 +107,8 @@ export default async function DiscoveryDetailPage({ params }: { params: Promise<
 
   if (error || !data) notFound()
   const d = data as Discovery & { promoted_to_opportunity_id?: string | null }
+  const isOpp = d.discovery_kind === 'opportunity_signal'
+  const targetFirms = d.suggested_target_firms ?? []
 
   // Self-heal Google News redirect URLs left over from older ingest runs.
   // Jina Reader returns HTTP 451 on news.google.com URLs, so the find-firms
@@ -134,12 +136,16 @@ export default async function DiscoveryDetailPage({ params }: { params: Promise<
     }
   }
 
-  // Roster matches: do any of the named entities already exist as Companies
-  // with contacts? Surfaced so the strongest attachment is obvious before
-  // promoting. Failure here must not break the page.
+  // Roster matches: do any of the relevant firms already exist as Companies
+  // with contacts? For launch rows the relevant entities are the project actors
+  // (developer/architect/main_actors); for opportunity signals they are the
+  // suggested TARGET FIRMS (the prospects). Failure here must not break the page.
+  const rosterEntities = isOpp
+    ? targetFirms.map((f) => f.firm).filter(Boolean)
+    : extractDiscoveryEntities(d)
   let rosterMatches: RosterMatch[] = []
   try {
-    rosterMatches = await matchEntitiesToRoster(extractDiscoveryEntities(d))
+    rosterMatches = await matchEntitiesToRoster(rosterEntities)
   } catch (err) {
     console.warn(`[discovery/${d.id}] roster match failed: ${err instanceof Error ? err.message : err}`)
   }
@@ -188,6 +194,7 @@ export default async function DiscoveryDetailPage({ params }: { params: Promise<
 
         {/* Classification badges */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, paddingLeft: 52 }}>
+          {isOpp && d.beneficiary_segment && <Tag tone="blue">{d.beneficiary_segment}</Tag>}
           {d.sector && <Tag>{SECTOR_LABELS[d.sector as DiscoverySector] ?? d.sector}</Tag>}
           {(d.opportunity_type ?? []).map((t) => (
             <Tag key={t} tone="blue">{OPPORTUNITY_TYPE_LABELS[t] ?? t}</Tag>
@@ -198,16 +205,75 @@ export default async function DiscoveryDetailPage({ params }: { params: Promise<
         </div>
       </div>
 
+      {/* Opportunity Signal — the upstream event, the angle, and the targets */}
+      {isOpp && (
+        <Section title="Opportunity signal">
+          <div style={{
+            padding: 16,
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--r-md)',
+            background: 'var(--surface)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12,
+          }}>
+            {d.signal_event && (
+              <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>
+                <span style={{ color: 'var(--text-faint)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Event&nbsp;</span>
+                {d.signal_event}
+              </div>
+            )}
+            {d.source_org && (
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                Source organization: <strong>{d.source_org}</strong> — not the target. Reach the firm that would win the work.
+              </div>
+            )}
+            {d.outreach_angle && (
+              <div style={{
+                background: 'var(--accent-dim)',
+                border: '1px solid rgba(200,169,110,0.25)',
+                borderRadius: 'var(--r-md)',
+                padding: '12px 16px',
+                fontSize: 13,
+                color: 'var(--text)',
+                lineHeight: 1.6,
+                fontStyle: 'italic',
+              }}>
+                “{d.outreach_angle}”
+              </div>
+            )}
+            {targetFirms.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <span style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--text-faint)' }}>
+                  Suggested target firms
+                </span>
+                {targetFirms.map((f, i) => (
+                  <div key={`${f.firm}-${i}`} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <div style={{ fontSize: 13, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <strong>{f.firm}</strong>
+                      {f.in_crm && <span style={{ fontSize: 10, color: 'var(--blue)' }}>◆ in CRM</span>}
+                      {f.geography && <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>· {f.geography}</span>}
+                    </div>
+                    {f.why_fit && <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>{f.why_fit}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </Section>
+      )}
+
       {/* Firms finder — hands off to the import/prospecting page (same proven
-          pipeline as the standalone Import flow). The page reads ?url= and
-          ?discoveryId= from the query string, auto-runs the analysis, and
-          shows a "Promote N to Opportunity" button that posts back to
-          /api/discoveries/[id]/promote-firms so the resulting Opportunities
-          get attached to this Discovery. */}
-      <Section title="Firms — promote to Opportunity">
+          pipeline as the standalone Import flow). The page reads ?url=,
+          ?discoveryId=, and (opp mode) ?segment= from the query string,
+          auto-runs the analysis, and shows a "Promote N to Opportunity" button
+          that posts back to /api/discoveries/[id]/promote-firms so the
+          resulting Opportunities get attached to this Discovery. */}
+      <Section title={isOpp ? 'Target firms — promote to Opportunity' : 'Firms — promote to Opportunity'}>
         <FindFirmsLink
           discoveryId={d.id}
           sourceUrl={d.source_url}
+          segment={isOpp ? d.beneficiary_segment ?? null : null}
           alreadyPromotedOpportunityId={d.promoted_to_opportunity_id}
         />
       </Section>
@@ -303,8 +369,28 @@ export default async function DiscoveryDetailPage({ params }: { params: Promise<
             </Panel>
           )}
 
-          {/* ICP fit — the second axis: can oaki sell into this deal? */}
-          {d.fit_tier && (
+          {/* Opportunity score (opp mode) — the upstream-demand ranking axis */}
+          {isOpp && d.fit_tier && (
+            <Panel title="Opportunity">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <FitTierBadge tier={d.fit_tier} score={d.opportunity_score} scoreLabel="Opportunity" size="md" />
+              </div>
+              {d.fit_reason && (
+                <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0, lineHeight: 1.5 }}>
+                  {d.fit_reason}
+                </p>
+              )}
+              <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 10, marginTop: 2, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {d.opportunity_score != null && <MetaRow label="Opportunity score" value={String(d.opportunity_score)} />}
+                {d.beneficiary_segment && <MetaRow label="Segment" value={d.beneficiary_segment} />}
+                {d.urgency_score != null && <MetaRow label="Urgency" value={String(d.urgency_score)} />}
+                {d.confidence_score != null && <MetaRow label="Confidence" value={String(d.confidence_score)} />}
+              </div>
+            </Panel>
+          )}
+
+          {/* ICP fit — the second axis: can oaki sell into this deal? (launch) */}
+          {!isOpp && d.fit_tier && (
             <Panel title="ICP fit">
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <FitTierBadge tier={d.fit_tier} score={d.icp_fit_score} size="md" />
@@ -327,7 +413,8 @@ export default async function DiscoveryDetailPage({ params }: { params: Promise<
             </Panel>
           )}
 
-          {/* Score breakdown */}
+          {/* Score breakdown (launch mode only — opp rows have no sub-scores) */}
+          {!isOpp && (
           <Panel title="Score breakdown">
             <ScoreBar label="Opportunity Clarity" value={d.score_opportunity_clarity} weight={35} />
             <ScoreBar label="Investment Size"     value={d.score_investment_size}     weight={20} />
@@ -340,6 +427,7 @@ export default async function DiscoveryDetailPage({ params }: { params: Promise<
               <MetaRow label="Confidence" value={d.confidence_score != null ? String(d.confidence_score) : '—'} />
             </div>
           </Panel>
+          )}
 
           {/* Project details */}
           {(d.investment_size || d.timeline || d.project_type || d.developer || d.architect || d.government_body) && (
@@ -407,13 +495,15 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function FindFirmsLink({
   discoveryId,
   sourceUrl,
+  segment,
   alreadyPromotedOpportunityId,
 }: {
   discoveryId: string
   sourceUrl: string
+  segment?: string | null
   alreadyPromotedOpportunityId?: string | null
 }) {
-  const href = `/import/prospecting?url=${encodeURIComponent(sourceUrl)}&discoveryId=${encodeURIComponent(discoveryId)}`
+  const href = `/import/prospecting?url=${encodeURIComponent(sourceUrl)}&discoveryId=${encodeURIComponent(discoveryId)}${segment ? `&segment=${encodeURIComponent(segment)}` : ''}`
   return (
     <div style={{
       padding: 16,

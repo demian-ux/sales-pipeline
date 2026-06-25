@@ -27,6 +27,8 @@ const LIST_COLUMNS =
   'tenure, has_for_sale_residential, project_stage, sector_fit, ' +
   'viz_buyer_role, viz_buyer_entity, incumbent_viz, est_scale_vs_floor, ' +
   'icp_fit_score, fit_tier, fit_reason, partner_radar, combined_score, ' +
+  'discovery_kind, source_org, signal_event, beneficiary_segment, outreach_angle, ' +
+  'opportunity_score, suggested_target_firms, ' +
   'status, promoted_to_opportunity_id'
 
 export async function GET(request: NextRequest) {
@@ -47,6 +49,10 @@ export async function GET(request: NextRequest) {
   const dateTo     = sp.get('date_to')          ?? ''
   const status     = sp.get('status')           ?? 'active'
   const search     = sp.get('search')           ?? ''
+  // Which discovery mode's board to show. Defaults to the original launch
+  // pipeline so the existing board (and legacy rows, which default to
+  // 'project_launch') is unchanged; the board toggle sends the other value.
+  const discoveryKind = sp.get('discovery_kind') ?? 'project_launch'
   // Sort: 'combined' (blended fit×deal, default) | 'score' (raw discovery_score) | 'date'.
   const sortParam  = sp.get('sort_by')
   const sortBy     = sortParam === 'date' ? 'date' : sortParam === 'score' ? 'score' : 'combined'
@@ -80,6 +86,7 @@ export async function GET(request: NextRequest) {
       .order('date_published', { ascending: false, nullsFirst: false })
   }
 
+  if (discoveryKind) query = query.eq('discovery_kind', discoveryKind)
   if (status)        query = query.eq('status', status)
   if (region)        query = query.ilike('region', REGION_VALUES[region] ?? region)
   if (country)       query = query.ilike('country', `%${country}%`)
@@ -107,6 +114,16 @@ export async function GET(request: NextRequest) {
 
   if (error) {
     console.error('[discoveries] error:', error.message)
+    // 42703 = undefined column. Means the Opportunity Signals migration
+    // (2026-06-25_opportunity_signals.sql) hasn't been applied yet — the
+    // LIST_COLUMNS / discovery_kind filter reference columns that don't exist.
+    // Surface an actionable message instead of a generic 500.
+    if (error.code === '42703') {
+      return Response.json(
+        { error: 'Database is missing Opportunity Signals columns — apply supabase/migrations/2026-06-25_opportunity_signals.sql (or re-run supabase/schema.sql).', code: '42703' },
+        { status: 503 },
+      )
+    }
     return Response.json({ error: error.message }, { status: 500 })
   }
 

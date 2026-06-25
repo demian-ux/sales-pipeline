@@ -141,9 +141,19 @@ function userPrompt(params: {
   articleText: string
   article: ProspectingArticle
   candidateSources: TavilySearch[]
+  segment?: string
 }): string {
-  return `Analyze this article and the Tavily search results below.
+  // Opportunity-signal mode: the article describes an event (announced by an
+  // airport / brand / museum / government) that CREATES design work. The firms
+  // we want are the designers/developers who would WIN that work — never the
+  // organization that announced the event.
+  const segmentDirective = params.segment?.trim()
+    ? `\nOPPORTUNITY-SIGNAL TARGETING — read carefully:
+This article is an upstream market event that creates design work in the segment "${params.segment.trim()}". Return firms that would WIN that work — designers/developers specialized in "${params.segment.trim()}". NEVER return the organization that announced the event (the airport, hotel brand, museum, university, or government); they are the reason for the outreach, not the prospect. Prioritize firms with a clear portfolio in this segment, near the project's location, in oaki's markets (New York, Miami, France/Europe) when otherwise equal.\n`
+    : ''
 
+  return `Analyze this article and the Tavily search results below.
+${segmentDirective}
 Source URL:
 ${params.sourceUrl}
 
@@ -164,6 +174,7 @@ export async function selectProspectingFirms(params: {
   articleText: string
   article: ProspectingArticle
   candidateSources: TavilySearch[]
+  segment?: string
 }): Promise<{ result: ProspectingResult; usage?: ClaudeUsage }> {
   requireAnthropic()
 

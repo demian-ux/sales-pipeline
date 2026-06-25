@@ -57,6 +57,13 @@ export default function DiscoveryCard({
   const [busy, setBusy] = useState<string | null>(null)
   const tier = TIER_META[discoveryTier(d.discovery_score, d.signal_tier)]
 
+  const isOpp = d.discovery_kind === 'opportunity_signal'
+  const targetFirms = d.suggested_target_firms ?? []
+  // On-demand firm-search for opp cards: hands off to the same prospecting flow
+  // as launch cards, but seeds it with the beneficiary segment so the search
+  // targets "the firms who'd win this", not the source org.
+  const findFirmsHref = `/import/prospecting?url=${encodeURIComponent(d.source_url)}&discoveryId=${encodeURIComponent(d.id)}${d.beneficiary_segment ? `&segment=${encodeURIComponent(d.beneficiary_segment)}` : ''}`
+
   const rawDate = d.date_published || d.created_at
   let added: string | null = null
   if (rawDate) {
@@ -130,10 +137,14 @@ export default function DiscoveryCard({
 
       {/* Fit tier + signal tier + facets */}
       <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-        {d.fit_tier && <FitTierBadge tier={d.fit_tier} score={d.icp_fit_score} />}
+        {d.fit_tier && <FitTierBadge tier={d.fit_tier} score={isOpp ? d.opportunity_score : d.icp_fit_score} scoreLabel={isOpp ? 'Opportunity' : undefined} />}
         {d.already_engaged && (
           <span
-            title={d.engaged_company_name ? `Already in your CRM: ${d.engaged_company_name}` : 'Already a worked firm in your CRM'}
+            title={
+              isOpp
+                ? (d.engaged_company_name ? `Target firm already in your CRM: ${d.engaged_company_name}` : 'A suggested target firm is already in your CRM')
+                : (d.engaged_company_name ? `Already in your CRM: ${d.engaged_company_name}` : 'Already a worked firm in your CRM')
+            }
             style={{
               fontSize: 10.5,
               fontWeight: 600,
@@ -144,34 +155,40 @@ export default function DiscoveryCard({
               padding: '2px 6px',
             }}
           >
-            ◆ Existing account
+            ◆ {isOpp ? 'Firm in CRM' : 'Existing account'}
           </span>
         )}
-        {d.signal_type && SIGNAL_TYPE_LABELS[d.signal_type] && (
-          <Pill>{SIGNAL_TYPE_LABELS[d.signal_type]}</Pill>
-        )}
-        {d.incumbent_viz && (
-          <span
-            title={`Incumbent visualization vendor: ${d.incumbent_viz}`}
-            style={{
-              fontSize: 10.5,
-              fontWeight: 600,
-              color: 'var(--accent)',
-              background: 'var(--accent-dim)',
-              border: '1px solid rgba(200,169,110,0.3)',
-              borderRadius: 'var(--r-xs)',
-              padding: '2px 6px',
-            }}
-          >
-            ⚑ Incumbent
-          </span>
-        )}
-        {d.viz_buyer_role && VIZ_BUYER_LABELS[d.viz_buyer_role] && (
-          <Pill>{VIZ_BUYER_LABELS[d.viz_buyer_role]}</Pill>
+        {isOpp ? (
+          d.beneficiary_segment && <Pill tone="gold">{d.beneficiary_segment}</Pill>
+        ) : (
+          <>
+            {d.signal_type && SIGNAL_TYPE_LABELS[d.signal_type] && (
+              <Pill>{SIGNAL_TYPE_LABELS[d.signal_type]}</Pill>
+            )}
+            {d.incumbent_viz && (
+              <span
+                title={`Incumbent visualization vendor: ${d.incumbent_viz}`}
+                style={{
+                  fontSize: 10.5,
+                  fontWeight: 600,
+                  color: 'var(--accent)',
+                  background: 'var(--accent-dim)',
+                  border: '1px solid rgba(200,169,110,0.3)',
+                  borderRadius: 'var(--r-xs)',
+                  padding: '2px 6px',
+                }}
+              >
+                ⚑ Incumbent
+              </span>
+            )}
+            {d.viz_buyer_role && VIZ_BUYER_LABELS[d.viz_buyer_role] && (
+              <Pill>{VIZ_BUYER_LABELS[d.viz_buyer_role]}</Pill>
+            )}
+          </>
         )}
         <StatusBadge tone={tier.tone}>{tier.label}</StatusBadge>
         {d.status === 'saved' && <Pill tone="gold">Saved</Pill>}
-        <Pill>{SECTOR_LABELS[d.sector] ?? d.sector}</Pill>
+        {!isOpp && <Pill>{SECTOR_LABELS[d.sector] ?? d.sector}</Pill>}
         {d.region && <Pill>{d.region}</Pill>}
         {d.city && <Pill>{d.city}</Pill>}
       </div>
@@ -183,17 +200,76 @@ export default function DiscoveryCard({
         </div>
       )}
 
-      {/* Summary */}
-      {d.brief_summary && (
-        <div className="ink-2" style={{ fontSize: 12.5, lineHeight: 1.6, maxWidth: '64ch' }}>
-          {d.brief_summary}
-        </div>
+      {isOpp ? (
+        <>
+          {/* The upstream event */}
+          {d.signal_event && (
+            <div className="ink-2" style={{ fontSize: 12.5, lineHeight: 1.6, maxWidth: '64ch' }}>
+              <span className="micro" style={{ color: 'var(--ink-3)' }}>SIGNAL · </span>
+              {d.signal_event}
+            </div>
+          )}
+          {/* The hook, written to the target firm */}
+          {d.outreach_angle && (
+            <div
+              className="accent"
+              style={{ fontSize: 12, lineHeight: 1.6, maxWidth: '64ch', fontStyle: 'italic' }}
+            >
+              “{d.outreach_angle}”
+            </div>
+          )}
+          {/* Suggested target firms (the prospects) with in-CRM badges */}
+          {targetFirms.length > 0 && (
+            <div className="col" style={{ gap: 4 }}>
+              <span className="micro" style={{ color: 'var(--ink-3)' }}>TARGET FIRMS</span>
+              <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+                {targetFirms.slice(0, 5).map((f, i) => (
+                  <span
+                    key={`${f.firm}-${i}`}
+                    title={f.why_fit ? `${f.why_fit}${f.geography ? ` · ${f.geography}` : ''}` : f.geography}
+                    style={{
+                      fontSize: 11,
+                      padding: '2px 8px',
+                      borderRadius: 'var(--r-xs)',
+                      border: '1px solid var(--border)',
+                      color: 'var(--ink-2)',
+                      display: 'inline-flex',
+                      gap: 5,
+                      alignItems: 'center',
+                    }}
+                  >
+                    {f.firm}
+                    {f.in_crm && <span style={{ color: 'var(--blue)', fontSize: 9 }}>◆ CRM</span>}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {targetFirms.length === 0 && (
+            <span className="micro" style={{ color: 'var(--ink-3)' }}>
+              Segment only — firms TBD · use “Find firms”
+            </span>
+          )}
+        </>
+      ) : (
+        d.brief_summary && (
+          <div className="ink-2" style={{ fontSize: 12.5, lineHeight: 1.6, maxWidth: '64ch' }}>
+            {d.brief_summary}
+          </div>
+        )
       )}
 
       {/* Footer — type + actions */}
       <div className="between" style={{ marginTop: 4 }}>
-        <span className="ink-3" style={{ fontSize: 11.5 }}>{types || '—'}</span>
+        <span className="ink-3" style={{ fontSize: 11.5 }}>
+          {isOpp ? (d.source_org ? `via ${d.source_org}` : 'Opportunity signal') : (types || '—')}
+        </span>
         <div className="row" style={{ gap: 6 }}>
+          {isOpp && (
+            <Link className="btn btn-xs btn-ghost" href={findFirmsHref} title="Find the design/dev firms who'd win this work">
+              Find firms
+            </Link>
+          )}
           {onStatusChange && d.status !== 'saved' && (
             <button
               className="btn btn-xs btn-ghost"
