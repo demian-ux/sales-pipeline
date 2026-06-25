@@ -235,8 +235,9 @@ export default function DiscoveriesPage() {
 
   const mode = filters.discovery_kind
   const isOpp = mode === 'opportunity_signal'
+  const isAll = mode === ''
 
-  function setMode(kind: 'project_launch' | 'opportunity_signal') {
+  function setMode(kind: DiscoveryFilterState['discovery_kind']) {
     if (kind === mode) return
     setSelected(new Set())
     // Launch-only filters (signal_type, opportunity_type, client_type, tenure,
@@ -262,7 +263,9 @@ export default function DiscoveriesPage() {
           <div className="page-eyebrow">Intelligence</div>
           <div className="page-title">Discoveries</div>
           <div className="page-sub">
-            {isOpp
+            {isAll
+              ? 'All discoveries — Project Launches and Opportunity Signals together.'
+              : isOpp
               ? 'Opportunity Signals — upstream events that create design work, mapped to the firms who would win it.'
               : 'Project Launches — market signals where the prospect is the source of the project. The radar.'}
           </div>
@@ -295,11 +298,11 @@ export default function DiscoveriesPage() {
         </div>
       </div>
 
-      {/* Mode toggle — Project Launches | Opportunity Signals */}
+      {/* Mode toggle — Project Launches | Opportunity Signals | All */}
       <div className="row" style={{ marginBottom: 20 }}>
         <div className="seg">
           <button
-            className={`seg-btn ${!isOpp ? 'active' : ''}`}
+            className={`seg-btn ${mode === 'project_launch' ? 'active' : ''}`}
             onClick={() => setMode('project_launch')}
           >
             Project Launches
@@ -309,6 +312,12 @@ export default function DiscoveriesPage() {
             onClick={() => setMode('opportunity_signal')}
           >
             Opportunity Signals
+          </button>
+          <button
+            className={`seg-btn ${isAll ? 'active' : ''}`}
+            onClick={() => setMode('')}
+          >
+            All
           </button>
         </div>
       </div>

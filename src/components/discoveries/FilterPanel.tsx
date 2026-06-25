@@ -4,8 +4,9 @@ import type { DiscoveryKind } from '@/lib/types'
 
 export interface DiscoveryFilterState {
   // Which discovery mode's board to show. Driven by the board's mode toggle,
-  // not a sidebar filter; sent as the discovery_kind query param.
-  discovery_kind: DiscoveryKind
+  // not a sidebar filter; sent as the discovery_kind query param. '' = All
+  // (both kinds mixed).
+  discovery_kind: DiscoveryKind | ''
   region: string
   country: string
   city: string
@@ -35,8 +36,8 @@ interface FilterPanelProps {
   onChange: (filters: DiscoveryFilterState) => void
   // The active board mode. In opportunity_signal mode the launch-only controls
   // (Signal, Type, Client, Tenure, Sector fit) are hidden — those columns are
-  // NULL on opp rows, so the filters would only ever empty the board.
-  mode?: DiscoveryKind
+  // NULL on opp rows, so the filters would only ever empty the board. '' = All.
+  mode?: DiscoveryKind | ''
 }
 
 const REGION_OPTIONS = [
