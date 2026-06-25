@@ -13,6 +13,9 @@ export interface DiscoveryFilterState {
   date_to: string
   status: string
   search: string
+  // Event-type gate + CRM cross-reference
+  signal_type: string
+  engagement: string
   // ICP-fit filters
   fit_tier: string
   tenure: string
@@ -37,15 +40,44 @@ const REGION_OPTIONS = [
 ]
 
 const SECTOR_OPTIONS = [
-  { value: '',                   label: 'All sectors' },
-  { value: 'hospitality',        label: 'Hospitality' },
-  { value: 'luxury_residential', label: 'Luxury Residential' },
-  { value: 'mixed_use',          label: 'Mixed-Use' },
-  { value: 'airports',           label: 'Airports' },
-  { value: 'office',             label: 'Office' },
-  { value: 'transport',          label: 'Transport' },
-  { value: 'cultural',           label: 'Cultural' },
-  { value: 'retail',             label: 'Retail' },
+  { value: '',                     label: 'All sectors' },
+  { value: 'hospitality',          label: 'Hospitality' },
+  { value: 'aviation_hospitality', label: 'Aviation / Lounges' },
+  { value: 'luxury_residential',   label: 'Luxury Residential' },
+  { value: 'mixed_use',            label: 'Mixed-Use' },
+  { value: 'cultural',             label: 'Cultural / Civic' },
+  { value: 'airports',             label: 'Airport infra' },
+  { value: 'office',               label: 'Office' },
+  { value: 'transport',            label: 'Transport' },
+  { value: 'retail',               label: 'Retail' },
+  { value: 'other',                label: 'Other' },
+]
+
+// Event type behind the article. KEEP types surface on the active board; the
+// "(off)" types are auto-archived — listed so the Archived view is inspectable.
+const SIGNAL_TYPE_OPTIONS = [
+  { value: '',                    label: 'All signals' },
+  { value: 'new_development',     label: 'New development' },
+  { value: 'approval_filing',     label: 'Approval / filing' },
+  { value: 'groundbreaking',      label: 'Groundbreaking' },
+  { value: 'sales_launch',        label: 'Sales launch' },
+  { value: 'branded_partnership', label: 'Branded partnership' },
+  { value: 'redesign',            label: 'Redesign' },
+  { value: 'transaction',         label: 'Transaction (off)' },
+  { value: 'financing',           label: 'Financing (off)' },
+  { value: 'completion',          label: 'Completion (off)' },
+  { value: 'policy',              label: 'Policy (off)' },
+  { value: 'government_program',  label: 'Government program (off)' },
+  { value: 'corporate_pr',        label: 'Corporate PR (off)' },
+  { value: 'market_roundup',      label: 'Market roundup (off)' },
+  { value: 'infrastructure',      label: 'Infrastructure (off)' },
+  { value: 'other',               label: 'Other' },
+]
+
+const ENGAGEMENT_OPTIONS = [
+  { value: '',        label: 'All firms' },
+  { value: 'new',     label: 'New firms only' },
+  { value: 'engaged', label: 'Existing accounts' },
 ]
 
 const OPP_TYPE_OPTIONS = [
@@ -114,6 +146,8 @@ const DEFAULT_FILTERS: DiscoveryFilterState = {
   date_to: '',
   status: 'active',
   search: '',
+  signal_type: '',
+  engagement: '',
   fit_tier: '',
   tenure: '',
   sector_fit: '',
@@ -191,6 +225,10 @@ export default function FilterPanel({ filters, onChange }: FilterPanelProps) {
           <span className="filter-label" style={{ marginBottom: 0 }}>Hide disqualified</span>
         </label>
       </div>
+      <div className="filter-section">
+        <span className="filter-label">Account</span>
+        <Select value={filters.engagement} options={ENGAGEMENT_OPTIONS} onChange={(v) => set('engagement', v)} />
+      </div>
 
       <div className="filter-section">
         <span className="filter-label">Region</span>
@@ -199,6 +237,10 @@ export default function FilterPanel({ filters, onChange }: FilterPanelProps) {
       <div className="filter-section">
         <span className="filter-label">Sector</span>
         <Select value={filters.sector} options={SECTOR_OPTIONS} onChange={(v) => set('sector', v)} />
+      </div>
+      <div className="filter-section">
+        <span className="filter-label">Signal</span>
+        <Select value={filters.signal_type} options={SIGNAL_TYPE_OPTIONS} onChange={(v) => set('signal_type', v)} />
       </div>
       <div className="filter-section">
         <span className="filter-label">Type</span>

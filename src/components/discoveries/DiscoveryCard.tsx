@@ -7,6 +7,7 @@ import { ScoreBlock, StatusBadge, Pill } from '@/components/ui/primitives'
 import { Icon } from '@/components/ui/icons'
 import { discoveryTier, TIER_META } from '@/lib/discoveries/tiers'
 import FitTierBadge from '@/components/discoveries/FitTierBadge'
+import { SIGNAL_TYPE_LABELS } from '@/lib/discoveries/signal-type'
 import type { Discovery, DiscoverySector } from '@/lib/types'
 
 interface DiscoveryCardProps {
@@ -19,15 +20,16 @@ interface DiscoveryCardProps {
 }
 
 const SECTOR_LABELS: Record<DiscoverySector, string> = {
-  hospitality:        'Hospitality',
-  luxury_residential: 'Luxury Residential',
-  mixed_use:          'Mixed-Use',
-  airports:           'Airports',
-  office:             'Office',
-  transport:          'Transport',
-  cultural:           'Cultural',
-  retail:             'Retail',
-  other:              'Other',
+  hospitality:          'Hospitality',
+  aviation_hospitality: 'Aviation / Lounges',
+  luxury_residential:   'Luxury Residential',
+  mixed_use:            'Mixed-Use',
+  airports:             'Airport infra',
+  office:               'Office',
+  transport:            'Transport',
+  cultural:             'Cultural / Civic',
+  retail:               'Retail',
+  other:                'Other',
 }
 
 const OPPORTUNITY_TYPE_LABELS: Record<string, string> = {
@@ -129,6 +131,25 @@ export default function DiscoveryCard({
       {/* Fit tier + signal tier + facets */}
       <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
         {d.fit_tier && <FitTierBadge tier={d.fit_tier} score={d.icp_fit_score} />}
+        {d.already_engaged && (
+          <span
+            title={d.engaged_company_name ? `Already in your CRM: ${d.engaged_company_name}` : 'Already a worked firm in your CRM'}
+            style={{
+              fontSize: 10.5,
+              fontWeight: 600,
+              color: 'var(--blue)',
+              background: 'var(--blue-dim)',
+              border: '1px solid rgba(92,142,212,0.25)',
+              borderRadius: 'var(--r-xs)',
+              padding: '2px 6px',
+            }}
+          >
+            ◆ Existing account
+          </span>
+        )}
+        {d.signal_type && SIGNAL_TYPE_LABELS[d.signal_type] && (
+          <Pill>{SIGNAL_TYPE_LABELS[d.signal_type]}</Pill>
+        )}
         {d.incumbent_viz && (
           <span
             title={`Incumbent visualization vendor: ${d.incumbent_viz}`}

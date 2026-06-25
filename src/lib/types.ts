@@ -370,13 +370,39 @@ export type DiscoveryType = 'service' | 'tender' | 'trend'
 
 export type DiscoverySector =
   | 'hospitality'
+  | 'aviation_hospitality'   // airport lounges / premium-terminal interiors (oaki does these); NOT terminal/runway infra
   | 'luxury_residential'
   | 'mixed_use'
-  | 'airports'
+  | 'airports'               // terminal / runway / apron infrastructure — off-scope, archived via signal_type
   | 'office'
   | 'transport'
   | 'cultural'
   | 'retail'
+  | 'other'
+
+// Event type of the underlying news, orthogonal to sector. Gates the feed:
+// KEEP types describe a project with a future imagery window (still to be sold
+// or leased from renders); DROP types are too-late / wrong-actor / non-project
+// signals that get analyzed then auto-archived. Emitted by the analyze prompt,
+// classified by lib/discoveries/signal-type.ts. See project_oaki_discovery_icp_scope.
+export type SignalType =
+  // KEEP — a named project advancing, imagery still ahead
+  | 'new_development'       // reveal / unveiling / launch of a new project
+  | 'approval_filing'       // site-specific rezoning, entitlement, planning application, approval
+  | 'groundbreaking'        // construction start
+  | 'sales_launch'          // sales gallery / "now selling" / leasing launch
+  | 'branded_partnership'   // branded-residence or hospitality-operator deal on a NEW development
+  | 'redesign'              // major redesign / repositioning of an in-progress development
+  // DROP — no future imagery window, wrong actor, or not a project
+  | 'transaction'           // resale / unit sale / portfolio or land trade
+  | 'financing'             // loan / refi / recap / construction financing
+  | 'completion'            // topping-off / completion / opening / "now open"
+  | 'policy'                // non-site-specific policy / regulation / zoning-law change
+  | 'government_program'    // government or affordable-housing program announcement
+  | 'corporate_pr'          // brokerage / operator expansion or alliance PR with no project
+  | 'market_roundup'        // ranking / "top deals" / bulletin / market report
+  | 'infrastructure'        // airport terminal/runway, rail/port/transit (≠ airport LOUNGE)
+  // neutral fallback — treated as KEEP so a fuzzy event isn't silently dropped
   | 'other'
 
 export type DiscoveryClientType =
@@ -450,6 +476,15 @@ export interface Discovery extends DiscoveryScoreBreakdown {
   discovery_score: number
   urgency_score: number
   confidence_score: number
+
+  // Event-type gate + project identity + CRM cross-reference (2026-06-25).
+  // All optional so legacy (pre-migration) rows type-check.
+  signal_type?: SignalType | null
+  project_name?: string | null
+  project_key?: string | null
+  already_engaged?: boolean
+  engaged_company_id?: string | null
+  engaged_company_name?: string | null
 
   // ICP-fit layer — all optional so legacy (pre-migration) rows type-check.
   tenure?: Tenure

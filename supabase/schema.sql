@@ -120,6 +120,14 @@ create table if not exists discoveries (
     end
   ) stored,
 
+  -- Event-type gate + project identity + CRM cross-reference (2026-06-25).
+  signal_type                text,                          -- new_development | approval_filing | … | transaction | financing | … (lib/discoveries/signal-type.ts)
+  project_name               text,                          -- canonical development name extracted by the analyzer, if stated
+  project_key                text,                          -- normalize(project_name)|normalize(city); app-level dedup key
+  already_engaged            boolean not null default false,-- developer/actor matched a Company already in the CRM roster
+  engaged_company_id         text,                          -- matched Sheets company_id, when already_engaged
+  engaged_company_name       text,                          -- matched Company name, for the card badge
+
   status                     text not null default 'active',   -- 'active' | 'saved' | 'archived'
   raw_content                text,
 
@@ -137,6 +145,9 @@ create index if not exists idx_discoveries_created on discoveries(created_at des
 create index if not exists idx_discoveries_tier    on discoveries(signal_tier);
 create index if not exists idx_discoveries_combined on discoveries(combined_score desc);
 create index if not exists idx_discoveries_fit_tier on discoveries(fit_tier);
+create index if not exists idx_discoveries_signal_type on discoveries(signal_type);
+create index if not exists idx_discoveries_project_key on discoveries(project_key);
+create index if not exists idx_discoveries_engaged    on discoveries(already_engaged);
 
 -- ============================================================================
 -- INGESTION_RUNS — one row per ingest cycle
@@ -370,17 +381,21 @@ insert into sources (name, url, source_type, region, sector, active, sort_order)
   ('GNews Real Estate NY', 'https://news.google.com/rss/search?q=real+estate+new+york+development&hl=en&gl=US&ceid=US:en',       'rss', 'new_york', 'general',           true,  10),
   ('GNews Real Estate MIA','https://news.google.com/rss/search?q=real+estate+miami+development&hl=en&gl=US&ceid=US:en',          'rss', 'miami',    'general',           true,  20),
   -- Geo-qualified (June 2026): the unqualified queries pulled worldwide articles — 31% of discoveries were out of target geography.
-  ('GNews Airport Design', 'https://news.google.com/rss/search?q=airport+modernization+design+architecture+(%22New+York%22+OR+%22JFK%22+OR+%22LaGuardia%22+OR+Miami+OR+Paris+OR+France+OR+Europe)&hl=en&gl=US&ceid=US:en','rss','global',  'airports',          true,  30),
+  -- Airport feed targets LOUNGES / premium-terminal interiors (oaki's aviation work), not terminal/runway infrastructure.
+  ('GNews Airport Lounges', 'https://news.google.com/rss/search?q=(airport+OR+terminal)+(lounge+OR+%22business+class%22+OR+%22first+class%22+OR+VIP)+design+(%22New+York%22+OR+JFK+OR+Miami+OR+Paris+OR+London+OR+Europe)&hl=en&gl=US&ceid=US:en','rss','global',  'aviation_hospitality', true,  30),
   ('GNews Hospitality EU', 'https://news.google.com/rss/search?q=hotel+hospitality+development+europe&hl=en&gl=US&ceid=US:en',   'rss', 'europe',   'hospitality',       true,  40),
   ('GNews Luxury Resi',    'https://news.google.com/rss/search?q=luxury+residential+development+architecture+(%22New+York%22+OR+Manhattan+OR+Brooklyn+OR+Miami+OR+Paris+OR+France+OR+Europe)&hl=en&gl=US&ceid=US:en','rss','global','luxury_residential', true,  50),
   ('GNews France RE',      'https://news.google.com/rss/search?q=immobilier+developpement+france&hl=fr&gl=FR&ceid=FR:fr',        'rss', 'france',   'general',           true,  60),
   ('Urbanize Miami',       'https://miami.urbanize.city/feed',                           'rss', 'miami',    'general',      true,  70),
   ('Urbanize NYC',         'https://ny.urbanize.city/feed',                              'rss', 'new_york', 'general',      true,  80),
+  ('NY YIMBY',             'https://newyorkyimby.com/feed',                              'rss', 'new_york', 'general',      true,  85),
+  ('6sqft',                'https://www.6sqft.com/feed/',                                'rss', 'new_york', 'general',      true,  86),
   ('Curbed NY',            'https://ny.curbed.com/rss/index.xml',                        'rss', 'new_york', 'general',      true,  90),
   ('Commercial Observer',  'https://commercialobserver.com/feed/',                       'rss', 'new_york', 'general',      true, 100),
   ('Dezeen',               'https://www.dezeen.com/feed/',                               'rss', 'global',   'architecture', true, 110),
   ('ArchDaily',            'https://www.archdaily.com/feed',                             'rss', 'global',   'architecture', true, 120),
   ('World Architecture',   'https://www.world-architects.com/en/rss',                    'rss', 'global',   'architecture', true, 130),
+  ('The Architect''s Newspaper', 'https://www.archpaper.com/feed/',                      'rss', 'global',   'cultural',     true, 125),
   -- Known-inactive: bot-blocked / paywalled / feed discontinued
   ('The Real Deal',        'https://therealdeal.com/feed/',                              'rss', 'new_york', 'general',      false, 200),
   ('Bisnow',               'https://www.bisnow.com/feed',                                'rss', 'global',   'general',      false, 200),

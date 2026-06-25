@@ -5,13 +5,17 @@ import type { DiscoveryScoreBreakdown, DiscoverySignalTier } from '@/lib/types'
 // out-of-target location cost at most ~5 points, so Brisbane/Chicago articles
 // tiered as strong opportunities. The hard guarantee is the geo cap in
 // processor.ts; this weight makes the ranking inside each tier geo-aware too.
+// investment_size cut 0.15 → 0.05 (June 2026): raw deal size was the dollar
+// bias that let a $520M land trade outrank a genuine launch. The event-type
+// gate now removes transactions outright; this de-emphasises pure magnitude so
+// clarity + strategic geography drive the ranking. (clarity +0.05, region +0.05)
 const WEIGHTS = {
-  opportunity_clarity: 0.30,
-  investment_size:     0.15,
+  opportunity_clarity: 0.35,
+  investment_size:     0.05,
   timing:              0.15,
   actors:              0.10,
   sector_growth:       0.10,
-  region_strategic:    0.20,
+  region_strategic:    0.25,
 } as const
 
 // Sub-score shape used by the Claude analyzer — un-prefixed (matches the JSON

@@ -3,6 +3,7 @@
 // stronger matches) are visible before promoting.
 
 import { getCompanies, getLeads } from '@/lib/sheets'
+import type { Company } from '@/lib/types'
 
 export interface RosterMatch {
   entity: string
@@ -46,6 +47,30 @@ export function extractDiscoveryEntities(d: {
 }): string[] {
   return [...(d.main_actors ?? []), d.developer, d.architect, d.government_body]
     .filter((e): e is string => !!e && e.trim().length > 1)
+}
+
+// Ingestion-time variant: match a discovery's entities against a pre-loaded
+// company roster (loaded once per run, not per article) and return the first
+// hit — enough to tag already_engaged + badge the worked firm. Returns null
+// when nothing matches.
+export interface EngagedMatch {
+  entity: string
+  company_id: string
+  company_name: string
+}
+
+export function matchEntitiesToCompanies(
+  entities: string[],
+  companies: Pick<Company, 'company_id' | 'company_name'>[],
+): EngagedMatch | null {
+  for (const company of companies) {
+    if (!company.company_name) continue
+    const matched = entities.find((e) => entityMatches(e, company.company_name))
+    if (matched) {
+      return { entity: matched, company_id: company.company_id, company_name: company.company_name }
+    }
+  }
+  return null
 }
 
 export async function matchEntitiesToRoster(entities: string[]): Promise<RosterMatch[]> {

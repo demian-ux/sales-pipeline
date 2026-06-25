@@ -15,12 +15,13 @@ export const dynamic = 'force-dynamic'
 
 const SECTOR_LABELS: Record<DiscoverySector, string> = {
   hospitality: 'Hospitality',
+  aviation_hospitality: 'Aviation / Lounges',
   luxury_residential: 'Luxury Residential',
   mixed_use: 'Mixed-Use',
-  airports: 'Airports',
+  airports: 'Airport infra',
   office: 'Office',
   transport: 'Transport',
-  cultural: 'Cultural',
+  cultural: 'Cultural / Civic',
   retail: 'Retail',
   other: 'Other',
 }

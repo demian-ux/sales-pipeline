@@ -8,14 +8,22 @@
 // Discovery rows. Caps per-run and per-source to keep cost predictable.
 
 import { getSupabaseAdmin } from '@/lib/supabase'
+import { getCompanies } from '@/lib/sheets'
 import { classifyArticle } from '@/lib/prompts/discoveries/classify'
 import { analyzeArticle } from '@/lib/prompts/discoveries/analyze'
 import { computeDiscoveryScore, scoreToTier } from './scoring'
 import { computeIcpFit, sectorFitFromSector } from './icp'
 import { isInTargetGeo, OUT_OF_GEO_SCORE_CAP } from './target-geo'
+import { isDropSignalType } from './signal-type'
+import { makeProjectKey } from './project-key'
+import { extractDiscoveryEntities, matchEntitiesToCompanies } from './roster-match'
 import { fetchRSSFeed, type RawArticleFromRSS } from './rss'
 import { resolveGoogleNewsUrl, isGoogleNewsUrl } from './googleNewsResolver'
-import type { DiscoverySignalTier } from '@/lib/types'
+import type { DiscoverySignalTier, Company } from '@/lib/types'
+
+// Lightweight company roster snapshot, loaded once per run for already_engaged
+// cross-reference (avoids a Sheets read per article).
+type CompanyRoster = Pick<Company, 'company_id' | 'company_name'>[]
 
 /**
  * Resolves a Google News redirect URL, swallowing any resolution error and
@@ -121,6 +129,24 @@ export async function runIngestion(
   console.log(`[ingest] Starting — ${sources.length} sources | max ${MAX_NEW_PER_RUN} candidates | max ${MAX_PER_SOURCE}/source`)
   await updateRunProgress(runId, progress, 'Starting research', 1)
 
+  // Load the CRM company roster once for already_engaged cross-reference.
+  // Tolerate a Sheets failure — cross-ref is additive, never a reason to fail
+  // the whole run; the tag just stays false this run.
+  let roster: CompanyRoster = []
+  try {
+    roster = (await getCompanies()).map((c) => ({ company_id: c.company_id, company_name: c.company_name }))
+    console.log(`[ingest] Loaded ${roster.length} companies for CRM cross-reference`)
+  } catch (err) {
+    console.warn(`[ingest] Company roster load failed — already_engaged tagging off this run: ${err instanceof Error ? err.message : err}`)
+  }
+
+  // project_keys claimed during THIS run. The DB SELECT in processArticle
+  // catches cross-run duplicates; this set closes the within-run race where two
+  // concurrent workers both pass the SELECT before either has inserted. The
+  // check+add runs synchronously (no await between), so the single-threaded
+  // event loop guarantees only one worker can claim a given key.
+  const seenProjectKeys = new Set<string>()
+
   const freshnessCutoff = new Date()
   freshnessCutoff.setDate(freshnessCutoff.getDate() - ARTICLE_FRESHNESS_DAYS)
 
@@ -165,7 +191,10 @@ export async function runIngestion(
       // real publisher page, not Google's interstitial.
       const resolvedUrl = await resolveSourceUrlSafe(article.link)
       const enrichedArticle = await enrichArticleForAnalysis(article, resolvedUrl)
-      const result = await processArticle(enrichedArticle, resolvedUrl)
+      const result = await processArticle(enrichedArticle, resolvedUrl, roster, seenProjectKeys)
+      // articles_new counts new ACTIVE discoveries only. Off-type (DROP) rows are
+      // still inserted, but as status='archived' and return 'archived', so they
+      // don't inflate this count.
       if (result === 'saved_strong' || result === 'saved_watchlist') {
         progress.articles_new++
       }
@@ -350,7 +379,7 @@ type ProcessResult = 'saved_strong' | 'saved_watchlist' | 'archived' | 'error'
 // by the caller, who also used it for content enrichment). Stored as
 // source_url so downstream Jina/find-firms flows get a clean URL.
 // Throws on analysis failure — the caller records 'failed' (retryable).
-async function processArticle(article: RawArticleFromRSS, resolvedUrl: string): Promise<ProcessResult> {
+async function processArticle(article: RawArticleFromRSS, resolvedUrl: string, roster: CompanyRoster, seenProjectKeys: Set<string>): Promise<ProcessResult> {
   const supabase = getSupabaseAdmin()
   const analysis = await analyzeArticle(article.title, article.content, article.link)
 
@@ -367,15 +396,57 @@ async function processArticle(article: RawArticleFromRSS, resolvedUrl: string): 
   }
 
   if (tier === 'archive') {
+    // Genuinely off-topic (not even a recognized off-type event). Never inserted.
     await recordAnalyzed(article, 'archive')
     return 'archived'
   }
+
+  // Event-type gate: a recognized off-type event (resale, financing, completion,
+  // policy, roundup, infrastructure, …) is still INSERTED — but as status
+  // 'archived' so it's auditable/recoverable in the Archived view — rather than
+  // surfacing on the active board. KEEP types stay 'active'.
+  const isDrop = isDropSignalType(analysis.signal_type)
+  const status: 'active' | 'archived' = isDrop ? 'archived' : 'active'
+
+  // Project-level dedup: the same development arriving via a second outlet (a
+  // different URL than the source_url unique constraint catches) shouldn't
+  // appear twice. Keyed on the analyzer's project_name + city. Only de-dupe
+  // KEEP rows against other non-archived rows — drops are already off the board.
+  const projectKey = makeProjectKey(analysis.project_name, analysis.city)
+  if (!isDrop && projectKey) {
+    // Cross-run duplicate: the same project is already on the board from an
+    // earlier run.
+    const { data: dupe } = await supabase
+      .from('discoveries')
+      .select('id')
+      .eq('project_key', projectKey)
+      .neq('status', 'archived')
+      .limit(1)
+      .maybeSingle()
+    // Within-run duplicate: claim the key synchronously so a concurrent worker
+    // processing the same project via a different outlet loses the race here
+    // rather than both inserting.
+    if (dupe || seenProjectKeys.has(projectKey)) {
+      console.log(`[ingest] Duplicate project (already seen): "${analysis.project_name}" — "${article.title.slice(0, 50)}"`)
+      await recordAnalyzed(article, tier)
+      return 'archived'
+    }
+    seenProjectKeys.add(projectKey)
+  }
+
+  // CRM cross-reference: tag the discovery if a named actor matches a Company
+  // already in the roster, so worked firms are badged rather than re-surfaced
+  // as new. Off the active board only via the UI filter — never auto-archived.
+  const engaged = roster.length
+    ? matchEntitiesToCompanies(extractDiscoveryEntities(analysis), roster)
+    : null
 
   // ICP-fit: a second, additive axis — does this match the kind of deal oaki
   // sells into? sector_fit is derived from the sector the analyzer picked; the
   // rest are extracted ICP signals. combined_score is DB-generated (not written).
   const sectorFit = sectorFitFromSector(analysis.sector)
   const icp = computeIcpFit({
+    signal_type: analysis.signal_type,
     tenure: analysis.tenure,
     has_for_sale_residential: analysis.has_for_sale_residential,
     project_stage: analysis.project_stage,
@@ -427,6 +498,14 @@ async function processArticle(article: RawArticleFromRSS, resolvedUrl: string): 
     score_sector_growth:       analysis.scores.sector_growth,
     score_region_strategic:    analysis.scores.region_strategic,
 
+    // Event-type gate + project identity + CRM cross-reference
+    signal_type:          analysis.signal_type,
+    project_name:         analysis.project_name,
+    project_key:          projectKey,
+    already_engaged:      !!engaged,
+    engaged_company_id:   engaged?.company_id ?? null,
+    engaged_company_name: engaged?.company_name ?? null,
+
     // ICP-fit layer (combined_score is DB-generated — never inserted)
     tenure:                   analysis.tenure,
     has_for_sale_residential: analysis.has_for_sale_residential,
@@ -441,7 +520,7 @@ async function processArticle(article: RawArticleFromRSS, resolvedUrl: string): 
     fit_reason:               icp.fit_reason,
     partner_radar:            icp.partner_radar,
 
-    status: 'active',
+    status,
     raw_content: article.content.slice(0, 5000),
   })
 
@@ -458,8 +537,14 @@ async function processArticle(article: RawArticleFromRSS, resolvedUrl: string): 
     return 'error'
   }
 
-  await recordAnalyzed(article, tier)
-  console.log(`[ingest] Saved ${tier === 'strong_opportunity' ? 'STRONG' : 'WATCHLIST'}: "${article.title.slice(0, 60)}"`)
+  await recordAnalyzed(article, isDrop ? 'archive' : tier)
+
+  if (isDrop) {
+    console.log(`[ingest] Archived off-type (${analysis.signal_type}): "${article.title.slice(0, 60)}"`)
+    return 'archived'
+  }
+
+  console.log(`[ingest] Saved ${tier === 'strong_opportunity' ? 'STRONG' : 'WATCHLIST'}${engaged ? ` [engaged: ${engaged.company_name}]` : ''}: "${article.title.slice(0, 60)}"`)
   return tier === 'strong_opportunity' ? 'saved_strong' : 'saved_watchlist'
 }
 

@@ -23,6 +23,7 @@ const LIST_COLUMNS =
   'investment_size, timeline, main_actors, developer, architect, government_body, ' +
   'brief_summary, why_it_matters, suggested_action, tags, ' +
   'signal_tier, discovery_score, urgency_score, confidence_score, ' +
+  'signal_type, project_name, project_key, already_engaged, engaged_company_name, ' +
   'tenure, has_for_sale_residential, project_stage, sector_fit, ' +
   'viz_buyer_role, viz_buyer_entity, incumbent_viz, est_scale_vs_floor, ' +
   'icp_fit_score, fit_tier, fit_reason, partner_radar, combined_score, ' +
@@ -52,6 +53,9 @@ export async function GET(request: NextRequest) {
   const tenure     = sp.get('tenure')            ?? ''
   const sectorFit  = sp.get('sector_fit')        ?? ''
   const fitTier    = sp.get('fit_tier')          ?? ''
+  const signalType = sp.get('signal_type')       ?? ''
+  // 'engaged' = only worked firms | 'new' = only firms not yet in the CRM | '' = all
+  const engagement = sp.get('engagement')        ?? ''
   // Hide disqualified is ON unless explicitly disabled, but never overrides an
   // explicit fit_tier filter (so you can still inspect disqualified rows).
   const hideDisq   = sp.get('hide_disqualified') !== 'false'
@@ -90,6 +94,9 @@ export async function GET(request: NextRequest) {
   if (tenure)        query = query.eq('tenure', tenure)
   if (sectorFit)     query = query.eq('sector_fit', sectorFit)
   if (fitTier)       query = query.eq('fit_tier', fitTier)
+  if (signalType)    query = query.eq('signal_type', signalType)
+  if (engagement === 'engaged') query = query.eq('already_engaged', true)
+  if (engagement === 'new')     query = query.eq('already_engaged', false)
   // Drop disqualified rows but KEEP legacy null-tier rows (going-forward only).
   if (hideDisq && !fitTier) query = query.or('fit_tier.is.null,fit_tier.neq.disqualified')
   if (search)        query = query.or(`title.ilike.%${search}%,brief_summary.ilike.%${search}%`)

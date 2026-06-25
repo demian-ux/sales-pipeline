@@ -13,6 +13,7 @@
 // inputs always produce the same tier.
 
 import { isInTargetGeo } from './target-geo'
+import { isDropSignalType } from './signal-type'
 import type {
   Tenure,
   ProjectStage,
@@ -20,17 +21,21 @@ import type {
   VizBuyerRole,
   EstScaleVsFloor,
   FitTier,
+  SignalType,
   DiscoverySector,
 } from '@/lib/types'
 
 // sector_fit is DERIVED from the sector the analyzer already picks (spec §2's
 // "map from sector"), not asked for separately — deterministic, can't drift
-// from the sector label. High = for-sale-led residential / hospitality; low =
-// office, airports, transport, etc. that don't commission pre-sale viz.
+// from the sector label. High = oaki's core viz markets (for-sale-led
+// residential, hospitality, airport lounges, cultural/civic); low = airport
+// infrastructure, office, transport, etc. that don't commission pre-sale viz.
 export function sectorFitFromSector(sector: DiscoverySector | string): SectorFit {
   switch (sector) {
     case 'luxury_residential':
     case 'hospitality':
+    case 'aviation_hospitality':   // airport lounges / premium-terminal interiors
+    case 'cultural':               // museums, civic / cultural landmarks (esp. Europe)
       return 'high'
     case 'mixed_use':
       return 'medium'
@@ -40,6 +45,10 @@ export function sectorFitFromSector(sector: DiscoverySector | string): SectorFit
 }
 
 export interface IcpFitInput {
+  // The event behind the article. A DROP type (transaction, financing,
+  // completion, policy, …) hard-disqualifies regardless of the other signals —
+  // there is no future imagery window to sell. null/other = no constraint.
+  signal_type?: SignalType | null
   tenure: Tenure
   has_for_sale_residential: boolean
   project_stage: ProjectStage
@@ -111,6 +120,7 @@ const WORKABLE_THRESHOLD = 45
 
 export function computeIcpFit(input: IcpFitInput): IcpFitResult {
   const {
+    signal_type,
     tenure,
     has_for_sale_residential,
     project_stage,
@@ -120,6 +130,8 @@ export function computeIcpFit(input: IcpFitInput): IcpFitResult {
     incumbent_viz,
     region,
   } = input
+
+  const isOffType = isDropSignalType(signal_type)
 
   const rawScore =
     (TENURE_POINTS[tenure] ?? TENURE_POINTS.unknown) +
@@ -135,8 +147,11 @@ export function computeIcpFit(input: IcpFitInput): IcpFitResult {
 
   // Hard disqualifiers (spec §3.2). The first hit caps the score at 25 and
   // forces fit_tier = disqualified regardless of the weighted sum. Order =
-  // priority for the why-not line.
+  // priority for the why-not line. The event-type gate is first: a resale /
+  // financing / completion / policy / infrastructure story has no future
+  // imagery window however good the project looks on the other axes.
   const firstDisqualifier = [
+    { hit: isOffType, reason: 'Off-type event — no future imagery window' },
     { hit: tenure === 'owner_occupied', reason: 'Owner-occupied — not a pre-sale viz buyer' },
     { hit: tenure === 'rental' && !has_for_sale_residential, reason: 'Rental, no for-sale component' },
     { hit: sector_fit === 'low' && noForSale, reason: 'Low-fit sector, no for-sale residential' },
@@ -175,6 +190,7 @@ export function computeIcpFit(input: IcpFitInput): IcpFitResult {
   // these be filtered out of the outreach queue without being deleted (§6).
   const partner_radar =
     fit_tier === 'disqualified' &&
+    !isOffType &&
     (tenure === 'owner_occupied' || (sector_fit === 'low' && est_scale_vs_floor === 'above'))
 
   return { icp_fit_score: score, fit_tier, fit_reason, partner_radar }

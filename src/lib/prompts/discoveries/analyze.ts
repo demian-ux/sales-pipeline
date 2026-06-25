@@ -10,6 +10,7 @@ import type {
   DiscoveryClientType,
   DiscoveryType,
   DiscoverySignalTier,
+  SignalType,
   Tenure,
   ProjectStage,
   VizBuyerRole,
@@ -25,6 +26,12 @@ export interface DiscoveryAnalysis {
   country: string
   region: string
   sector: DiscoverySector
+  // The event behind the article — gates the feed (KEEP types vs auto-archived
+  // DROP types). See lib/discoveries/signal-type.ts.
+  signal_type: SignalType
+  // Canonical name of the development if the article states one ("Magic City",
+  // "The Standard Residences Midtown"), else null. Drives project-level dedup.
+  project_name: string | null
   project_type: string
   investment_size: string | null
   timeline: string | null
@@ -131,9 +138,39 @@ this. Extract these signals literally from the article — do NOT infer the favo
   above (100+ units, branded residences, GDV $100M+, flagship) | near (mid-size) |
   below (boutique / <20 units / small) | unknown.
 
+━━━ SIGNAL_TYPE — the event behind the article ━━━
+
+Classify what KIND of event this is. This is independent of the signal_tier and of the sector. KEEP types describe a project with imagery still ahead (it will be sold or leased from renders); DROP types are too-late, wrong-actor, or not a project — they get archived downstream, so do not soften a DROP into a KEEP.
+
+  KEEP:
+    • new_development — a new project revealed / unveiled / announced / launched
+    • approval_filing — a SITE-SPECIFIC rezoning, entitlement, planning application, or approval for a named project
+    • groundbreaking — construction starting on a named project
+    • sales_launch — a sales gallery opening, "now selling", or a leasing launch
+    • branded_partnership — a branded-residence or hotel-operator deal attached to a NEW development
+    • redesign — a major redesign or repositioning of an in-progress development
+
+  DROP:
+    • transaction — a resale, unit sale, portfolio trade, or land trade (a deal changing hands, not a project launching)
+    • financing — a loan, refinancing, recapitalization, or construction-financing story
+    • completion — a topping-off, completion, opening, or "now open" (the imagery window has passed)
+    • policy — a non-site-specific policy, regulation, or zoning-law change (a city-wide SEQR/zoning story, NOT a specific project's approval — that is approval_filing)
+    • government_program — a government or affordable-housing program announcement
+    • corporate_pr — a brokerage / operator / firm "expansion", "alliance", or hire with no specific project
+    • market_roundup — a ranking, "top deals", bulletin, or market report covering many deals
+    • infrastructure — an airport TERMINAL / runway / apron, rail, port, or transit project (NOTE: an airport LOUNGE or premium-terminal interior is NOT infrastructure — that is sector "aviation_hospitality", signal_type new_development/redesign)
+
+  other — use only when none of the above fits. Treated as KEEP downstream, so prefer a specific type when you can.
+
+━━━ PROJECT_NAME ━━━
+If the article names the development ("Magic City", "The Standard Residences Midtown", "One High Line"), return that proper name in project_name. Return null if there is no named project (a policy story, a market roundup, a firm-level PR item). Used to dedupe the same project arriving via two outlets — so be consistent (the project's name, not the headline).
+
 Regions: "New York" | "Miami" | "France" | "Europe" | "Other"
-Assign "Other" whenever the project is outside the four target regions — out-of-target discoveries are capped at watchlist downstream, so do not stretch a region label to fit.
-Sectors: "hospitality" | "luxury_residential" | "mixed_use" | "airports" | "office" | "transport" | "cultural" | "retail" | "other"
+Assign "Other" whenever the project is outside the four target regions — out-of-target discoveries are capped at watchlist downstream, so do not stretch a region label to fit. (The Middle East is NOT a target market — classify it "Other".)
+Sectors: "hospitality" | "aviation_hospitality" | "luxury_residential" | "mixed_use" | "airports" | "office" | "transport" | "cultural" | "retail" | "other"
+  • aviation_hospitality — airport LOUNGES, business/first-class lounges, premium-terminal interiors. oaki does these; treat them as in-scope hospitality, NOT as airport infrastructure.
+  • airports — terminal / runway / apron / general airport infrastructure. Off-scope (pair with signal_type "infrastructure").
+  • cultural — museums, galleries, civic / cultural landmarks (especially in Europe). In-scope.
 Opportunity types: "service" | "tender" | "trend"
 Client types: "architecture_firm" | "real_estate_developer" | "interior_designer" | "urban_planner"`
 
@@ -155,7 +192,9 @@ Return this exact JSON structure (replace descriptions with actual values):
   "city": "city name or empty string",
   "country": "country name or empty string",
   "region": "New York|Miami|France|Europe|Other",
-  "sector": "hospitality|luxury_residential|mixed_use|airports|office|transport|cultural|retail|other",
+  "sector": "hospitality|aviation_hospitality|luxury_residential|mixed_use|airports|office|transport|cultural|retail|other",
+  "signal_type": "new_development|approval_filing|groundbreaking|sales_launch|branded_partnership|redesign|transaction|financing|completion|policy|government_program|corporate_pr|market_roundup|infrastructure|other",
+  "project_name": "the development's proper name, or null",
   "project_type": "brief project type description",
   "investment_size": "formatted amount or null",
   "timeline": "timeline description or null",
@@ -201,6 +240,17 @@ const AnalysisSchema = z.object({
   country: z.string().catch(''),
   region: z.string().catch('Other'),
   sector: z.string().catch('other'),
+  // Event-type gate. Unknown/garbage degrades to 'other' (KEEP) so a malformed
+  // field can't silently archive a real launch — the DROP set is opt-in only.
+  signal_type: z
+    .enum([
+      'new_development', 'approval_filing', 'groundbreaking', 'sales_launch',
+      'branded_partnership', 'redesign', 'transaction', 'financing', 'completion',
+      'policy', 'government_program', 'corporate_pr', 'market_roundup',
+      'infrastructure', 'other',
+    ])
+    .catch('other'),
+  project_name: z.string().nullable().catch(null),
   project_type: z.string().catch(''),
   investment_size: z.string().nullable().catch(null),
   timeline: z.string().nullable().catch(null),
