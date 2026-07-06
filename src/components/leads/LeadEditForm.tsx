@@ -13,7 +13,7 @@ import type {
 
 const STAGES: PipelineStage[] = [
   'New Lead', 'Contacted', 'Replied', 'Discovery',
-  'Proposal Sent', 'Negotiation', 'Won', 'Lost', 'Nurture', 'Dormant',
+  'Proposal Sent', 'Negotiation', 'Won', 'Lost', 'Nurture', 'Dormant', 'Held',
 ]
 
 const TEMPERATURES: RelationshipTemperature[] = ['Hot', 'Warm', 'Cool', 'Cold']
@@ -34,6 +34,8 @@ export default function LeadEditForm({ lead }: Props) {
 
   const [form, setForm] = useState({
     pipeline_stage: lead.pipeline_stage,
+    held_reason: lead.held_reason ?? '',
+    held_until: lead.held_until?.slice(0, 10) ?? '',
     relationship_temperature: lead.relationship_temperature ?? '',
     linkedin_url: lead.linkedin_url ?? '',
     linkedin_connection_status: lead.linkedin_connection_status ?? '',
@@ -63,6 +65,10 @@ export default function LeadEditForm({ lead }: Props) {
     try {
       const payload: Record<string, unknown> = {
         pipeline_stage: form.pipeline_stage,
+        // Only send held metadata when the lead is actually Held — avoids
+        // clobbering the fields when moving a lead out of Held.
+        held_reason: form.pipeline_stage === 'Held' ? (form.held_reason || undefined) : undefined,
+        held_until: form.pipeline_stage === 'Held' ? (form.held_until || undefined) : undefined,
         relationship_temperature: form.relationship_temperature || undefined,
         next_action: form.next_action || undefined,
         next_followup_date: form.next_followup_date || undefined,
@@ -150,6 +156,30 @@ export default function LeadEditForm({ lead }: Props) {
                 </select>
               </div>
             </div>
+
+            {/* Held metadata — only when the lead is parked in Held. */}
+            {form.pipeline_stage === 'Held' && (
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 8 }}>
+                <div>
+                  <Label>Held reason *</Label>
+                  <input
+                    value={form.held_reason}
+                    onChange={(e) => set('held_reason', e.target.value)}
+                    placeholder="Why parked? (required)"
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <Label>Re-arm on</Label>
+                  <input
+                    type="date"
+                    value={form.held_until}
+                    onChange={(e) => set('held_until', e.target.value)}
+                    style={inputStyle}
+                  />
+                </div>
+              </div>
+            )}
 
             <div>
               <Label>LinkedIn URL</Label>

@@ -1,6 +1,7 @@
 import { type NextRequest } from 'next/server'
 import { getSupabaseAdmin, isSupabaseAdminConfigured } from '@/lib/supabase'
 import { generateLetter } from '@/lib/prompts/discoveries/generate-letter'
+import { markDiscoveryDrafted } from '@/lib/discoveries/work-status'
 import type { DiscoveryClientType } from '@/lib/types'
 
 export const maxDuration = 120
@@ -57,6 +58,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     client_type,
     content: letter,
   })
+  await markDiscoveryDrafted(id)
 
   return Response.json({ letter })
 }

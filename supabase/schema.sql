@@ -139,7 +139,29 @@ create table if not exists discoveries (
   beneficiary_segment        text,                          -- the segment that captures the resulting work
   outreach_angle             text,                          -- the hook framed TO the target firm
   opportunity_score          integer,                       -- opp-mode score (NULL for launch rows)
-  suggested_target_firms     jsonb,                         -- [{firm,why_fit,geography,in_crm,apollo_org_id}]
+  suggested_target_firms     jsonb,                         -- [{firm,why_fit,geography,in_crm,apollo_org_id,confidence}]
+
+  -- Capital events + entitlement grading (2026-07-06). capital_event KEEP rows
+  -- store the forward-intent quote; deployment_horizon maps to stage points in
+  -- icp.ts. Graded entitlement bands store which body granted what.
+  intent_evidence            text,
+  intent_source_url          text,
+  deployment_horizon         text,                          -- active_now | 1_2_years | 3_plus_years | unstated
+  entitlement_evidence       text,
+
+  -- Verified excavation (2026-07-06). verified_principal is the resolved
+  -- developer/designer-of-record (the card's headline prospect), written only
+  -- with independent evidence — suggested_target_firms are never promoted here
+  -- without their own source.
+  verified_principal         jsonb,                         -- {firm,role,evidence_url,evidence_quote,verified_at,verified_by}
+  excavation_status          text,                          -- unattempted | attempted_unresolved | resolved
+
+  -- Discovery work-tracking (2026-07-06). Orthogonal to `status`: records
+  -- whether a run has acted on the row so the next run doesn't re-chew it. The
+  -- default active board hides held / rejected / already_engaged.
+  work_status                text not null default 'unworked', -- unworked | drafted | held | rejected | already_engaged
+  work_reason                text,
+  worked_at                  timestamptz,
 
   status                     text not null default 'active',   -- 'active' | 'saved' | 'archived'
   raw_content                text,
@@ -162,6 +184,7 @@ create index if not exists idx_discoveries_signal_type on discoveries(signal_typ
 create index if not exists idx_discoveries_project_key on discoveries(project_key);
 create index if not exists idx_discoveries_engaged    on discoveries(already_engaged);
 create index if not exists idx_discoveries_kind       on discoveries(discovery_kind);
+create index if not exists idx_discoveries_work_status on discoveries(work_status);
 
 -- ============================================================================
 -- INGESTION_RUNS — one row per ingest cycle
@@ -182,7 +205,13 @@ create table if not exists ingestion_runs (
   failed_sources              text[],
   current_step                text,
   progress_percent            integer not null default 0,
-  status                      text not null default 'running' -- 'running' | 'done' | 'failed'
+  status                      text not null default 'running', -- 'running' | 'done' | 'failed'
+  -- Supply-health instrumentation (2026-07-06). `discovery_kind` records which
+  -- mode the run was; `drafts_staged` is patched in later by the working
+  -- session (drafts produced from this run's material). articles_new already
+  -- carries net-new discoveries per run.
+  discovery_kind              text,                            -- 'project_launch' | 'opportunity_signal'
+  drafts_staged               integer not null default 0
 );
 
 create index if not exists idx_ingestion_runs_started on ingestion_runs(started_at desc);
@@ -418,6 +447,22 @@ insert into sources (name, url, source_type, region, sector, active, sort_order)
   ('Le Moniteur',          'https://www.lemoniteur.fr/rss/actualites',                   'rss', 'france',   'general',      false, 200),
   ('Building Design',      'https://www.bdonline.co.uk/rss',                             'rss', 'europe',   'architecture', false, 200)
 on conflict (url) do update set active = excluded.active, sort_order = excluded.sort_order;
+
+-- ── Capital-event + hospitality feeds (2026-07-06, Workstream A) ─────────────
+-- Capital events fire earlier in the cycle than a launch — a fund raised to
+-- BUILD, a site/hotel acquired to REDEVELOP, a design-led operator doubling its
+-- pipeline. The analyzer classifies these `capital_event` (KEEP) only when it
+-- can quote forward development intent; loans/refis/stabilized trades stay DROP.
+-- Direct trade-press RSS (The Real Deal, Bisnow, PERE, Commercial Observer) is
+-- bot-blocked/paywalled (see the inactive rows above), so these are shaped
+-- Google-News queries, matching the rest of the source list.
+insert into sources (name, url, source_type, region, sector, active, sort_order) values
+  ('GNews Capital · Dev Funds',      'https://news.google.com/rss/search?q=(%22closes+fund%22+OR+%22capital+raise%22+OR+raises+OR+%22launches+fund%22+OR+%22new+fund%22)+(condominium+OR+residential+OR+%22branded+residences%22+OR+hotel+OR+resort+OR+development)+(develop+OR+%22to+build%22+OR+pipeline)+(%22New+York%22+OR+Miami+OR+%22South+Florida%22+OR+London+OR+Paris+OR+Europe)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'luxury_residential',    true, 140),
+  ('GNews Capital · Redev Acquisitions','https://news.google.com/rss/search?q=(acquires+OR+acquisition+OR+buys)+(%22development+site%22+OR+hotel+OR+%22for+redevelopment%22+OR+%22to+redevelop%22+OR+%22to+develop%22+OR+repositioning)+(%22New+York%22+OR+Miami+OR+%22South+Florida%22+OR+London+OR+Paris+OR+Europe)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'mixed_use',             true, 150),
+  ('GNews Hospitality Rollouts',     'https://news.google.com/rss/search?q=(hotel+OR+resort+OR+%22branded+residences%22)+(%22to+open%22+OR+%22new+hotel%22+OR+%22design+team%22+OR+%22breaks+ground%22+OR+unveils+OR+debuts)+(%22New+York%22+OR+Miami+OR+%22South+Florida%22+OR+London+OR+Paris+OR+Europe)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'hospitality',           true, 160)
+on conflict (url) do update set
+  name = excluded.name, region = excluded.region, sector = excluded.sector,
+  active = excluded.active, sort_order = excluded.sort_order;
 
 -- ── Opportunity-signal sources (discovery_kind='opportunity_signal') ─────────
 -- Demand-creating event feeds mapped to the firms who'd win the work. Google

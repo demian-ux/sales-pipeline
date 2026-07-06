@@ -1,6 +1,7 @@
 import { type NextRequest } from 'next/server'
 import { getSupabaseAdmin, isSupabaseAdminConfigured } from '@/lib/supabase'
 import { generateEmail } from '@/lib/prompts/discoveries/generate-email'
+import { markDiscoveryDrafted } from '@/lib/discoveries/work-status'
 import type { SequencePosition } from '@/lib/prompts/brand'
 import type { DiscoveryClientType } from '@/lib/types'
 
@@ -65,6 +66,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     client_type,
     content: email,
   })
+  await markDiscoveryDrafted(id)
 
   return Response.json({ email })
 }

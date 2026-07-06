@@ -29,6 +29,8 @@ const LIST_COLUMNS =
   'icp_fit_score, fit_tier, fit_reason, partner_radar, combined_score, ' +
   'discovery_kind, source_org, signal_event, beneficiary_segment, outreach_angle, ' +
   'opportunity_score, suggested_target_firms, ' +
+  'verified_principal, excavation_status, deployment_horizon, intent_evidence, entitlement_evidence, ' +
+  'work_status, work_reason, worked_at, ' +
   'status, promoted_to_opportunity_id'
 
 export async function GET(request: NextRequest) {
@@ -62,6 +64,12 @@ export async function GET(request: NextRequest) {
   const signalType = sp.get('signal_type')       ?? ''
   // 'engaged' = only worked firms | 'new' = only firms not yet in the CRM | '' = all
   const engagement = sp.get('engagement')        ?? ''
+  // Work-tracking filter (2026-07-06). Default board hides worked material
+  // (held/rejected/already_engaged) so runs judge only what's new. Pass an
+  // explicit work_status to isolate one bucket (e.g. 'already_engaged' for the
+  // existing-account view), or show_worked=true to reveal everything.
+  const workStatus = sp.get('work_status')       ?? ''
+  const showWorked = sp.get('show_worked') === 'true'
   // Hide disqualified is ON unless explicitly disabled, but never overrides an
   // explicit fit_tier filter (so you can still inspect disqualified rows).
   const hideDisq   = sp.get('hide_disqualified') !== 'false'
@@ -104,6 +112,13 @@ export async function GET(request: NextRequest) {
   if (signalType)    query = query.eq('signal_type', signalType)
   if (engagement === 'engaged') query = query.eq('already_engaged', true)
   if (engagement === 'new')     query = query.eq('already_engaged', false)
+  // Work-status: an explicit value isolates that bucket; otherwise hide worked
+  // material unless show_worked / engagement=engaged asked to reveal it.
+  if (workStatus && workStatus !== 'all') {
+    query = query.eq('work_status', workStatus)
+  } else if (!showWorked && workStatus !== 'all' && engagement !== 'engaged') {
+    query = query.or('work_status.is.null,work_status.not.in.(held,rejected,already_engaged)')
+  }
   // Drop disqualified rows but KEEP legacy null-tier rows (going-forward only).
   if (hideDisq && !fitTier) query = query.or('fit_tier.is.null,fit_tier.neq.disqualified')
   if (search)        query = query.or(`title.ilike.%${search}%,brief_summary.ilike.%${search}%`)
@@ -114,13 +129,13 @@ export async function GET(request: NextRequest) {
 
   if (error) {
     console.error('[discoveries] error:', error.message)
-    // 42703 = undefined column. Means the Opportunity Signals migration
-    // (2026-06-25_opportunity_signals.sql) hasn't been applied yet — the
-    // LIST_COLUMNS / discovery_kind filter reference columns that don't exist.
-    // Surface an actionable message instead of a generic 500.
+    // 42703 = undefined column. A migration hasn't been applied yet — the
+    // LIST_COLUMNS / filters reference columns that don't exist (Opportunity
+    // Signals 2026-06-25, or the cold-supply fixes 2026-07-06: work_status,
+    // verified_principal, …). Surface an actionable message, not a generic 500.
     if (error.code === '42703') {
       return Response.json(
-        { error: 'Database is missing Opportunity Signals columns — apply supabase/migrations/2026-06-25_opportunity_signals.sql (or re-run supabase/schema.sql).', code: '42703' },
+        { error: 'Database is missing columns from a pending migration — apply the latest file in supabase/migrations/ (2026-07-06_cold_supply_fixes.sql, and 2026-06-25_opportunity_signals.sql if not yet run), or re-run supabase/schema.sql.', code: '42703' },
         { status: 503 },
       )
     }

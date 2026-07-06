@@ -32,6 +32,11 @@ export type PipelineStage =
   | 'Lost'
   | 'Nurture'
   | 'Dormant'
+  // Deliberately parked: worked and set aside (e.g. a discovery re-derived to a
+  // lead but held before drafting). First-class so the dedup sweep sees it as
+  // "worked, don't re-chew" rather than a fresh New Lead. `held_reason` is
+  // required when a lead moves here; `held_until` optionally re-arms it.
+  | 'Held'
 
 // Canonical display order for pipeline stages. Used by the Relationships
 // page (group-by stage), the Campaigns page (stage breakdown), and anywhere
@@ -45,6 +50,7 @@ export const STAGE_ORDER: PipelineStage[] = [
   'Negotiation',
   'Won',
   'Nurture',
+  'Held',
   'Dormant',
   'Lost',
 ]
@@ -113,6 +119,12 @@ export interface Lead {
   preferred_communication_style?: string
   owner?: string
   notes?: string
+  // Held-stage metadata (2026-07-06). Populated when pipeline_stage === 'Held'.
+  // held_until is a nullable ISO date for hooks that re-arm (e.g. "re-enter on
+  // sales launch"). Stored in the Leads sheet — requires the two columns to
+  // exist there; see LEAD_COLUMNS and /settings/sheets.
+  held_reason?: string
+  held_until?: string
   created_at: string
   updated_at: string
 }
@@ -366,6 +378,24 @@ export interface LeadWithCompany extends Lead {
 
 export type DiscoverySignalTier = 'strong_opportunity' | 'watchlist' | 'archive'
 export type DiscoveryStatus = 'active' | 'saved' | 'archived'
+
+// Work-tracking, orthogonal to DiscoveryStatus (2026-07-06). `status` is the
+// board bucket (active/saved/archived); `work_status` records whether a run has
+// already acted on the row so the next run judges only what's new instead of
+// re-chewing consumed material. The default active board hides held / rejected
+// / already_engaged. `already_engaged` is set at ingestion when a named actor
+// is already a CRM Company; the rest are set as runs work the row.
+export type WorkStatus =
+  | 'unworked'
+  | 'drafted'
+  | 'held'
+  | 'rejected'
+  | 'already_engaged'
+
+// The states hidden from the default new-signal board — worked material that
+// shouldn't be re-judged. Revealed via an explicit filter.
+export const WORKED_HIDDEN_STATUSES: readonly WorkStatus[] = ['held', 'rejected', 'already_engaged']
+
 export type DiscoveryType = 'service' | 'tender' | 'trend'
 
 export type DiscoverySector =
@@ -393,6 +423,7 @@ export type SignalType =
   | 'sales_launch'          // sales gallery / "now selling" / leasing launch
   | 'branded_partnership'   // branded-residence or hospitality-operator deal on a NEW development
   | 'redesign'              // major redesign / repositioning of an in-progress development
+  | 'capital_event'         // fund close / dev-intent acquisition / portfolio expansion / new dev arm — fires EARLIER than a launch, before an incumbent visualizer exists. KEEP only when forward development intent is stated (see intent_evidence); otherwise the analyzer emits transaction/financing.
   // DROP — no future imagery window, wrong actor, or not a project
   | 'transaction'           // resale / unit sale / portfolio or land trade
   | 'financing'             // loan / refi / recap / construction financing
@@ -419,12 +450,23 @@ export type Tenure = 'for_sale' | 'rental' | 'owner_occupied' | 'mixed' | 'unkno
 
 export type ProjectStage =
   | 'pre_entitlement'
-  | 'entitled_no_design'
+  // Graded entitlement band (2026-07-06). Splits the old catch-all "approved/
+  // filing" into three so a pre-application filing (years from product — the
+  // Grupo T&C trap) can't score like a granted rezoning (the sweet spot).
+  | 'pre_application'      // pre-app / letter of intent / community-board first contact — scores like pre_entitlement
+  | 'application_pending'  // formal application submitted, not yet approved
+  | 'entitled'             // rezoning / site-plan / variance GRANTED — post-entitlement, pre-marketing sweet spot
+  | 'entitled_no_design'   // legacy value (pre-2026-07-06 rows); kept so old data type-checks
   | 'design_in_hand'
   | 'sales_launch'
   | 'under_construction'
   | 'built_stabilized'
   | 'financing_only'
+
+// How far out a capital_event's stated development intent deploys. Maps to
+// project_stage-equivalent points in icp.ts since a fund/acquisition has no
+// literal construction stage yet. (2026-07-06)
+export type DeploymentHorizon = 'active_now' | '1_2_years' | '3_plus_years' | 'unstated'
 
 export type SectorFit = 'high' | 'medium' | 'low'
 
@@ -471,7 +513,33 @@ export interface SuggestedTargetFirm {
   // analyzer surfaced for an open brief.
   already_named?: boolean
   apollo_org_id?: string | null
+  // Provenance (2026-07-06). Suggestions are hints by default and must never be
+  // rendered as a card's primary prospect. Excavation promotes a firm to the
+  // first-class `verified_principal` with independent evidence — it never
+  // rewrites this field to 'verified'.
+  confidence?: 'unverified_hint'
 }
+
+// The actual developer/designer-of-record for a signal, resolved by excavation
+// (2026-07-06). Empty until something fills it. Written ONLY with a quotable
+// independent source — a suggested_target_firm is never promoted here without
+// its own evidence. This, not the hints, is a card's headline prospect.
+export type PrincipalRole = 'developer' | 'designer' | 'operator'
+
+export interface VerifiedPrincipal {
+  firm: string
+  role: PrincipalRole
+  evidence_url?: string | null
+  evidence_quote?: string | null
+  verified_at?: string | null
+  verified_by: 'pipeline' | 'manual'
+}
+
+// Excavation lifecycle for a discovery's verified_principal.
+//   unattempted          — no excavation run yet
+//   attempted_unresolved — excavation ran, found no quotable developer-of-record
+//   resolved             — verified_principal is populated
+export type ExcavationStatus = 'unattempted' | 'attempted_unresolved' | 'resolved'
 
 export interface DiscoveryScoreBreakdown {
   score_opportunity_clarity: number
@@ -545,6 +613,22 @@ export interface Discovery extends DiscoveryScoreBreakdown {
   outreach_angle?: string | null
   opportunity_score?: number | null
   suggested_target_firms?: SuggestedTargetFirm[] | null
+
+  // Capital events + entitlement grading (2026-07-06, Workstream A). All
+  // optional so legacy rows type-check.
+  intent_evidence?: string | null       // quote establishing forward development intent (capital_event)
+  intent_source_url?: string | null
+  deployment_horizon?: DeploymentHorizon | null
+  entitlement_evidence?: string | null  // which body, what was granted, source sentence (entitlement grades)
+
+  // Verified excavation (2026-07-06, Workstream B).
+  verified_principal?: VerifiedPrincipal | null
+  excavation_status?: ExcavationStatus | null
+
+  // Work-tracking (2026-07-06, Workstream C2).
+  work_status?: WorkStatus
+  work_reason?: string | null
+  worked_at?: string | null
 
   status: DiscoveryStatus
   raw_content?: string

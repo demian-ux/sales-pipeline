@@ -136,6 +136,19 @@ export async function runIngestion(
   console.log(`[ingest] Starting (${mode}) — ${sources.length} sources | max ${MAX_NEW_PER_RUN} candidates | max ${MAX_PER_SOURCE}/source`)
   await updateRunProgress(runId, progress, 'Starting research', 1)
 
+  // Supply-health instrumentation: stamp which mode this run is, once. Covers
+  // every run-creation path (manual + both cron branches) since they all funnel
+  // here. Tolerate 42703 (column not added until the 2026-07-06 migration runs).
+  {
+    const { error: kindErr } = await supabase
+      .from('ingestion_runs')
+      .update({ discovery_kind: mode })
+      .eq('id', runId)
+    if (kindErr && kindErr.code !== '42703') {
+      console.warn('[ingest] discovery_kind stamp warning:', kindErr.message)
+    }
+  }
+
   // Load the CRM company roster once for already_engaged cross-reference.
   // Tolerate a Sheets failure — cross-ref is additive, never a reason to fail
   // the whole run; the tag just stays false this run.
@@ -465,6 +478,7 @@ async function processArticle(article: RawArticleFromRSS, resolvedUrl: string, r
     tenure: analysis.tenure,
     has_for_sale_residential: analysis.has_for_sale_residential,
     project_stage: analysis.project_stage,
+    deployment_horizon: analysis.deployment_horizon,
     sector_fit: sectorFit,
     viz_buyer_role: analysis.viz_buyer_role,
     est_scale_vs_floor: analysis.est_scale_vs_floor,
@@ -520,11 +534,20 @@ async function processArticle(article: RawArticleFromRSS, resolvedUrl: string, r
     already_engaged:      !!engaged,
     engaged_company_id:   engaged?.company_id ?? null,
     engaged_company_name: engaged?.company_name ?? null,
+    // Work-tracking: a firm already in the CRM starts as already_engaged so it
+    // drops off the new-signal board into the existing-account view; everything
+    // else starts unworked. (2026-07-06)
+    work_status:          engaged ? 'already_engaged' : 'unworked',
 
     // ICP-fit layer (combined_score is DB-generated — never inserted)
     tenure:                   analysis.tenure,
     has_for_sale_residential: analysis.has_for_sale_residential,
     project_stage:            analysis.project_stage,
+    // Capital events + entitlement grading (2026-07-06)
+    entitlement_evidence:     analysis.entitlement_evidence,
+    deployment_horizon:       analysis.deployment_horizon,
+    intent_evidence:          analysis.intent_evidence,
+    intent_source_url:        analysis.intent_source_url,
     sector_fit:               sectorFit,
     viz_buyer_role:           analysis.viz_buyer_role,
     viz_buyer_entity:         analysis.viz_buyer_entity,
@@ -670,6 +693,9 @@ async function processOpportunitySignal(
     in_crm: roster.length > 0 && roster.some((c) => c.company_name && entityMatches(f.firm, c.company_name)),
     already_named: f.already_named,
     apollo_org_id: null,
+    // Suggestions are unverified hints — never a card's primary prospect. Only
+    // excavation (with independent evidence) fills verified_principal. (2026-07-06)
+    confidence: 'unverified_hint' as const,
   }))
 
   const { error } = await supabase.from('discoveries').insert({
@@ -710,6 +736,7 @@ async function processOpportunitySignal(
     already_engaged: !!engaged,
     engaged_company_id: engaged?.company_id ?? null,
     engaged_company_name: engaged?.company_name ?? null,
+    work_status: engaged ? 'already_engaged' : 'unworked',
     fit_tier: fitTier,
     fit_reason: opp.fit_reason,
 

@@ -27,6 +27,11 @@ export interface DiscoveryFilterState {
   tenure: string
   sector_fit: string
   hide_disqualified: boolean
+  // Work-tracking view (2026-07-06). 'active' (default) hides worked material
+  // (held / rejected / already_engaged) so the board shows only new signals;
+  // 'all' reveals it. The existing-account view is the Account = "Existing
+  // accounts" filter (engagement=engaged).
+  work_view: 'active' | 'all'
   // 'combined' = blended fit×deal (default) | 'score' = raw deal score | 'date'
   sort_by: 'combined' | 'score' | 'date'
 }
@@ -73,6 +78,7 @@ const SIGNAL_TYPE_OPTIONS = [
   { value: 'sales_launch',        label: 'Sales launch' },
   { value: 'branded_partnership', label: 'Branded partnership' },
   { value: 'redesign',            label: 'Redesign' },
+  { value: 'capital_event',       label: 'Capital event' },
   { value: 'transaction',         label: 'Transaction (off)' },
   { value: 'financing',           label: 'Financing (off)' },
   { value: 'completion',          label: 'Completion (off)' },
@@ -163,6 +169,7 @@ const DEFAULT_FILTERS: DiscoveryFilterState = {
   tenure: '',
   sector_fit: '',
   hide_disqualified: true,
+  work_view: 'active',
   sort_by: 'combined',
 }
 
@@ -176,7 +183,7 @@ export default function FilterPanel({ filters, onChange, mode }: FilterPanelProp
   const hasActive = Object.entries(filters).some(
     ([k, v]) =>
       k !== 'status' && k !== 'sort_by' && k !== 'hide_disqualified' &&
-      k !== 'discovery_kind' && v !== '' && v !== 0,
+      k !== 'discovery_kind' && k !== 'work_view' && v !== '' && v !== 0,
   )
 
   return (
@@ -244,6 +251,21 @@ export default function FilterPanel({ filters, onChange, mode }: FilterPanelProp
             style={{ accentColor: 'var(--accent)', cursor: 'pointer' }}
           />
           <span className="filter-label" style={{ marginBottom: 0 }}>Hide disqualified</span>
+        </label>
+      </div>
+      <div className="filter-section">
+        <label
+          className="row"
+          style={{ gap: 8, cursor: 'pointer', alignItems: 'center' }}
+          title="Reveal worked material — held, rejected, and already-engaged rows the board hides by default"
+        >
+          <input
+            type="checkbox"
+            checked={filters.work_view === 'all'}
+            onChange={(e) => set('work_view', e.target.checked ? 'all' : 'active')}
+            style={{ accentColor: 'var(--accent)', cursor: 'pointer' }}
+          />
+          <span className="filter-label" style={{ marginBottom: 0 }}>Show worked (held / rejected)</span>
         </label>
       </div>
       <div className="filter-section">

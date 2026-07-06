@@ -1,6 +1,7 @@
 import { type NextRequest } from 'next/server'
 import { getSupabaseAdmin, isSupabaseAdminConfigured } from '@/lib/supabase'
 import { generateLinkedIn } from '@/lib/prompts/discoveries/generate-linkedin'
+import { markDiscoveryDrafted } from '@/lib/discoveries/work-status'
 import type { SequencePosition } from '@/lib/prompts/brand'
 
 const SEQUENCE_POSITIONS: SequencePosition[] = ['first_touch', 'after_letter', 'after_letter_email']
@@ -50,6 +51,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     recipient_name,
     content: linkedin,
   })
+  await markDiscoveryDrafted(id)
 
   return Response.json({ linkedin })
 }

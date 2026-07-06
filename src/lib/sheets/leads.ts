@@ -24,6 +24,7 @@ export const LEAD_COLUMNS = [
   'relationship_score', 'opportunity_score', 'priority_score', 'relationship_temperature',
   'last_touch_date', 'last_meaningful_touch', 'next_followup_date', 'next_action',
   'known_pain_points', 'preferred_communication_style', 'owner', 'notes',
+  'held_reason', 'held_until',
   'created_at', 'updated_at',
 ] as const
 
@@ -70,29 +71,47 @@ export async function createLead(lead: Lead): Promise<void> {
   await appendRowByMap(TAB, leadToMap(lead), LEAD_COLUMNS)
 }
 
-// Returns false when the Lead row (or the tab's data) can't be found, so
+// `ok` is false when the Lead row (or the tab's data) can't be found, so
 // callers can surface a 404 instead of silently pretending the write landed.
-export async function updateLead(leadId: string, updates: Partial<Lead>): Promise<boolean> {
+// `unwritten` lists any requested field whose column is absent from the Leads
+// tab — those values could NOT be written (Sheets writes are positional by
+// header). Surfacing them keeps a missing column from becoming a silent drop
+// (the worst failure mode for automation): callers can return a warning and
+// point at /settings/sheets. Newer fields like held_reason/held_until land here
+// until the sheet's header row is synced.
+export interface UpdateLeadResult {
+  ok: boolean
+  unwritten: string[]
+}
+
+export async function updateLead(leadId: string, updates: Partial<Lead>): Promise<UpdateLeadResult> {
   if (USE_MOCK) {
     sessionCache.leadUpdates[leadId] = {
       ...(sessionCache.leadUpdates[leadId] ?? {}),
       ...updates,
       updated_at: new Date().toISOString(),
     }
-    return true
+    return { ok: true, unwritten: [] }
   }
   const rows = await readTab(TAB, { fresh: true })
-  if (rows.length < 2) return false
+  if (rows.length < 2) return { ok: false, unwritten: [] }
   const headers = rows[0]
   const rowIndex = rows.findIndex((r) => r[0] === leadId)
-  if (rowIndex < 1) return false
+  if (rowIndex < 1) return { ok: false, unwritten: [] }
   const updated = [...rows[rowIndex]]
+  const unwritten: string[] = []
   Object.entries(updates).forEach(([key, val]) => {
     const colIndex = headers.indexOf(key)
     if (colIndex >= 0) updated[colIndex] = String(val ?? '')
+    else unwritten.push(key)
   })
+  if (unwritten.length > 0) {
+    console.warn(
+      `[updateLead] Leads tab is missing columns; these values were NOT written: ${unwritten.join(', ')}. Add them to the sheet header row (see /settings/sheets).`,
+    )
+  }
   await updateRow(TAB, rowIndex + 1, updated)
-  return true
+  return { ok: true, unwritten }
 }
 
 // ─── Delete + bulk ─────────────────────────────────────────────────────────

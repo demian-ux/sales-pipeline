@@ -36,6 +36,7 @@ export const SIGNAL_TYPE_LABELS: Record<SignalType, string> = {
   sales_launch:        'Sales launch',
   branded_partnership: 'Branded partnership',
   redesign:            'Redesign',
+  capital_event:       'Capital event',
   transaction:         'Transaction',
   financing:           'Financing',
   completion:          'Completion',
@@ -55,4 +56,5 @@ export const KEEP_SIGNAL_TYPES: readonly SignalType[] = [
   'sales_launch',
   'branded_partnership',
   'redesign',
+  'capital_event',
 ]

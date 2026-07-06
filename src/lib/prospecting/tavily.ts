@@ -117,6 +117,18 @@ function buildCandidateQueries(article: ProspectingArticle, country: string): st
   ]
 }
 
+// Generic single-query web search — used by the on-demand principal-excavation
+// flow (lib/discoveries/excavate.ts) to resolve a signal's developer-of-record.
+// Errors propagate (TavilyError) so the caller can report "attempted" honestly
+// rather than silently returning nothing.
+export async function tavilySearch(query: string, country?: string): Promise<TavilyResult[]> {
+  if (!env.TAVILY_API_KEY) {
+    throw new TavilyError('TAVILY_API_KEY is not configured', 'TAVILY_API_KEY_MISSING')
+  }
+  const { results } = await searchTavily(query, country)
+  return results
+}
+
 async function searchTavily(query: string, country: string | undefined): Promise<TavilySearch> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), env.TAVILY_TIMEOUT_MS)

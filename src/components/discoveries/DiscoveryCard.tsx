@@ -16,7 +16,24 @@ interface DiscoveryCardProps {
   selected?: boolean
   onToggleSelect?: () => void
   onStatusChange?: (id: string, status: 'saved' | 'archived' | 'active') => Promise<void> | void
+  // On-demand excavation: resolve the actual developer/designer-of-record.
+  // Optional — the card renders without the Resolve affordance when absent.
+  onExcavate?: (id: string) => Promise<void> | void
   isNew?: boolean
+}
+
+// Work-status chips for worked material surfaced on the board (held/rejected/
+// drafted). already_engaged has its own "Existing account" badge below.
+const WORK_STATUS_META: Record<string, { label: string; fg: string; bg: string; border: string }> = {
+  held:     { label: '❙❙ Held',    fg: 'var(--accent)',     bg: 'var(--accent-dim)', border: 'rgba(200,169,110,0.3)' },
+  rejected: { label: '✕ Rejected', fg: 'var(--red)',        bg: 'transparent',       border: 'var(--border)' },
+  drafted:  { label: '✎ Drafted',  fg: 'var(--green)',      bg: 'var(--green-dim)',  border: 'rgba(76,175,134,0.3)' },
+}
+
+const PRINCIPAL_ROLE_LABELS: Record<string, string> = {
+  developer: 'Developer',
+  designer:  'Designer',
+  operator:  'Operator',
 }
 
 const SECTOR_LABELS: Record<DiscoverySector, string> = {
@@ -52,6 +69,7 @@ export default function DiscoveryCard({
   selected,
   onToggleSelect,
   onStatusChange,
+  onExcavate,
   isNew,
 }: DiscoveryCardProps) {
   const [busy, setBusy] = useState<string | null>(null)
@@ -59,6 +77,11 @@ export default function DiscoveryCard({
 
   const isOpp = d.discovery_kind === 'opportunity_signal'
   const targetFirms = d.suggested_target_firms ?? []
+  const principal = d.verified_principal ?? null
+  const workBadge = d.work_status ? WORK_STATUS_META[d.work_status] : undefined
+  // Excavation is worth offering only on cards without a resolved principal yet
+  // and above the weak floor (don't spend calls on disqualified/weak rows).
+  const worthExcavating = !principal && d.fit_tier !== 'disqualified' && d.fit_tier !== 'weak'
   // On-demand firm-search for opp cards: hands off to the same prospecting flow
   // as launch cards, but seeds it with the beneficiary segment so the search
   // targets "the firms who'd win this", not the source org.
@@ -80,6 +103,16 @@ export default function DiscoveryCard({
     setBusy(status)
     try {
       await onStatusChange(d.id, status)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function excavate() {
+    if (!onExcavate || busy) return
+    setBusy('excavate')
+    try {
+      await onExcavate(d.id)
     } finally {
       setBusy(null)
     }
@@ -158,6 +191,22 @@ export default function DiscoveryCard({
             ◆ {isOpp ? 'Firm in CRM' : 'Existing account'}
           </span>
         )}
+        {workBadge && (
+          <span
+            title={d.work_reason ? `${workBadge.label.replace(/^\S+\s/, '')}: ${d.work_reason}` : undefined}
+            style={{
+              fontSize: 10.5,
+              fontWeight: 600,
+              color: workBadge.fg,
+              background: workBadge.bg,
+              border: `1px solid ${workBadge.border}`,
+              borderRadius: 'var(--r-xs)',
+              padding: '2px 6px',
+            }}
+          >
+            {workBadge.label}
+          </span>
+        )}
         {isOpp ? (
           d.beneficiary_segment && <Pill tone="gold">{d.beneficiary_segment}</Pill>
         ) : (
@@ -200,6 +249,56 @@ export default function DiscoveryCard({
         </div>
       )}
 
+      {/* Verified principal — the card's HEADLINE prospect. A resolved
+          developer/designer-of-record (with evidence) if excavation found one;
+          otherwise a clear "unresolved" state. Suggested firms below are only
+          unverified hints and never the headline. */}
+      {principal ? (
+        <div className="col" style={{ gap: 3 }}>
+          <span className="micro" style={{ color: 'var(--ink-3)' }}>PRINCIPAL</span>
+          <div className="row" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-1)' }}>{principal.firm}</span>
+            <Pill>{PRINCIPAL_ROLE_LABELS[principal.role] ?? principal.role}</Pill>
+            <span
+              title={principal.evidence_quote ?? undefined}
+              style={{
+                fontSize: 10.5, fontWeight: 600, color: 'var(--green)',
+                background: 'var(--green-dim)', border: '1px solid rgba(76,175,134,0.3)',
+                borderRadius: 'var(--r-xs)', padding: '2px 6px',
+              }}
+            >
+              ✓ Verified{principal.verified_by === 'manual' ? ' (manual)' : ''}
+            </span>
+            {principal.evidence_url && (
+              <a className="ink-3" href={principal.evidence_url} target="_blank" rel="noopener noreferrer"
+                 style={{ fontSize: 11 }} title="Evidence source">
+                <Icon name="external" size={10} /> evidence
+              </a>
+            )}
+          </div>
+        </div>
+      ) : worthExcavating ? (
+        <div className="row" style={{ gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span
+            style={{
+              fontSize: 10.5, fontWeight: 600, color: 'var(--ink-3)',
+              background: 'var(--surface-2)', border: '1px dashed var(--border)',
+              borderRadius: 'var(--r-xs)', padding: '2px 6px',
+            }}
+          >
+            {d.excavation_status === 'attempted_unresolved'
+              ? '⃠ Principal unresolved'
+              : '⌕ Principal unresolved — needs excavation'}
+          </span>
+          {onExcavate && (
+            <button className="btn btn-xs btn-ghost" onClick={excavate} disabled={!!busy}
+                    title="Resolve the actual developer/designer-of-record from the article + web">
+              {busy === 'excavate' ? 'Resolving…' : 'Resolve principal'}
+            </button>
+          )}
+        </div>
+      ) : null}
+
       {isOpp ? (
         <>
           {/* The upstream event */}
@@ -221,7 +320,9 @@ export default function DiscoveryCard({
           {/* Suggested target firms (the prospects) with in-CRM badges */}
           {targetFirms.length > 0 && (
             <div className="col" style={{ gap: 4 }}>
-              <span className="micro" style={{ color: 'var(--ink-3)' }}>TARGET FIRMS</span>
+              <span className="micro" style={{ color: 'var(--ink-3)' }} title="Unverified hints — resolve the developer-of-record via Resolve principal before treating any as the prospect">
+                SUGGESTED FIRMS · UNVERIFIED HINTS
+              </span>
               <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
                 {targetFirms.slice(0, 5).map((f, i) => (
                   <span

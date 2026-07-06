@@ -22,6 +22,7 @@ import type {
   EstScaleVsFloor,
   FitTier,
   SignalType,
+  DeploymentHorizon,
   DiscoverySector,
 } from '@/lib/types'
 
@@ -52,6 +53,10 @@ export interface IcpFitInput {
   tenure: Tenure
   has_for_sale_residential: boolean
   project_stage: ProjectStage
+  // For capital_event rows, project_stage doesn't apply cleanly (a fund/
+  // acquisition has no construction stage yet). deployment_horizon maps to
+  // stage-equivalent points instead. Ignored for every other signal_type.
+  deployment_horizon?: DeploymentHorizon | null
   sector_fit: SectorFit
   viz_buyer_role: VizBuyerRole
   est_scale_vs_floor: EstScaleVsFloor
@@ -91,11 +96,24 @@ const SECTOR_POINTS: Record<SectorFit, number> = {
 const STAGE_POINTS: Record<ProjectStage, number> = {
   sales_launch: 20,
   design_in_hand: 16,
+  entitled: 14,             // rezoning / site-plan GRANTED — post-entitlement, pre-marketing sweet spot
   under_construction: 14,
-  entitled_no_design: 8,
+  entitled_no_design: 8,    // legacy band (pre-2026-07-06 rows)
+  application_pending: 6,   // formal application submitted, not yet approved
+  pre_application: 4,       // pre-app / LOI / community-board first contact — the Grupo T&C trap
   pre_entitlement: 4,
   built_stabilized: 2,
   financing_only: 0,
+}
+
+// capital_event → stage-equivalent points via the stated deployment horizon
+// (spec §A1). `unstated` also triggers a hard "cap at weak" below, so a fund
+// with no timeline can't rank workable on horizon alone.
+const DEPLOYMENT_STAGE_POINTS: Record<DeploymentHorizon, number> = {
+  active_now:     STAGE_POINTS.design_in_hand,   // 16 — deploying now, imagery imminent
+  '1_2_years':    STAGE_POINTS.entitled,         // 14 — entitled-equivalent
+  '3_plus_years': STAGE_POINTS.pre_entitlement,  // 4  — early
+  unstated:       STAGE_POINTS.pre_entitlement,  // 4  — + weak cap
 }
 
 const BUYER_POINTS: Record<VizBuyerRole, number> = {
@@ -124,6 +142,7 @@ export function computeIcpFit(input: IcpFitInput): IcpFitResult {
     tenure,
     has_for_sale_residential,
     project_stage,
+    deployment_horizon,
     sector_fit,
     viz_buyer_role,
     est_scale_vs_floor,
@@ -133,10 +152,17 @@ export function computeIcpFit(input: IcpFitInput): IcpFitResult {
 
   const isOffType = isDropSignalType(signal_type)
 
+  // A capital_event fires before a project stage exists, so its stage points
+  // come from the stated deployment horizon instead of project_stage.
+  const isCapitalEvent = signal_type === 'capital_event'
+  const stagePoints = isCapitalEvent
+    ? (DEPLOYMENT_STAGE_POINTS[deployment_horizon ?? 'unstated'] ?? DEPLOYMENT_STAGE_POINTS.unstated)
+    : (STAGE_POINTS[project_stage] ?? STAGE_POINTS.pre_entitlement)
+
   const rawScore =
     (TENURE_POINTS[tenure] ?? TENURE_POINTS.unknown) +
     (SECTOR_POINTS[sector_fit] ?? SECTOR_POINTS.low) +
-    (STAGE_POINTS[project_stage] ?? STAGE_POINTS.pre_entitlement) +
+    stagePoints +
     (BUYER_POINTS[viz_buyer_role] ?? BUYER_POINTS.none_identified) +
     (SCALE_POINTS[est_scale_vs_floor] ?? SCALE_POINTS.unknown) +
     (isInTargetGeo(region) ? GEO_POINTS : 0)
@@ -155,10 +181,20 @@ export function computeIcpFit(input: IcpFitInput): IcpFitResult {
     { hit: tenure === 'owner_occupied', reason: 'Owner-occupied — not a pre-sale viz buyer' },
     { hit: tenure === 'rental' && !has_for_sale_residential, reason: 'Rental, no for-sale component' },
     { hit: sector_fit === 'low' && noForSale, reason: 'Low-fit sector, no for-sale residential' },
-    { hit: project_stage === 'financing_only', reason: 'Financing-only — no product to market' },
+    // A capital_event is KEEP by construction (forward development intent was
+    // verified upstream), so the financing_only disqualifier does NOT apply to
+    // it — that guard exists to kill loans against existing buildings.
+    { hit: !isCapitalEvent && project_stage === 'financing_only', reason: 'Financing-only — no product to market' },
   ].find((d) => d.hit)
 
   let score = clamp(rawScore)
+
+  // capital_event with no stated deployment horizon: cap at weak. Earliness is
+  // oaki's window, but a fund with no timeline is too speculative to rank as a
+  // workable lead on horizon alone (spec §A1).
+  if (isCapitalEvent && (!deployment_horizon || deployment_horizon === 'unstated')) {
+    score = Math.min(score, WORKABLE_THRESHOLD - 1)
+  }
   let fit_tier: FitTier
   let fit_reason: string
 
@@ -241,13 +277,16 @@ function tenurePhrase(t: Tenure): string {
 
 function stagePhrase(s: ProjectStage): string {
   switch (s) {
-    case 'sales_launch':       return 'sales launch'
-    case 'design_in_hand':     return 'design in hand'
-    case 'under_construction': return 'under construction'
-    case 'entitled_no_design': return 'entitled, no design'
-    case 'pre_entitlement':    return 'pre-entitlement'
-    case 'built_stabilized':   return 'built / stabilized'
-    case 'financing_only':     return 'financing only'
+    case 'sales_launch':        return 'sales launch'
+    case 'design_in_hand':      return 'design in hand'
+    case 'entitled':            return 'entitled (granted)'
+    case 'under_construction':  return 'under construction'
+    case 'entitled_no_design':  return 'entitled, no design'
+    case 'application_pending': return 'application pending'
+    case 'pre_application':     return 'pre-application filing'
+    case 'pre_entitlement':     return 'pre-entitlement'
+    case 'built_stabilized':    return 'built / stabilized'
+    case 'financing_only':      return 'financing only'
   }
 }
 

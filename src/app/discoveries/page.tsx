@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import DiscoveryCard from '@/components/discoveries/DiscoveryCard'
+import SupplyHealthWidget from '@/components/discoveries/SupplyHealthWidget'
 import FilterPanel, { DEFAULT_FILTERS, type DiscoveryFilterState } from '@/components/discoveries/FilterPanel'
 import { Empty } from '@/components/ui/primitives'
 import { Icon, IconLoader } from '@/components/ui/icons'
@@ -63,6 +64,10 @@ export default function DiscoveriesPage() {
     if (f.date_from)        params.set('date_from', f.date_from)
     if (f.date_to)          params.set('date_to', f.date_to)
     if (f.status)           params.set('status', f.status)
+    // Work-view: default board hides worked material (held/rejected/
+    // already_engaged); 'all' reveals it. The existing-account view is the
+    // Account = "Existing accounts" filter (engagement=engaged).
+    if (f.work_view === 'all') params.set('show_worked', 'true')
     if (f.search)           params.set('search', f.search)
     if (f.signal_type)      params.set('signal_type', f.signal_type)
     if (f.engagement)       params.set('engagement', f.engagement)
@@ -112,6 +117,21 @@ export default function DiscoveriesPage() {
         body: JSON.stringify({ status }),
       })
       if (res.ok) fetchDiscoveries(filters)
+    },
+    [filters, fetchDiscoveries],
+  )
+
+  // On-demand excavation: resolve the real developer/designer-of-record for a
+  // signal. Refetches so the card flips to the verified-principal headline.
+  const excavate = useCallback(
+    async (id: string) => {
+      const res = await fetch(`/api/discoveries/${id}/excavate`, { method: 'POST' })
+      const data = await safeJson<{ excavation_status?: string; error?: string }>(res)
+      if (res.ok) {
+        fetchDiscoveries(filters)
+      } else {
+        setIngestMsg(`Excavation failed: ${data?.error ?? `(${res.status})`}`)
+      }
     },
     [filters, fetchDiscoveries],
   )
@@ -345,6 +365,8 @@ export default function DiscoveriesPage() {
         <FilterPanel filters={filters} onChange={setFilters} mode={mode} />
 
         <div style={{ flex: 1, minWidth: 0 }}>
+          <SupplyHealthWidget />
+
           {/* Result toolbar */}
           <div className="between" style={{ marginBottom: 16 }}>
             <span className="ink" style={{ fontSize: 13, fontWeight: 500 }}>
@@ -438,6 +460,7 @@ export default function DiscoveriesPage() {
                 selected={selected.has(d.id)}
                 onToggleSelect={() => toggleSelect(d.id)}
                 onStatusChange={setStatus}
+                onExcavate={excavate}
                 isNew={isNew(d)}
               />
             ))}

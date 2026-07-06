@@ -13,6 +13,7 @@ import type {
   SignalType,
   Tenure,
   ProjectStage,
+  DeploymentHorizon,
   VizBuyerRole,
   EstScaleVsFloor,
 } from '@/lib/types'
@@ -43,6 +44,16 @@ export interface DiscoveryAnalysis {
   tenure: Tenure
   has_for_sale_residential: boolean
   project_stage: ProjectStage
+  // Entitlement grading evidence — which body granted/received what, + the
+  // source sentence. Null when project_stage isn't an entitlement band.
+  entitlement_evidence: string | null
+  // Capital-event fields (only meaningful when signal_type = 'capital_event').
+  // deployment_horizon → stage-equivalent points in icp.ts; intent_evidence is
+  // the quote establishing forward development intent (a fund raised to BUILD,
+  // not a loan against an existing asset).
+  deployment_horizon: DeploymentHorizon | null
+  intent_evidence: string | null
+  intent_source_url: string | null
   viz_buyer_role: VizBuyerRole
   viz_buyer_entity: string | null
   incumbent_viz: string | null
@@ -123,9 +134,19 @@ this. Extract these signals literally from the article — do NOT infer the favo
   and lower confidence_score accordingly.** This is the single highest-signal field; getting
   it wrong (e.g. calling a rental tower for-sale) is the worst error you can make here.
 - has_for_sale_residential: true only if there is an explicit for-sale residential component.
-- project_stage: pre_entitlement (no approvals, years out) | entitled_no_design | design_in_hand |
-  sales_launch (actively marketing units) | under_construction | built_stabilized | financing_only
-  (a capital-markets / refinancing / leasing story with no product to market).
+- project_stage — grade the entitlement band HONESTLY; do not let vague "cleared an approval"
+  phrasing inflate a pre-application filing into a granted entitlement:
+    • pre_entitlement — no approvals, years out, nothing filed
+    • pre_application — a pre-application, letter of intent, or first community-board contact
+      has been FILED but nothing is approved. "cleared an early approval" with NO named
+      approving body = pre_application (this is the trap: it reads advanced but is years from product).
+    • application_pending — a formal application/rezoning has been SUBMITTED, not yet approved
+    • entitled — a rezoning / site-plan / variance has been GRANTED by a named body (the sweet spot)
+    • design_in_hand | sales_launch (actively marketing units) | under_construction | built_stabilized
+    • financing_only — a capital-markets / refinancing / leasing story with no product to market
+- entitlement_evidence: when project_stage is pre_application / application_pending / entitled, state
+  WHICH approval body, WHAT was granted or filed, and the SOURCE SENTENCE. null otherwise. If you can
+  name no approving body, the stage is pre_application, not entitled.
 - viz_buyer_entity + viz_buyer_role: name the entity that would actually COMMISSION sales/marketing
   visualization, and classify it. This is usually NOT the lender, fund, sponsor, or capital-markets
   actor named in the headline — it is the DEVELOPER's marketing/development lead (developer_marketing)
@@ -137,6 +158,13 @@ this. Extract these signals literally from the article — do NOT infer the favo
 - est_scale_vs_floor: is the project large enough to support a real viz commission?
   above (100+ units, branded residences, GDV $100M+, flagship) | near (mid-size) |
   below (boutique / <20 units / small) | unknown.
+- deployment_horizon (capital_event ONLY; null otherwise): how soon the stated intent turns into
+  buildable product — active_now (deploying now / this year / "openings this summer") |
+  1_2_years | 3_plus_years | unstated (intent stated but no timeline).
+- intent_evidence + intent_source_url (capital_event ONLY; null otherwise): the exact QUOTE that
+  establishes forward development intent (e.g. "the $400M fund will develop luxury condominiums"),
+  and the source URL. If you cannot quote forward intent, the event is transaction/financing, not
+  capital_event.
 
 ━━━ SIGNAL_TYPE — the event behind the article ━━━
 
@@ -149,6 +177,16 @@ Classify what KIND of event this is. This is independent of the signal_tier and 
     • sales_launch — a sales gallery opening, "now selling", or a leasing launch
     • branded_partnership — a branded-residence or hotel-operator deal attached to a NEW development
     • redesign — a major redesign or repositioning of an in-progress development
+    • capital_event — a capital move that will CREATE future development: a fund close / capital raise
+      earmarked for a named development type ("closes $400M fund for luxury condo development"), an
+      acquisition of a site or hotel WITH stated repositioning/development intent, a design-led
+      developer/operator portfolio-expansion ("X doubles portfolio, N openings, pipeline to 2028"), or
+      a new development arm / platform launch. Capital events fire EARLIER than a launch, before an
+      incumbent visualizer exists — that earliness is the point.
+      ► DISCRIMINATOR: capital_event requires explicit FORWARD DEVELOPMENT INTENT. A loan/refi against
+        an EXISTING building = financing (DROP). A stabilized-asset trade = transaction (DROP). A fund
+        raised to BUILD, or an acquisition to REDEVELOP = capital_event (KEEP). If you cannot find a
+        stated intent-to-build/develop, classify transaction or financing — do NOT default to capital_event.
 
   DROP:
     • transaction — a resale, unit sale, portfolio trade, or land trade (a deal changing hands, not a project launching)
@@ -193,7 +231,7 @@ Return this exact JSON structure (replace descriptions with actual values):
   "country": "country name or empty string",
   "region": "New York|Miami|France|Europe|Other",
   "sector": "hospitality|aviation_hospitality|luxury_residential|mixed_use|airports|office|transport|cultural|retail|other",
-  "signal_type": "new_development|approval_filing|groundbreaking|sales_launch|branded_partnership|redesign|transaction|financing|completion|policy|government_program|corporate_pr|market_roundup|infrastructure|other",
+  "signal_type": "new_development|approval_filing|groundbreaking|sales_launch|branded_partnership|redesign|capital_event|transaction|financing|completion|policy|government_program|corporate_pr|market_roundup|infrastructure|other",
   "project_name": "the development's proper name, or null",
   "project_type": "brief project type description",
   "investment_size": "formatted amount or null",
@@ -204,7 +242,11 @@ Return this exact JSON structure (replace descriptions with actual values):
   "government_body": "government body name or null",
   "tenure": "for_sale|rental|owner_occupied|mixed|unknown — use unknown if the article does not say",
   "has_for_sale_residential": true,
-  "project_stage": "pre_entitlement|entitled_no_design|design_in_hand|sales_launch|under_construction|built_stabilized|financing_only",
+  "project_stage": "pre_entitlement|pre_application|application_pending|entitled|design_in_hand|sales_launch|under_construction|built_stabilized|financing_only",
+  "entitlement_evidence": "which body granted/received what + source sentence, or null",
+  "deployment_horizon": "active_now|1_2_years|3_plus_years|unstated — capital_event only, else null",
+  "intent_evidence": "quote establishing forward development intent — capital_event only, else null",
+  "intent_source_url": "source URL for the intent quote — capital_event only, else null",
   "viz_buyer_entity": "the developer marketing/dev lead or principal who would commission viz, or null — NOT the lender/fund",
   "viz_buyer_role": "developer_marketing|developer_principal|architect|broker|none_identified",
   "incumbent_viz": "rendering/CGI vendor already credited on this project, or null",
@@ -245,7 +287,7 @@ const AnalysisSchema = z.object({
   signal_type: z
     .enum([
       'new_development', 'approval_filing', 'groundbreaking', 'sales_launch',
-      'branded_partnership', 'redesign', 'transaction', 'financing', 'completion',
+      'branded_partnership', 'redesign', 'capital_event', 'transaction', 'financing', 'completion',
       'policy', 'government_program', 'corporate_pr', 'market_roundup',
       'infrastructure', 'other',
     ])
@@ -263,8 +305,12 @@ const AnalysisSchema = z.object({
   tenure: z.enum(['for_sale', 'rental', 'owner_occupied', 'mixed', 'unknown']).catch('unknown'),
   has_for_sale_residential: z.boolean().catch(false),
   project_stage: z
-    .enum(['pre_entitlement', 'entitled_no_design', 'design_in_hand', 'sales_launch', 'under_construction', 'built_stabilized', 'financing_only'])
+    .enum(['pre_entitlement', 'pre_application', 'application_pending', 'entitled', 'entitled_no_design', 'design_in_hand', 'sales_launch', 'under_construction', 'built_stabilized', 'financing_only'])
     .catch('pre_entitlement'),
+  entitlement_evidence: z.string().nullable().catch(null),
+  deployment_horizon: z.enum(['active_now', '1_2_years', '3_plus_years', 'unstated']).nullable().catch(null),
+  intent_evidence: z.string().nullable().catch(null),
+  intent_source_url: z.string().nullable().catch(null),
   viz_buyer_entity: z.string().nullable().catch(null),
   viz_buyer_role: z
     .enum(['developer_marketing', 'developer_principal', 'architect', 'broker', 'none_identified'])

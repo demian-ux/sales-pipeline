@@ -11,7 +11,7 @@ import {
   deleteLead,
 } from '@/lib/sheets'
 import type { Lead } from '@/lib/types'
-import { cleanName } from '@/lib/vocab'
+import { cleanName, PIPELINE_STAGES, LEAD_STATUSES } from '@/lib/vocab'
 
 export async function GET(
   _req: Request,
@@ -36,9 +36,6 @@ export async function GET(
     return NextResponse.json({ error: 'Failed to fetch lead' }, { status: 500 })
   }
 }
-
-const PIPELINE_STAGES = ['New Lead', 'Contacted', 'Replied', 'Discovery', 'Proposal Sent', 'Negotiation', 'Won', 'Lost', 'Nurture', 'Dormant'] as const
-const LEAD_STATUSES = ['Active', 'Inactive', 'Archived'] as const
 
 const score = z.coerce.number().min(1, 'Scores must be between 1 and 10').max(10, 'Scores must be between 1 and 10').optional()
 
@@ -67,6 +64,8 @@ const PatchBody = z.object({
   next_followup_date: z.string().optional(),
   known_pain_points: z.string().optional(),
   notes: z.string().optional(),
+  held_reason: z.string().optional(),
+  held_until: z.string().optional(),
   linkedin_url: z.string().optional(),
   linkedin_connection_status: z.string().optional(),
   linkedin_dm_status: z.string().optional(),
@@ -110,6 +109,19 @@ export async function PATCH(
       return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Invalid body' }, { status: 400 })
     }
 
+    // Moving a lead to Held requires a reason — either supplied now or already
+    // on the lead. Enforced with an honest 400 so a held-without-reason write
+    // can't slip through as a silent success.
+    if (parsed.data.pipeline_stage === 'Held') {
+      const reason = parsed.data.held_reason?.trim() || lead.held_reason?.trim()
+      if (!reason) {
+        return NextResponse.json(
+          { error: 'held_reason is required when moving a lead to the Held stage' },
+          { status: 400 },
+        )
+      }
+    }
+
     const updates = Object.fromEntries(
       Object.entries(parsed.data).filter(([, val]) => val !== undefined)
     ) as Partial<Lead>
@@ -129,11 +141,23 @@ export async function PATCH(
     }
     updates.updated_at = new Date().toISOString()
 
-    const ok = await updateLead(id, updates)
+    const { ok, unwritten } = await updateLead(id, updates)
     if (!ok) {
       return NextResponse.json({ error: 'Lead not found in sheet' }, { status: 404 })
     }
     const updated = await getLeadById(id)
+    // Never a silent drop: if a requested field's column is missing from the
+    // Leads tab (e.g. held_reason/held_until before the sheet is synced), the
+    // write for that field did NOT land — say so explicitly.
+    if (unwritten.length > 0) {
+      return NextResponse.json({
+        lead: updated,
+        warnings: [
+          `These fields were not saved because the Leads sheet has no matching column: ${unwritten.join(', ')}. Add them to the header row (see /settings/sheets), then retry.`,
+        ],
+        unwritten_fields: unwritten,
+      })
+    }
     return NextResponse.json({ lead: updated })
   } catch (err) {
     console.error('PATCH /api/leads/[id] error:', err)

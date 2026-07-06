@@ -5,16 +5,14 @@ import { getLeads, getCompanies, getOpportunities, getAIInsights, getInteraction
 import type {
   Lead,
   LeadWithCompany,
-  PipelineStage,
   LeadStatus,
   RelationshipTemperature,
   LinkedInConnectionStatus,
   LinkedInDMStatus,
   LinkedInWarmth,
 } from '@/lib/types'
-import { cleanName } from '@/lib/vocab'
+import { cleanName, PIPELINE_STAGES } from '@/lib/vocab'
 
-const PIPELINE_STAGES = ['New Lead', 'Contacted', 'Replied', 'Discovery', 'Proposal Sent', 'Negotiation', 'Won', 'Lost', 'Nurture', 'Dormant'] as const satisfies readonly PipelineStage[]
 const LEAD_STATUSES = ['Active', 'Inactive', 'Archived'] as const satisfies readonly LeadStatus[]
 const TEMPERATURES = ['Hot', 'Warm', 'Cool', 'Cold'] as const satisfies readonly RelationshipTemperature[]
 const LINKEDIN_CONNECTION_STATUSES = ['Not Connected', 'Connection Ready', 'Connection Sent', 'Connected', 'Unknown'] as const satisfies readonly LinkedInConnectionStatus[]
@@ -56,10 +54,18 @@ const CreateLeadBody = z
     preferred_communication_style: z.string().optional(),
     owner: z.string().optional(),
     notes: z.string().optional(),
+    held_reason: z.string().optional(),
+    held_until: z.string().optional(),
   })
   .refine(
     (b) => !!b.full_name?.trim() || (!!b.first_name?.trim() && !!b.last_name?.trim()),
     { message: 'full_name (or first_name + last_name) is required' },
+  )
+  // A lead created directly in Held (e.g. a discovery parked before drafting so
+  // the dedup sweep sees it as worked) must carry a reason.
+  .refine(
+    (b) => b.pipeline_stage !== 'Held' || !!b.held_reason?.trim(),
+    { message: 'held_reason is required when creating a lead in the Held stage' },
   )
 
 // GET /api/leads?stage=&temperature=&company=&q=&limit=&offset=
@@ -208,6 +214,8 @@ export async function POST(req: Request) {
       preferred_communication_style: body.preferred_communication_style || undefined,
       owner: body.owner || undefined,
       notes: body.notes || undefined,
+      held_reason: body.held_reason || undefined,
+      held_until: body.held_until || undefined,
       created_at: now,
       updated_at: now,
     }
