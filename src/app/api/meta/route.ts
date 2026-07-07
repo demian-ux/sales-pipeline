@@ -11,6 +11,8 @@ import {
   INTERACTION_TYPE_TO_CHANNEL,
   DRAFT_CHANNELS,
   DRAFT_STATUSES,
+  WORK_STATUSES,
+  DISCOVERY_BOARD_STATUSES,
 } from '@/lib/vocab'
 
 // GET /api/meta — field vocabularies so API clients don't guess valid values.
@@ -27,5 +29,7 @@ export async function GET() {
     interaction_type_aliases: INTERACTION_TYPE_TO_CHANNEL,
     draft_channel: DRAFT_CHANNELS,
     draft_status: DRAFT_STATUSES,
+    discovery_work_status: WORK_STATUSES,
+    discovery_status: DISCOVERY_BOARD_STATUSES,
   })
 }

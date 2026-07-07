@@ -73,6 +73,28 @@ export function matchEntitiesToCompanies(
   return null
 }
 
+// Combined engaged-firm roster: every distinct firm name the CRM knows, from
+// both Companies AND Leads (a lead's `company_name` is often a firm that has no
+// standalone Company row yet — e.g. PMG, Brodsky). Deduped by normalized name so
+// a firm appearing as both a Company and several leads counts once. Used by the
+// batch cross-ref backfill so already-engaged discoveries drop off the
+// new-signal board.
+export async function loadEngagedRoster(): Promise<Pick<Company, 'company_id' | 'company_name'>[]> {
+  const [companies, leads] = await Promise.all([getCompanies(), getLeads()])
+  const seen = new Set<string>()
+  const roster: Pick<Company, 'company_id' | 'company_name'>[] = []
+  const add = (company_id: string, company_name: string) => {
+    if (!company_name) return
+    const key = normalizeEntity(company_name)
+    if (!key || seen.has(key)) return
+    seen.add(key)
+    roster.push({ company_id, company_name })
+  }
+  for (const c of companies) add(c.company_id, c.company_name)
+  for (const l of leads) add(l.company_id ?? '', l.company_name)
+  return roster
+}
+
 export async function matchEntitiesToRoster(entities: string[]): Promise<RosterMatch[]> {
   if (entities.length === 0) return []
   const [companies, leads] = await Promise.all([getCompanies(), getLeads()])

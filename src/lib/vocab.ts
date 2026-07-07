@@ -10,6 +10,7 @@ import type {
   LinkedInWarmth,
   InteractionChannel,
   InteractionDirection,
+  WorkStatus,
 } from './types'
 
 export const PIPELINE_STAGES = ['New Lead', 'Contacted', 'Replied', 'Discovery', 'Proposal Sent', 'Negotiation', 'Won', 'Lost', 'Nurture', 'Dormant', 'Held'] as const satisfies readonly PipelineStage[]
@@ -32,6 +33,13 @@ export const INTERACTION_TYPE_TO_CHANNEL: Record<string, InteractionChannel> = {
 
 export const DRAFT_CHANNELS = ['letter', 'email', 'linkedin_dm'] as const
 export const DRAFT_STATUSES = ['draft', 'approved', 'sent'] as const
+
+// Discovery work-tracking (2026-07-06). `work_status` is the "did a run act on
+// this row" signal; `discovery_status` is the board bucket. Published via
+// /api/meta so runs can validate a value before PATCHing (a silent enum drift
+// is the worst failure mode for the write-back automation).
+export const WORK_STATUSES = ['unworked', 'drafted', 'held', 'rejected', 'already_engaged'] as const satisfies readonly WorkStatus[]
+export const DISCOVERY_BOARD_STATUSES = ['active', 'saved', 'archived'] as const
 
 // Collapse runs of whitespace and trim — names arrive from CSV exports with
 // double spaces ("Andrew  Delgado") and stray newlines.

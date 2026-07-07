@@ -3,16 +3,10 @@
 
 import { type NextRequest } from 'next/server'
 import { getSupabaseAdmin, isSupabaseAdminConfigured } from '@/lib/supabase'
-import type { WorkStatus } from '@/lib/types'
+import { WORK_STATUSES, DISCOVERY_BOARD_STATUSES } from '@/lib/vocab'
 
-const ALLOWED_STATUS = ['active', 'saved', 'archived'] as const
-const ALLOWED_WORK_STATUS: readonly WorkStatus[] = [
-  'unworked',
-  'drafted',
-  'held',
-  'rejected',
-  'already_engaged',
-]
+const ALLOWED_STATUS = DISCOVERY_BOARD_STATUSES
+const ALLOWED_WORK_STATUS = WORK_STATUSES
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   if (!isSupabaseAdminConfigured()) {
