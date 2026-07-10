@@ -37,6 +37,7 @@ const NAV: NavGroup[] = [
     group: 'Intelligence',
     items: [
       { href: '/discoveries', label: 'Discoveries' },
+      { href: '/firm-pool', label: 'Firm Pool' },
       { href: '/research', label: 'Research' },
     ],
   },

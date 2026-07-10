@@ -16,6 +16,8 @@ import {
   WORK_CATEGORIES,
   GEOS,
   BRIEFS_STATUSES,
+  POOL_STATUSES,
+  REPLY_STATUSES,
 } from '@/lib/vocab'
 
 // GET /api/meta — field vocabularies so API clients don't guess valid values.
@@ -44,5 +46,9 @@ export async function GET() {
     upstream_work_category: WORK_CATEGORIES,
     upstream_geo: GEOS,
     upstream_briefs_status: BRIEFS_STATUSES,
+    // Firm-pool + value-outreach vocabularies (2026-07-10). firm categories
+    // reuse upstream_work_category so the value-outreach match is exact.
+    firm_pool_status: POOL_STATUSES,
+    value_touch_reply_status: REPLY_STATUSES,
   })
 }

@@ -573,3 +573,64 @@ create table if not exists lead_drafts (
 create index if not exists idx_lead_drafts_lead on lead_drafts(lead_id);
 
 alter table lead_drafts enable row level security;
+
+-- ============================================================================
+-- FIRM_POOL / FIRM_POOL_CONTACTS / VALUE_TOUCHES — value-lane state (2026-07-10).
+-- The population + outreach ledger for oaki-prospecting v6 Lane 1b. Distinct
+-- from Sheets companies/leads but linked (linked_company_id). `categories` uses
+-- the same WorkCategory tokens as a discovery's work_categories so the value-
+-- outreach match (category ∩ geo) is exact. The pilot seed lives in
+-- migrations/2026-07-10_firm_pool.sql. See project_oaki_opportunity_signals.
+-- ============================================================================
+create table if not exists firm_pool (
+  firm_id            uuid primary key default uuid_generate_v4(),
+  name               text not null unique,
+  domain             text,
+  apollo_org_id      text,
+  website            text,
+  categories         text[] not null default '{}',
+  geo                text,                              -- nyc | south_florida | europe | middle_east | other
+  icp_notes          text,
+  pool_status        text not null default 'active',    -- active | parked | candidate | excluded | converted
+  exclusion_reason   text,
+  linked_company_id  text,
+  signal_ref         text,
+  created_at         timestamptz not null default now(),
+  updated_at         timestamptz not null default now()
+);
+create index if not exists idx_firm_pool_status     on firm_pool(pool_status);
+create index if not exists idx_firm_pool_geo        on firm_pool(geo);
+create index if not exists idx_firm_pool_categories on firm_pool using gin(categories);
+
+create table if not exists firm_pool_contacts (
+  contact_id      uuid primary key default uuid_generate_v4(),
+  firm_id         uuid not null references firm_pool(firm_id) on delete cascade,
+  name            text,
+  title           text,
+  email           text,
+  email_status    text,                                 -- verified | guessed | bounced | unknown
+  linkedin_url    text,
+  seat_checked_at timestamptz,
+  is_primary      boolean not null default true,
+  created_at      timestamptz not null default now()
+);
+create index if not exists idx_firm_pool_contacts_firm on firm_pool_contacts(firm_id);
+
+create table if not exists value_touches (
+  touch_id        uuid primary key default uuid_generate_v4(),
+  firm_id         uuid not null references firm_pool(firm_id) on delete cascade,
+  contact_id      uuid references firm_pool_contacts(contact_id) on delete set null,
+  signal_ref      text not null,
+  batch_date      date,
+  sent_at         timestamptz,
+  gmail_thread_id text,
+  bump_due        date,
+  reply_status    text not null default 'none',         -- none | replied | call | brief
+  notes           text,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+-- Same-signal dedup: one touch per (firm, signal_ref).
+create unique index if not exists idx_value_touches_firm_signal on value_touches(firm_id, signal_ref);
+create index if not exists idx_value_touches_firm on value_touches(firm_id);
+create index if not exists idx_value_touches_sent on value_touches(sent_at desc nulls last);

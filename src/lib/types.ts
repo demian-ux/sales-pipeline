@@ -895,3 +895,66 @@ export interface SnoozedSignal {
 export interface SnoozedSignalsBlob {
   signals: SnoozedSignal[]
 }
+
+// ============================================================================
+// Firm Pool + Value-Outreach state (2026-07-10) — the value lane's population +
+// outreach ledger. Supabase-backed (machine-generated, queryable). A firm's
+// `categories` reuse WorkCategory tokens so category ∩ geo matches a signal's
+// work_categories. See handoffs/firm-pool-crm-handoff-2026-07-10.md.
+// ============================================================================
+
+// active   — enriched + touchable now
+// parked   — enriched, waiting for a matching signal
+// candidate— an LLM example-firm hint from a signal, not yet verified
+// excluded — client / engaged account / warm thread / mismatched mailbox
+// converted— became a real lead/opportunity
+export type PoolStatus = 'active' | 'parked' | 'candidate' | 'excluded' | 'converted'
+
+export type EmailStatus = 'verified' | 'guessed' | 'bounced' | 'unknown'
+
+export type ReplyStatus = 'none' | 'replied' | 'call' | 'brief'
+
+export interface FirmPool {
+  firm_id: string
+  name: string
+  domain?: string | null
+  apollo_org_id?: string | null
+  website?: string | null
+  categories: WorkCategory[]
+  geo?: Geo | null
+  icp_notes?: string | null
+  pool_status: PoolStatus
+  exclusion_reason?: string | null
+  linked_company_id?: string | null
+  signal_ref?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface FirmPoolContact {
+  contact_id: string
+  firm_id: string
+  name?: string | null
+  title?: string | null
+  email?: string | null
+  email_status?: EmailStatus | null
+  linkedin_url?: string | null
+  seat_checked_at?: string | null
+  is_primary: boolean
+  created_at: string
+}
+
+export interface ValueTouch {
+  touch_id: string
+  firm_id: string
+  contact_id?: string | null
+  signal_ref: string          // discovery id OR free-text signal name
+  batch_date?: string | null
+  sent_at?: string | null     // null until confirmed in Gmail Sent
+  gmail_thread_id?: string | null
+  bump_due?: string | null    // +7d from send
+  reply_status: ReplyStatus
+  notes?: string | null
+  created_at: string
+  updated_at: string
+}

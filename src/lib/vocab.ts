@@ -14,6 +14,8 @@ import type {
   WorkCategory,
   Geo,
   BriefsStatus,
+  PoolStatus,
+  ReplyStatus,
 } from './types'
 
 export const PIPELINE_STAGES = ['New Lead', 'Contacted', 'Replied', 'Discovery', 'Proposal Sent', 'Negotiation', 'Won', 'Lost', 'Nurture', 'Dormant', 'Held'] as const satisfies readonly PipelineStage[]
@@ -50,6 +52,11 @@ export const DISCOVERY_BOARD_STATUSES = ['active', 'saved', 'archived'] as const
 export const WORK_CATEGORIES = ['development', 'architecture', 'interior_design', 'hospitality_design', 'landscape', 'experiential'] as const satisfies readonly WorkCategory[]
 export const GEOS = ['nyc', 'south_florida', 'europe', 'middle_east', 'other'] as const satisfies readonly Geo[]
 export const BRIEFS_STATUSES = ['unawarded', 'partially_awarded', 'awarded'] as const satisfies readonly BriefsStatus[]
+
+// Firm-pool + value-outreach vocabularies (2026-07-10). Firm categories reuse
+// WORK_CATEGORIES (above) so the value-outreach match (category ∩ geo) is exact.
+export const POOL_STATUSES = ['active', 'parked', 'candidate', 'excluded', 'converted'] as const satisfies readonly PoolStatus[]
+export const REPLY_STATUSES = ['none', 'replied', 'call', 'brief'] as const satisfies readonly ReplyStatus[]
 
 // Collapse runs of whitespace and trim — names arrive from CSV exports with
 // double spaces ("Andrew  Delgado") and stray newlines.
