@@ -34,6 +34,11 @@ export async function GET() {
     draft_status: DRAFT_STATUSES,
     discovery_work_status: WORK_STATUSES,
     discovery_status: DISCOVERY_BOARD_STATUSES,
+    // Discovery kinds + the accepted query aliases (2026-07-10). The pre-award
+    // upstream lane is STORED as 'opportunity_signal'; the API also accepts
+    // 'upstream_signal' as an alias on ?discovery_kind= (GET) and ?mode= (ingest).
+    discovery_kind: ['project_launch', 'opportunity_signal'],
+    discovery_kind_aliases: { upstream_signal: 'opportunity_signal' },
     // Upstream-signal vocabularies (2026-07-10). work_category + geo are the
     // firm-pool join keys the weekly value-lane run matches on.
     upstream_work_category: WORK_CATEGORIES,

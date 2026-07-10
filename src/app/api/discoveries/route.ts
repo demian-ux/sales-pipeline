@@ -3,6 +3,7 @@
 
 import { type NextRequest } from 'next/server'
 import { getSupabaseAdmin, isSupabaseAdminConfigured } from '@/lib/supabase'
+import { normalizeDiscoveryKind } from '@/lib/discoveries/kind'
 
 // UI filter values (snake_case) → stored region values (display strings from
 // the analysis prompt). Previously this worked only because ILIKE treats `_`
@@ -56,7 +57,9 @@ export async function GET(request: NextRequest) {
   // Which discovery mode's board to show. Defaults to the original launch
   // pipeline so the existing board (and legacy rows, which default to
   // 'project_launch') is unchanged; the board toggle sends the other value.
-  const discoveryKind = sp.get('discovery_kind') ?? 'project_launch'
+  // Accepts 'upstream_signal' as an alias for the stored 'opportunity_signal'
+  // (the value-lane consumer uses that name); '' means all kinds.
+  const discoveryKind = normalizeDiscoveryKind(sp.get('discovery_kind'))
   // Sort: 'combined' (blended fit×deal, default) | 'score' (raw discovery_score) | 'date'.
   const sortParam  = sp.get('sort_by')
   const sortBy     = sortParam === 'date' ? 'date' : sortParam === 'score' ? 'score' : 'combined'

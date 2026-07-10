@@ -20,6 +20,7 @@ import { type NextRequest, after } from 'next/server'
 import { getSupabaseAdmin, isSupabaseAdminConfigured } from '@/lib/supabase'
 import { runIngestion } from '@/lib/discoveries/processor'
 import { isIngestAuthorized } from '@/lib/auth'
+import { normalizeIngestMode } from '@/lib/discoveries/kind'
 import type { DiscoveryKind } from '@/lib/types'
 
 export const maxDuration = 300
@@ -27,8 +28,10 @@ export const maxDuration = 300
 // The modes the daily cron runs, in order.
 const CRON_MODES: DiscoveryKind[] = ['project_launch', 'opportunity_signal']
 
+// Accepts 'upstream_signal' as an alias for 'opportunity_signal'; anything else
+// (or absent) falls back to 'project_launch'.
 function parseMode(value: string | null): DiscoveryKind {
-  return value === 'opportunity_signal' ? 'opportunity_signal' : 'project_launch'
+  return normalizeIngestMode(value)
 }
 
 export async function POST(request: NextRequest) {
