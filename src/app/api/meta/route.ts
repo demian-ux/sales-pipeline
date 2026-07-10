@@ -13,6 +13,9 @@ import {
   DRAFT_STATUSES,
   WORK_STATUSES,
   DISCOVERY_BOARD_STATUSES,
+  WORK_CATEGORIES,
+  GEOS,
+  BRIEFS_STATUSES,
 } from '@/lib/vocab'
 
 // GET /api/meta — field vocabularies so API clients don't guess valid values.
@@ -31,5 +34,10 @@ export async function GET() {
     draft_status: DRAFT_STATUSES,
     discovery_work_status: WORK_STATUSES,
     discovery_status: DISCOVERY_BOARD_STATUSES,
+    // Upstream-signal vocabularies (2026-07-10). work_category + geo are the
+    // firm-pool join keys the weekly value-lane run matches on.
+    upstream_work_category: WORK_CATEGORIES,
+    upstream_geo: GEOS,
+    upstream_briefs_status: BRIEFS_STATUSES,
   })
 }

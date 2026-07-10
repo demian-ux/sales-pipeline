@@ -141,6 +141,20 @@ create table if not exists discoveries (
   opportunity_score          integer,                       -- opp-mode score (NULL for launch rows)
   suggested_target_firms     jsonb,                         -- [{firm,why_fit,geography,in_crm,apollo_org_id,confidence}]
 
+  -- Upstream-signal fields (2026-07-10). Sharpen the opportunity_signal lane to
+  -- the strict pre-award test: FUTURE work a buyer will commission, briefs not
+  -- yet awarded. The a/b/c heuristic is stored as fields (not just a score) so
+  -- the weekly value-lane run ranks by future_work_test + geo + freshness and
+  -- matches firms by work_categories ∩ geo. buyer_org == source_org (above).
+  program_scope              text,                          -- what will be built/renovated, scale, timeframe
+  briefs_status              text,                          -- unawarded | partially_awarded | awarded (awarded auto-rejects)
+  work_categories            text[],                        -- developer | architecture | interior_design | … (firm-pool join key)
+  geo                        text,                          -- nyc | south_florida | europe | middle_east | other (firm-pool join key)
+  future_work_test           boolean,                       -- a && b && (briefs not awarded)
+  future_work_reason         text,                          -- one-line why the test passed/failed
+  buyer_committed            boolean,                       -- test (a): named buyer committing to future work
+  programmatic_scope         boolean,                       -- test (b): plural/programmatic OR single pre-design-selection
+
   -- Capital events + entitlement grading (2026-07-06). capital_event KEEP rows
   -- store the forward-intent quote; deployment_horizon maps to stage points in
   -- icp.ts. Graded entitlement bands store which body granted what.
@@ -185,6 +199,10 @@ create index if not exists idx_discoveries_project_key on discoveries(project_ke
 create index if not exists idx_discoveries_engaged    on discoveries(already_engaged);
 create index if not exists idx_discoveries_kind       on discoveries(discovery_kind);
 create index if not exists idx_discoveries_work_status on discoveries(work_status);
+-- Upstream-signal join keys + ranking axis (2026-07-10), opp-scoped.
+create index if not exists idx_discoveries_geo           on discoveries(geo) where discovery_kind = 'opportunity_signal';
+create index if not exists idx_discoveries_future_work   on discoveries(future_work_test) where discovery_kind = 'opportunity_signal';
+create index if not exists idx_discoveries_briefs_status on discoveries(briefs_status) where discovery_kind = 'opportunity_signal';
 
 -- ============================================================================
 -- INGESTION_RUNS — one row per ingest cycle
@@ -464,17 +482,27 @@ on conflict (url) do update set
   name = excluded.name, region = excluded.region, sector = excluded.sector,
   active = excluded.active, sort_order = excluded.sort_order;
 
--- ── Opportunity-signal sources (discovery_kind='opportunity_signal') ─────────
--- Demand-creating event feeds mapped to the firms who'd win the work. Google
--- News RSS queries shaped per lane + Skift. See migrations/2026-06-25_opportunity_signals.sql.
+-- ── Upstream-signal sources (discovery_kind='opportunity_signal') ────────────
+-- Retuned 2026-07-10 for the strict PRE-AWARD test: demand-creating events
+-- where briefs are not yet awarded — renovation/expansion PROGRAMS, RFPs &
+-- competitions, entitlement/rezoning that unlocks a district, capital committed
+-- to a development pipeline, and government licenses that trigger private
+-- construction. The launch-flavored `Opp ·` feeds ("to open", "debuts",
+-- "breaks ground") are retired first — they surfaced rollouts/completions.
+-- See migrations/2026-07-10_upstream_signals.sql.
+update sources
+  set active = false
+  where discovery_kind = 'opportunity_signal' and name like 'Opp · %';
+
 insert into sources (name, url, source_type, region, sector, active, sort_order, discovery_kind) values
-  ('Opp · Aviation Programs',     'https://news.google.com/rss/search?q=(airport+OR+airline+OR+terminal)+(lounge+OR+%22terminal+renovation%22+OR+%22terminal+redevelopment%22+OR+%22terminal+expansion%22+OR+overhaul+OR+modernization)+(program+OR+plan+OR+RFP+OR+%22design+team%22)+(%22New+York%22+OR+JFK+OR+Newark+OR+Miami+OR+London+OR+Paris+OR+Europe)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'aviation_hospitality', true, 300, 'opportunity_signal'),
-  ('Opp · Hospitality Rollouts',  'https://news.google.com/rss/search?q=(hotel+OR+resort+OR+hospitality)+(%22brand+enters%22+OR+%22to+open%22+OR+flag+OR+rollout+OR+%22new+property%22+OR+pipeline+OR+%22signs+deal%22)+(%22New+York%22+OR+Miami+OR+%22South+Florida%22+OR+London+OR+Paris+OR+Europe)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'hospitality', true, 310, 'opportunity_signal'),
-  ('Opp · Cultural / Institutional', 'https://news.google.com/rss/search?q=(museum+OR+university+OR+library+OR+%22performing+arts%22+OR+civic+OR+cultural)+(expansion+OR+%22new+building%22+OR+renovation+OR+%22capital+project%22+OR+%22to+build%22+OR+%22new+wing%22)+(Europe+OR+London+OR+Paris+OR+%22New+York%22+OR+Miami)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'cultural', true, 320, 'opportunity_signal'),
-  ('Opp · Competitions & RFPs',    'https://news.google.com/rss/search?q=(%22design+competition%22+OR+%22architecture+competition%22+OR+%22open+call%22+OR+%22request+for+proposals%22+OR+RFP+OR+masterplan)+(architecture+OR+design+OR+redevelopment+OR+waterfront)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'other', true, 330, 'opportunity_signal'),
-  ('Opp · Experiential / Flagship', 'https://news.google.com/rss/search?q=(flagship+OR+%22experience+center%22+OR+%22brand+experience%22+OR+immersive+OR+%22themed+entertainment%22+OR+%22entertainment+district%22)+(design+OR+architecture+OR+%22to+open%22)+(%22New+York%22+OR+Miami+OR+London+OR+Paris+OR+Europe)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'retail', true, 340, 'opportunity_signal'),
-  ('Opp · Branded Residences',     'https://news.google.com/rss/search?q=%22branded+residences%22+(announce+OR+plans+OR+launch+OR+partnership+OR+%22to+develop%22)+(%22New+York%22+OR+Miami+OR+%22South+Florida%22+OR+London+OR+Paris+OR+Europe)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'luxury_residential', true, 350, 'opportunity_signal'),
-  ('Opp · Skift',                  'https://skift.com/feed/', 'rss', 'global', 'aviation_hospitality', true, 360, 'opportunity_signal')
+  ('Upstream · Aviation Programs',   'https://news.google.com/rss/search?q=(airport+OR+airline+OR+terminal)+(lounge+OR+%22terminal+renovation%22+OR+%22terminal+redevelopment%22+OR+%22terminal+expansion%22+OR+modernization+OR+overhaul)+(program+OR+RFP+OR+%22request+for+proposals%22+OR+%22master+plan%22+OR+%22capital+program%22+OR+plan)+(JFK+OR+LaGuardia+OR+Newark+OR+%22New+York%22+OR+Miami+OR+London+OR+Paris+OR+Europe)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'aviation_hospitality', true, 300, 'opportunity_signal'),
+  ('Upstream · Hospitality Pipelines','https://news.google.com/rss/search?q=(hotel+OR+resort+OR+hospitality+OR+%22branded+residences%22)+(%22to+enter%22+OR+enters+OR+%22pipeline+of%22+OR+%22expansion+plan%22+OR+%22to+develop%22+OR+%22signs%22+OR+%22management+agreement%22+OR+%22brand+to+enter%22)+(%22New+York%22+OR+Miami+OR+%22South+Florida%22+OR+London+OR+Paris+OR+Europe)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'hospitality', true, 310, 'opportunity_signal'),
+  ('Upstream · Cultural Capital Projects','https://news.google.com/rss/search?q=(museum+OR+university+OR+library+OR+%22performing+arts%22+OR+civic+OR+cultural)+(%22capital+project%22+OR+expansion+OR+%22new+building%22+OR+%22new+wing%22+OR+%22to+build%22+OR+%22master+plan%22+OR+competition+OR+RFP)+(Europe+OR+London+OR+Paris+OR+%22New+York%22+OR+Miami)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'cultural', true, 320, 'opportunity_signal'),
+  ('Upstream · Competitions & RFPs',  'https://news.google.com/rss/search?q=(%22design+competition%22+OR+%22architecture+competition%22+OR+%22open+call%22+OR+%22request+for+proposals%22+OR+RFP+OR+%22master+plan%22+OR+masterplan+OR+%22invited+competition%22)+(architecture+OR+design+OR+redevelopment+OR+waterfront+OR+district)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'other', true, 330, 'opportunity_signal'),
+  ('Upstream · Entitlements & Rezoning','https://news.google.com/rss/search?q=(%22rezoning+approved%22+OR+%22zoning+approved%22+OR+%22master+plan+approved%22+OR+entitlement+OR+%22special+permit%22+OR+%22redevelopment+plan%22+OR+%22approves+plan%22+OR+%22land+use%22)+(development+OR+district+OR+waterfront+OR+mixed-use)+(%22New+York%22+OR+Brooklyn+OR+Queens+OR+Miami+OR+%22Miami+Beach%22+OR+%22South+Florida%22)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'mixed_use', true, 340, 'opportunity_signal'),
+  ('Upstream · Capital for Pipeline', 'https://news.google.com/rss/search?q=(%22capital+commitment%22+OR+%22closes+fund%22+OR+raises+OR+%22development+pipeline%22+OR+%22joint+venture%22+OR+%22to+develop%22)+(develop+OR+%22to+build%22+OR+pipeline+OR+residential+OR+hotel+OR+mixed-use)+(%22New+York%22+OR+Miami+OR+%22South+Florida%22+OR+London+OR+Paris+OR+Europe)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'luxury_residential', true, 350, 'opportunity_signal'),
+  ('Upstream · Licenses & Approvals', 'https://news.google.com/rss/search?q=(%22licenses+awarded%22+OR+%22license+awarded%22+OR+%22gaming+license%22+OR+%22casino+license%22+OR+%22awarded+the+license%22+OR+%22wins+bid%22+OR+%22selected+to+develop%22+OR+%22development+rights%22)+(casino+OR+resort+OR+development+OR+district+OR+waterfront)+(%22New+York%22+OR+downstate+OR+Miami+OR+%22South+Florida%22+OR+Europe)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'mixed_use', true, 360, 'opportunity_signal'),
+  ('Upstream · Skift',                'https://skift.com/feed/', 'rss', 'global', 'aviation_hospitality', true, 370, 'opportunity_signal')
 on conflict (url) do update set
   name = excluded.name, region = excluded.region, sector = excluded.sector,
   active = excluded.active, sort_order = excluded.sort_order,

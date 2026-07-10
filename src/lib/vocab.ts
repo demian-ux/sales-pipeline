@@ -11,6 +11,9 @@ import type {
   InteractionChannel,
   InteractionDirection,
   WorkStatus,
+  WorkCategory,
+  Geo,
+  BriefsStatus,
 } from './types'
 
 export const PIPELINE_STAGES = ['New Lead', 'Contacted', 'Replied', 'Discovery', 'Proposal Sent', 'Negotiation', 'Won', 'Lost', 'Nurture', 'Dormant', 'Held'] as const satisfies readonly PipelineStage[]
@@ -40,6 +43,13 @@ export const DRAFT_STATUSES = ['draft', 'approved', 'sent'] as const
 // is the worst failure mode for the write-back automation).
 export const WORK_STATUSES = ['unworked', 'drafted', 'held', 'rejected', 'already_engaged'] as const satisfies readonly WorkStatus[]
 export const DISCOVERY_BOARD_STATUSES = ['active', 'saved', 'archived'] as const
+
+// Upstream-signal vocabularies (2026-07-10). Published via /api/meta so the
+// weekly value-lane run can validate a value before matching/ranking on it.
+// WORK_CATEGORIES + GEOS are the firm-pool join keys (category ∩ geo).
+export const WORK_CATEGORIES = ['development', 'architecture', 'interior_design', 'hospitality_design', 'landscape', 'experiential'] as const satisfies readonly WorkCategory[]
+export const GEOS = ['nyc', 'south_florida', 'europe', 'middle_east', 'other'] as const satisfies readonly Geo[]
+export const BRIEFS_STATUSES = ['unawarded', 'partially_awarded', 'awarded'] as const satisfies readonly BriefsStatus[]
 
 // Collapse runs of whitespace and trim — names arrive from CSV exports with
 // double spaces ("Andrew  Delgado") and stray newlines.

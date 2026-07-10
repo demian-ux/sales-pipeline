@@ -64,6 +64,22 @@ const VIZ_BUYER_LABELS: Record<string, string> = {
   broker:              'Broker',
 }
 
+// Upstream-signal labels (2026-07-10).
+const BRIEFS_STATUS_LABELS: Record<string, string> = {
+  unawarded:         'Briefs open',
+  partially_awarded: 'Partly awarded',
+  awarded:           'Awarded',
+}
+
+const WORK_CATEGORY_LABELS: Record<string, string> = {
+  development:        'Development',
+  architecture:       'Architecture',
+  interior_design:    'Interior',
+  hospitality_design: 'Hospitality',
+  landscape:          'Landscape',
+  experiential:       'Experiential',
+}
+
 export default function DiscoveryCard({
   discovery: d,
   selected,
@@ -208,7 +224,28 @@ export default function DiscoveryCard({
           </span>
         )}
         {isOpp ? (
-          d.beneficiary_segment && <Pill tone="gold">{d.beneficiary_segment}</Pill>
+          <>
+            {d.beneficiary_segment && <Pill tone="gold">{d.beneficiary_segment}</Pill>}
+            {d.briefs_status && (
+              <span
+                title={`Briefs ${d.briefs_status.replace(/_/g, ' ')}`}
+                style={{
+                  fontSize: 10.5,
+                  fontWeight: 600,
+                  color: d.briefs_status === 'unawarded' ? 'var(--green)' : 'var(--ink-3)',
+                  background: d.briefs_status === 'unawarded' ? 'var(--green-dim)' : 'var(--surface-2)',
+                  border: `1px solid ${d.briefs_status === 'unawarded' ? 'rgba(76,175,134,0.3)' : 'var(--border)'}`,
+                  borderRadius: 'var(--r-xs)',
+                  padding: '2px 6px',
+                }}
+              >
+                {BRIEFS_STATUS_LABELS[d.briefs_status] ?? d.briefs_status}
+              </span>
+            )}
+            {(d.work_categories ?? []).slice(0, 4).map((c) => (
+              <Pill key={c}>{WORK_CATEGORY_LABELS[c] ?? c}</Pill>
+            ))}
+          </>
         ) : (
           <>
             {d.signal_type && SIGNAL_TYPE_LABELS[d.signal_type] && (
@@ -308,6 +345,13 @@ export default function DiscoveryCard({
               {d.signal_event}
             </div>
           )}
+          {/* What will be built/renovated, scale, timeframe */}
+          {d.program_scope && (
+            <div className="ink-3" style={{ fontSize: 11.5, lineHeight: 1.5, maxWidth: '64ch' }}>
+              <span className="micro" style={{ color: 'var(--ink-3)' }}>SCOPE · </span>
+              {d.program_scope}
+            </div>
+          )}
           {/* The hook, written to the target firm */}
           {d.outreach_angle && (
             <div
@@ -317,11 +361,12 @@ export default function DiscoveryCard({
               “{d.outreach_angle}”
             </div>
           )}
-          {/* Suggested target firms (the prospects) with in-CRM badges */}
+          {/* Example firms in the target category — illustrative, not the lead.
+              The value lane matches the firm pool by work_categories ∩ geo. */}
           {targetFirms.length > 0 && (
             <div className="col" style={{ gap: 4 }}>
-              <span className="micro" style={{ color: 'var(--ink-3)' }} title="Unverified hints — resolve the developer-of-record via Resolve principal before treating any as the prospect">
-                SUGGESTED FIRMS · UNVERIFIED HINTS
+              <span className="micro" style={{ color: 'var(--ink-3)' }} title="Illustrative examples of firms in the target category — the value lane broadcasts to the whole matched category via the firm pool, not to one named firm">
+                EXAMPLE FIRMS · CATEGORY
               </span>
               <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
                 {targetFirms.slice(0, 5).map((f, i) => (
@@ -339,7 +384,6 @@ export default function DiscoveryCard({
                       alignItems: 'center',
                     }}
                   >
-                    {f.already_named && <span style={{ color: 'var(--accent)', fontSize: 9 }} title="Already named on this project — the strongest lead">★</span>}
                     {f.firm}
                     {f.in_crm && <span style={{ color: 'var(--blue)', fontSize: 9 }}>◆ CRM</span>}
                   </span>
@@ -349,7 +393,7 @@ export default function DiscoveryCard({
           )}
           {targetFirms.length === 0 && (
             <span className="micro" style={{ color: 'var(--ink-3)' }}>
-              Segment only — firms TBD · use “Find firms”
+              Category + geo set · firms matched from the value-lane pool
             </span>
           )}
         </>

@@ -14,9 +14,9 @@ import { analyzeArticle } from '@/lib/prompts/discoveries/analyze'
 import { analyzeOpportunitySignal } from '@/lib/prompts/discoveries/analyze-opportunity-signal'
 import { computeDiscoveryScore, scoreToTier } from './scoring'
 import { computeIcpFit, sectorFitFromSector } from './icp'
-import { computeOpportunityScore, fitTierFromScore } from './opportunity-score'
+import { computeOpportunityScore, fitTierFromScore, briefsStatusToTiming } from './opportunity-score'
 import { segmentToSector, getSegmentConfig } from './opportunity-segments'
-import { isInTargetGeo, OUT_OF_GEO_SCORE_CAP } from './target-geo'
+import { isInTargetGeo, OUT_OF_GEO_SCORE_CAP, regionToGeo } from './target-geo'
 import { isDropSignalType } from './signal-type'
 import { makeProjectKey } from './project-key'
 import { extractDiscoveryEntities, matchEntitiesToCompanies, entityMatches } from './roster-match'
@@ -615,9 +615,13 @@ async function processOpportunitySignal(
     segment: analysis.segment,
     creates_design_demand: analysis.creates_design_demand,
     design_scope: analysis.design_scope,
-    timing: analysis.timing,
+    // timing is derived from the analyzer's canonical briefs_status.
+    timing: briefsStatusToTiming(analysis.briefs_status),
     targets: analysis.targets,
     region: analysis.region,
+    // Pre-award gates: an awarded brief or a failed future-work test hard-rejects.
+    briefs_status: analysis.briefs_status,
+    future_work_test: analysis.future_work_test,
   })
 
   // Deterministic geo cap — same guarantee as launch mode: out-of-target work
@@ -664,10 +668,11 @@ async function processOpportunitySignal(
   }
 
   // LOCKED RULE (deterministic, not prompt-dependent): never propose emailing
-  // the source org. Drop any suggested "target firm" that name-matches the
-  // source org BEFORE it can reach the card or the CRM cross-ref, and dedup by
-  // name so the list is clean. Mirrors the launch-side posture of keeping safety
-  // gates in code (see signal-type.ts), not in the analyzer prompt alone.
+  // the source org. Drop any example firm that name-matches the source org
+  // BEFORE it can reach the card or the CRM cross-ref, and dedup by name.
+  // These are ILLUSTRATIVE category examples now (2026-07-10) — the value lane
+  // broadcasts to the whole matched category via the firm pool, so no firm is
+  // ranked as "the" lead.
   const seenFirm = new Set<string>()
   const cleanFirms = analysis.suggested_target_firms.filter((f) => {
     if (!f.firm) return false
@@ -677,13 +682,9 @@ async function processOpportunitySignal(
     seenFirm.add(key)
     return true
   })
-  // Surface a firm the article already named (the stronger, specific lead) ahead
-  // of analyzer-suggested candidates for an open brief. Stable within each group.
-  cleanFirms.sort((a, b) => Number(b.already_named) - Number(a.already_named))
 
-  // CRM cross-reference on the TARGET FIRMS (the prospects), not the source org.
-  // Tag already_engaged when a suggested firm is already a Company, and flag
-  // each firm's in_crm for the card badge.
+  // CRM cross-reference on the example firms, not the source org. Tag
+  // already_engaged when one is already a Company, and flag each firm's in_crm.
   const firmNames = cleanFirms.map((f) => f.firm)
   const engaged = roster.length ? matchEntitiesToCompanies(firmNames, roster) : null
   const suggestedFirms: SuggestedTargetFirm[] = cleanFirms.map((f) => ({
@@ -691,10 +692,9 @@ async function processOpportunitySignal(
     why_fit: f.why_fit,
     geography: f.geography,
     in_crm: roster.length > 0 && roster.some((c) => c.company_name && entityMatches(f.firm, c.company_name)),
-    already_named: f.already_named,
     apollo_org_id: null,
-    // Suggestions are unverified hints — never a card's primary prospect. Only
-    // excavation (with independent evidence) fills verified_principal. (2026-07-06)
+    // Illustrative examples — never a card's primary prospect. The value lane
+    // matches the firm pool by work_categories ∩ geo, not these names.
     confidence: 'unverified_hint' as const,
   }))
 
@@ -724,11 +724,22 @@ async function processOpportunitySignal(
 
     // Opportunity-signal columns
     discovery_kind: 'opportunity_signal',
-    source_org: analysis.source_org,
+    source_org: analysis.source_org,           // == the handoff's buyer_org
     signal_event: analysis.signal_event,
     beneficiary_segment: analysis.beneficiary_segment || cfg.label,
     outreach_angle: analysis.outreach_angle,
     suggested_target_firms: suggestedFirms,
+
+    // Upstream-signal fields (2026-07-10) — the a/b/c test stored as fields, plus
+    // the firm-pool join keys (work_categories ∩ geo) the value lane matches on.
+    program_scope:      analysis.program_scope,
+    briefs_status:      analysis.briefs_status,
+    work_categories:    analysis.work_categories,
+    geo:                regionToGeo(analysis.region, analysis.country),
+    future_work_test:   analysis.future_work_test,
+    future_work_reason: analysis.future_work_reason,
+    buyer_committed:    analysis.buyer_committed,
+    programmatic_scope: analysis.programmatic_scope,
 
     // Reused identity + CRM-cross-ref + fit columns
     project_name: analysis.event_name,

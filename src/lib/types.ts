@@ -500,6 +500,32 @@ export type OpportunitySegment =
   | 'branded_residences'  // hospitality-flagged for-sale residential → luxury residential architects
   | 'other'
 
+// ── Upstream-signal fields (2026-07-10; retunes the opportunity_signal lane) ──
+// The strict pre-award test: FUTURE work a buyer will commission, briefs not
+// yet awarded. Stored as fields (not just a score) so the weekly value-lane run
+// ranks by future_work_test + geo + freshness and matches firms by
+// work_categories ∩ geo. See the July 10 upstream-signal-sourcing handoff.
+
+// Which firm CATEGORIES the resulting work could hire — the join key the
+// value-lane firm-pool matches on (category ∩ geo). Distinct from
+// OpportunitySegment (what KIND of project); this is who WINS the work.
+export type WorkCategory =
+  | 'development'
+  | 'architecture'
+  | 'interior_design'
+  | 'hospitality_design'
+  | 'landscape'
+  | 'experiential'
+
+// Firm-pool geography vocabulary (matches the firm-pool store's `geo`). Derived
+// deterministically from region+country in code (lib/discoveries/target-geo.ts),
+// not the prompt, so it can't drift.
+export type Geo = 'nyc' | 'south_florida' | 'europe' | 'middle_east' | 'other'
+
+// Award state of the design/development briefs. `awarded` auto-rejects — the
+// whole point of the lane is to reach firms BEFORE the brief is won.
+export type BriefsStatus = 'unawarded' | 'partially_awarded' | 'awarded'
+
 // A target firm proposed by the opportunity-signal analyzer — ALWAYS a designer
 // or developer (the prospect), never the source org. Persisted as JSONB on the
 // discovery; enriched on demand by the Tavily find-firms flow.
@@ -613,6 +639,17 @@ export interface Discovery extends DiscoveryScoreBreakdown {
   outreach_angle?: string | null
   opportunity_score?: number | null
   suggested_target_firms?: SuggestedTargetFirm[] | null
+
+  // Upstream-signal fields (2026-07-10). All optional so launch + legacy opp
+  // rows type-check. buyer_org == source_org (above); not duplicated.
+  program_scope?: string | null           // what will be built/renovated, scale, timeframe
+  briefs_status?: BriefsStatus | null      // awarded auto-rejects
+  work_categories?: WorkCategory[] | null  // firm-pool join key
+  geo?: Geo | null                         // firm-pool join key
+  future_work_test?: boolean | null        // a && b && (briefs not awarded)
+  future_work_reason?: string | null
+  buyer_committed?: boolean | null         // test (a)
+  programmatic_scope?: boolean | null      // test (b)
 
   // Capital events + entitlement grading (2026-07-06, Workstream A). All
   // optional so legacy rows type-check.

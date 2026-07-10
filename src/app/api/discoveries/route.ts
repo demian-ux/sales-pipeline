@@ -29,6 +29,8 @@ const LIST_COLUMNS =
   'icp_fit_score, fit_tier, fit_reason, partner_radar, combined_score, ' +
   'discovery_kind, source_org, signal_event, beneficiary_segment, outreach_angle, ' +
   'opportunity_score, suggested_target_firms, ' +
+  'program_scope, briefs_status, work_categories, geo, future_work_test, future_work_reason, ' +
+  'buyer_committed, programmatic_scope, ' +
   'verified_principal, excavation_status, deployment_horizon, intent_evidence, entitlement_evidence, ' +
   'work_status, work_reason, worked_at, ' +
   'status, promoted_to_opportunity_id'
@@ -62,6 +64,13 @@ export async function GET(request: NextRequest) {
   const sectorFit  = sp.get('sector_fit')        ?? ''
   const fitTier    = sp.get('fit_tier')          ?? ''
   const signalType = sp.get('signal_type')       ?? ''
+  // Upstream-signal filters (2026-07-10). geo + work_category are the firm-pool
+  // join keys; future_work_test isolates the pre-award keepers; briefs_status
+  // buckets by award state. Used by the weekly value-lane run.
+  const geo          = sp.get('geo')             ?? ''
+  const workCategory = sp.get('work_category')   ?? ''
+  const briefsStatus = sp.get('briefs_status')   ?? ''
+  const futureWork   = sp.get('future_work_test') ?? ''   // 'true' | 'false' | ''
   // 'engaged' = only worked firms | 'new' = only firms not yet in the CRM | '' = all
   const engagement = sp.get('engagement')        ?? ''
   // Work-tracking filter (2026-07-06). Default board hides worked material
@@ -110,6 +119,11 @@ export async function GET(request: NextRequest) {
   if (sectorFit)     query = query.eq('sector_fit', sectorFit)
   if (fitTier)       query = query.eq('fit_tier', fitTier)
   if (signalType)    query = query.eq('signal_type', signalType)
+  if (geo)           query = query.eq('geo', geo)
+  if (briefsStatus)  query = query.eq('briefs_status', briefsStatus)
+  if (workCategory)  query = query.contains('work_categories', [workCategory])
+  if (futureWork === 'true')  query = query.eq('future_work_test', true)
+  if (futureWork === 'false') query = query.eq('future_work_test', false)
   if (engagement === 'engaged') query = query.eq('already_engaged', true)
   if (engagement === 'new')     query = query.eq('already_engaged', false)
   // Work-status: an explicit value isolates that bucket; otherwise hide worked

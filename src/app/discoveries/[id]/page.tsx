@@ -225,8 +225,37 @@ export default async function DiscoveryDetailPage({ params }: { params: Promise<
             )}
             {d.source_org && (
               <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                Source organization: <strong>{d.source_org}</strong> — not the target. Reach the firm that would win the work.
+                Buyer: <strong>{d.source_org}</strong> — the reason to reach out, never the target. Reach the CATEGORY of firms that could win the work.
               </div>
+            )}
+            {d.program_scope && (
+              <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>
+                <span style={{ color: 'var(--text-faint)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Program scope&nbsp;</span>
+                {d.program_scope}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              {typeof d.future_work_test === 'boolean' && (
+                <span
+                  title={d.future_work_reason ?? undefined}
+                  style={{
+                    fontSize: 11, fontWeight: 600,
+                    color: d.future_work_test ? 'var(--green)' : 'var(--text-faint)',
+                    background: d.future_work_test ? 'var(--green-dim)' : 'var(--surface-2)',
+                    border: `1px solid ${d.future_work_test ? 'rgba(76,175,134,0.3)' : 'var(--border)'}`,
+                    borderRadius: 'var(--r-xs)', padding: '2px 8px',
+                  }}
+                >
+                  {d.future_work_test ? '✓ Future-work test' : '✗ Future-work test'}
+                </span>
+              )}
+              {d.briefs_status && <Tag>Briefs {d.briefs_status.replace(/_/g, ' ')}</Tag>}
+              {(d.work_categories ?? []).map((c) => (
+                <Tag key={c} tone="blue">{c.replace(/_/g, ' ')}</Tag>
+              ))}
+            </div>
+            {d.future_work_reason && (
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>{d.future_work_reason}</div>
             )}
             {d.outreach_angle && (
               <div style={{
@@ -244,14 +273,13 @@ export default async function DiscoveryDetailPage({ params }: { params: Promise<
             )}
             {targetFirms.length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <span style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--text-faint)' }}>
-                  Suggested target firms
+                <span style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--text-faint)' }} title="Illustrative examples of firms in the target category — the value lane broadcasts to the whole matched category via the firm pool, not to one named firm">
+                  Example firms · category
                 </span>
                 {targetFirms.map((f, i) => (
                   <div key={`${f.firm}-${i}`} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                     <div style={{ fontSize: 13, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 6 }}>
                       <strong>{f.firm}</strong>
-                      {f.already_named && <span style={{ fontSize: 10, color: 'var(--accent)' }} title="Already named on this project — the strongest lead">★ named</span>}
                       {f.in_crm && <span style={{ fontSize: 10, color: 'var(--blue)' }}>◆ in CRM</span>}
                       {f.geography && <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>· {f.geography}</span>}
                     </div>

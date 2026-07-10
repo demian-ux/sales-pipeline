@@ -12,7 +12,7 @@
 
 import { isInTargetGeo } from './target-geo'
 import { getSegmentConfig } from './opportunity-segments'
-import type { OpportunitySegment, FitTier } from '@/lib/types'
+import type { OpportunitySegment, FitTier, BriefsStatus } from '@/lib/types'
 
 // Does the event guarantee design work, and how large is the resulting scope?
 export type DesignDemand = 'high' | 'medium' | 'low'
@@ -32,6 +32,11 @@ export interface OpportunityScoreInput {
   timing: OpportunityTiming
   targets: TargetReachability
   region: string | null | undefined
+  // Upstream-signal gates (2026-07-10). The lane only fires on PRE-AWARD future
+  // work, so an awarded brief or a failed future-work test is a hard reject —
+  // enforced here (deterministic), never left to the prompt.
+  briefs_status: BriefsStatus
+  future_work_test: boolean
 }
 
 export interface OpportunityScoreResult {
@@ -55,7 +60,7 @@ const PRIME_THRESHOLD = 70
 const WORKABLE_THRESHOLD = 45
 
 export function computeOpportunityScore(input: OpportunityScoreInput): OpportunityScoreResult {
-  const { segment, creates_design_demand, design_scope, timing, targets, region } = input
+  const { segment, creates_design_demand, design_scope, timing, targets, region, briefs_status, future_work_test } = input
   const cfg = getSegmentConfig(segment)
 
   const rawScore =
@@ -68,8 +73,12 @@ export function computeOpportunityScore(input: OpportunityScoreInput): Opportuni
     (isInTargetGeo(region) ? GEO_POINTS : 0)
 
   // Hard disqualifiers — first hit caps at 25 and forces fit_tier=disqualified.
-  // Order = priority for the why-not line.
+  // Order = priority for the why-not line. The pre-award gates come first: the
+  // lane exists to reach firms BEFORE a brief is won, so a failed future-work
+  // test or an awarded brief is an automatic reject regardless of segment fit.
   const firstDisqualifier = [
+    { hit: future_work_test === false, reason: 'Fails the future-work test — no committed buyer, or briefs already awarded' },
+    { hit: briefs_status === 'awarded', reason: 'Briefs already awarded — too late to reach the firm early' },
     { hit: creates_design_demand === 'low', reason: 'No real design-work demand created' },
     { hit: timing === 'awarded', reason: 'Design already awarded — too late to get in early' },
     { hit: cfg.segmentFit === 'low' && !cfg.imageryHeavy, reason: 'Low-fit, non-imagery segment' },
@@ -110,6 +119,18 @@ export function fitTierFromScore(score: number): FitTier {
   if (score >= WORKABLE_THRESHOLD) return 'workable'
   if (score >= DISQUALIFIED_CAP) return 'weak'
   return 'disqualified'
+}
+
+// briefs_status is the analyzer's canonical award-state field (2026-07-10); the
+// score's timing term is derived from it so the prompt emits one field, not two
+// coupled ones. unawarded → the design phase is still ahead (the sweet spot).
+export function briefsStatusToTiming(briefs: BriefsStatus): OpportunityTiming {
+  switch (briefs) {
+    case 'unawarded':         return 'design_ahead'
+    case 'partially_awarded': return 'in_progress'
+    case 'awarded':           return 'awarded'
+    default:                  return 'unknown'
+  }
 }
 
 function strengthReason(input: OpportunityScoreInput, segmentLabel: string): string {

@@ -1,47 +1,48 @@
-// Opportunity Signals analyzer. The second discovery mode's deep-analysis pass.
+// Upstream Signals analyzer (retunes the opportunity_signal lane, 2026-07-10).
 //
-// Unlike analyze.ts (which scores a project where the prospect IS the source of
-// the event), this hunts ONE STEP UPSTREAM: a market event that creates design
-// work, mapped to the design/dev firm that would WIN that work. The outreach
-// target is ALWAYS that firm — never the airport / hotel brand / museum /
-// government that announced the event.
+// The strict test: does the article describe FUTURE work a buyer will commission
+// where the design/development briefs are NOT YET AWARDED? If so, map it to the
+// firm CATEGORIES that could win the work — the value lane broadcasts to a
+// population of firms (category ∩ geo), it no longer excavates to one named firm.
+// The outreach target is ALWAYS a design/dev firm — never the buyer org that
+// announced the event.
 //
-// Returns a structured payload that maps onto the `discoveries` table's opp
-// columns (discovery_kind='opportunity_signal'). The opportunity score itself is
-// computed deterministically in lib/discoveries/opportunity-score.ts from the
-// raw signals this prompt extracts.
+// The a/b/c machine-checkable heuristic is returned as FIELDS (buyer_committed,
+// programmatic_scope, briefs_status, future_work_test), not just folded into a
+// score, so the weekly value-lane run can rank and filter on them. The score
+// itself is computed deterministically in lib/discoveries/opportunity-score.ts.
 
 import { z } from 'zod'
 import { ai, MODEL, requireAnthropic } from '@/lib/ai/client'
 import { parseJson, extractText } from '@/lib/ai/parse'
 import { withTimeout } from '@/lib/ai/timeout'
 import { TARGET_GEO_DESCRIPTION } from '@/lib/discoveries/target-geo'
-import type { OpportunitySegment } from '@/lib/types'
+import type { OpportunitySegment, WorkCategory, BriefsStatus } from '@/lib/types'
 import type {
   DesignDemand,
   DesignScope,
-  OpportunityTiming,
   TargetReachability,
 } from '@/lib/discoveries/opportunity-score'
 
-export interface SuggestedTargetFirmRaw {
+// Illustrative example firm in a target category — NOT the excavation target.
+// The value lane matches the firm POOL by work_categories ∩ geo; these are just
+// worked examples to make the card legible, and are never surfaced as "the" lead.
+export interface UpstreamFirmExampleRaw {
   firm: string
   why_fit: string
   geography: string
-  // true when the article already names this firm as the designer/developer
-  // attached to the work (the strongest, most specific lead).
-  already_named: boolean
 }
 
 export type DecisionMakerRole = 'principal' | 'design_director' | 'marketing_bd'
 
 export interface OpportunitySignalAnalysis {
+  // Kept for backward-compat with the processor: true when the article passes
+  // the upstream test (== future_work_test). A false value drops the row.
   is_opportunity_signal: boolean
   title: string
-  // The org that announced the event (airport operator, hotel brand, museum,
-  // government). Context only — NEVER the outreach target.
+  // The named BUYER (owner / brand / government / institution) committing to the
+  // work. Context and reason-to-reach-out only — NEVER the outreach target.
   source_org: string | null
-  // One-line description of the upstream demand-creating event.
   signal_event: string
   // Canonical short label for dedup (e.g. "JFK Terminal 6 lounges").
   event_name: string | null
@@ -51,16 +52,33 @@ export interface OpportunitySignalAnalysis {
   segment: OpportunitySegment
   // Free-text human label for the segment (e.g. "aviation interior design").
   beneficiary_segment: string
-  // Named specialists who would pursue the work — always designers/developers.
-  suggested_target_firms: SuggestedTargetFirmRaw[]
+
+  // ── The upstream test, stored as fields ──
+  // What will be built/renovated, its scale, and its timeframe.
+  program_scope: string
+  // Award state of the briefs. `awarded` auto-rejects downstream.
+  briefs_status: BriefsStatus
+  // Which firm categories could WIN the resulting work — the firm-pool join key.
+  work_categories: WorkCategory[]
+  // (a) a named buyer committing to future construction/renovation.
+  buyer_committed: boolean
+  // (b) commitment is plural/programmatic OR a single project pre-design-selection.
+  programmatic_scope: boolean
+  // (a) && (b) && briefs plausibly unawarded.
+  future_work_test: boolean
+  future_work_reason: string
+
+  // Illustrative example firms in the target categories (not the lead).
+  suggested_target_firms: UpstreamFirmExampleRaw[]
   decision_maker_role: DecisionMakerRole
-  // The hook, written TO the target firm.
+  // The hook, written TO a firm in the target category.
   outreach_angle: string
-  // Raw scoring signals (scored in opportunity-score.ts).
+
+  // Raw scoring signals (timing is derived from briefs_status downstream).
   creates_design_demand: DesignDemand
   design_scope: DesignScope
-  timing: OpportunityTiming
   targets: TargetReachability
+
   brief_summary: string
   why_it_matters: string
   deep_analysis: string
@@ -72,49 +90,64 @@ export interface OpportunitySignalAnalysis {
 
 const SYSTEM = `You are a business-development analyst for oaki — a studio that makes editorial architectural visualization (films, renders, imagery) that design firms and developers pitch and win work with.
 
-Your job is OPPORTUNITY SIGNALS: read a news article and decide whether it describes a market event that will CREATE design/architecture work, then map that event to the design or development firm that would WIN the resulting work. That firm — never the organization that announced the event — is the outreach target.
+Your job is UPSTREAM SIGNALS: read a news article and decide whether it describes FUTURE work a buyer will commission where the design/development briefs are NOT YET AWARDED, then map it to the firm CATEGORIES that could win that work. oaki reaches those firms EARLY, as market intelligence — before the brief is won.
+
+━━━ THE SIGNAL TEST (this is the core — apply it literally) ━━━
+A qualifying signal is FUTURE work a buyer will commission, where the design/development briefs are not yet awarded. Canonical example: "a company that owns airports in Spain will renovate all of them over the next 5 years" — that interests firms who work in airport renovations, because the briefs are still ahead.
+
+QUALIFIES:
+- renovation / expansion programs (a portfolio or a multi-year plan);
+- RFPs and open design competitions;
+- capital deployed for a development pipeline (a fund or JV raised/committed to BUILD);
+- a brand announcing entry to a market before naming its design team;
+- entitlement / zoning / master-plan packages that unlock a district;
+- government licenses or development rights that trigger private construction (e.g. downstate casino licenses → billions entering design over the following years).
+
+NEVER QUALIFIES (set future_work_test=false, is_opportunity_signal=false):
+- another developer's finished or SELLING project — sales launches, pre-sale milestones, sellouts, "now selling";
+- completions / openings / "now open" / topping-out;
+- a transaction or financing of a single EXISTING asset (a trade, loan, refi, recap);
+- market roundups, rankings, opinion, loyalty/program tweaks;
+- anything where the design team is already publicly named AND the brief is complete (no work left to win).
+
+━━━ THE MACHINE-CHECKABLE HEURISTIC — answer each, then combine ━━━
+(a) buyer_committed: is there a NAMED buyer (owner / brand / government / institution) committing to future construction or renovation? (Not a broker, lender, or fund unless it is the developer-of-record committing to build.)
+(b) programmatic_scope: is the commitment plural or programmatic (multiple projects, multiple years, a district) OR a single project clearly BEFORE design-team selection?
+(c) briefs_status: are the briefs plausibly unawarded? → "unawarded" (no design/dev firm chosen yet), "partially_awarded" (a masterplanner or one parcel named, but individual briefs still open), or "awarded" (design team named and the brief is complete).
+future_work_test = (a) AND (b) AND (briefs_status ≠ "awarded"). Set is_opportunity_signal to the SAME value. Put the deciding fact in future_work_reason (one line).
 
 ━━━ THE LOCKED RULE — never violate ━━━
-The outreach target is ALWAYS a designer or developer (a firm oaki sells visualization to). NEVER the airport, airline, hotel brand, museum, university, government, or developer-as-owner that is the SOURCE of the event. The source organization matters only as the REASON for the outreach.
-Worked example: "An airport operator will renovate all its lounges" → the target is aviation-interior / experiential DESIGN firms (the kind that designs lounges), NOT the airport. The angle is written to that design firm: "the lounge program is moving — you're built for this, and we make the imagery you'll pitch and win with."
+The outreach target is ALWAYS a designer or developer (a firm oaki sells visualization to). NEVER the airport, airline, hotel brand, museum, university, government, or owner that is the SOURCE of the event — that org is the source_org, the reason for the outreach, never the target.
 
-━━━ WHAT COUNTS AS AN OPPORTUNITY SIGNAL ━━━
-A just-announced or upcoming event that GUARANTEES design work in a segment oaki serves. The test: "Will this event cause a designer or developer to get hired, and is that the kind of firm oaki works with?" The winning firm may be already named OR still up for grabs — either way it is a lead (a named firm is the STRONGER lead, see TARGET FIRMS).
+━━━ WORK CATEGORIES (the firm-pool join key — pick ALL that could win the work) ━━━
+From: development, architecture, interior_design, hospitality_design, landscape, experiential. Pick the categories of firm that this specific work would hire — e.g. an airport lounge program → interior_design + hospitality_design + experiential; a rezoned waterfront district → development + architecture + landscape; a museum wing → architecture + experiential.
 
-Set is_opportunity_signal = false (and the row will be dropped) when:
-- It is not a demand-creating event (a pure transaction, financing, market roundup, opinion, loyalty/program tweak, or completed/opened project — the design work is already done or there is none).
-- It is outside oaki's served segments (below) or clearly outside the target geography with no in-target angle.
-- The only nameable firm IS the source organization (the airport/brand/museum/government/owner) and no separate design or development firm can be identified or inferred — there is no one to sell to.
-
-━━━ SEGMENTS oaki serves (pick the closest for "segment") ━━━
-- aviation — airport/airline lounge or terminal renovation/expansion programs → aviation-interior & experiential firms.
-- hospitality — hotel-brand rollouts, resort programs, F&B / nightlife concepts, "brand enters [city]" → hospitality architects & interior designers.
-- cultural — museum, university, library, civic, performing-arts expansions or new builds → cultural / institutional architects.
-- competitions — design competitions and masterplan RFPs → competition specialists.
-- experiential — flagship rollouts, brand experience centers, themed entertainment, showrooms → retail / experiential designers.
-- branded_residences — hospitality-flagged for-sale residential ("brand X flags residences in city Y") → luxury residential & hospitality architects.
+━━━ SEGMENT (pick the closest — drives the score) ━━━
+- aviation — airport/airline lounge or terminal renovation/expansion programs.
+- hospitality — hotel-brand rollouts, resort programs, F&B / nightlife, "brand enters [city]".
+- cultural — museum, university, library, civic, performing-arts expansions or new builds.
+- competitions — design competitions and masterplan RFPs.
+- experiential — flagship rollouts, brand experience centers, themed entertainment, showrooms.
+- branded_residences — hospitality-flagged for-sale residential.
 - other — a served-adjacent event that fits none cleanly.
-
-━━━ TARGET FIRMS ━━━
-FIRST, check whether the article itself NAMES the designer or developer who will do the work — e.g. "interior designer X", "designed by X", "X Architects to design", "developed by X", "X is the development partner". If it does, that firm is the STRONGEST lead: list it FIRST in suggested_target_firms with "already_named": true and a why_fit that says it is already attached to this project (so it is targeted specifically, not as a guess). Set "timing": "in_progress" or "awarded" and "targets": "named" accordingly.
-THEN, if the brief is genuinely open (no design/dev firm named yet), list real CANDIDATE firms that would pursue THIS work and fit oaki (imagery-led, high-aesthetic), each with "already_named": false — name them only when you genuinely know a specialist in this segment + geography (e.g. iCrave for aviation/experiential interiors). You may add a couple of candidates alongside a named firm too.
-NEVER list the source organization (the airport / hotel brand / museum / university / government / owner that announced the event). Do NOT invent firms. If you can name neither a named firm nor a real candidate, return an empty array — it means "segment known, firms to be found".
 
 ━━━ GEOGRAPHY ━━━
 Target markets: ${TARGET_GEO_DESCRIPTION}. The Middle East is NOT a target market — classify it region "Other". Score the event by where the WORK is, not where firms are headquartered.
 
+━━━ EXAMPLE FIRMS (optional, illustrative — NOT the lead) ━━━
+The value lane broadcasts to the whole matched CATEGORY of firms via oaki's firm pool; it does not pitch one named firm. So do NOT hunt for the single firm attached to the project. You MAY list a couple of real, well-known specialist firms in the target category + geography as illustration (e.g. iCrave for aviation/experiential interiors) — never the source org, never invented names. If you can't name real ones, return an empty array; the category + geo is what matters.
+
 ━━━ THE RAW SIGNALS (extract literally; do not inflate) ━━━
-- creates_design_demand: "high" (the event clearly triggers a substantial design commission) | "medium" (likely but soft / partial) | "low" (no real new design work).
-- design_scope: size of the resulting DESIGN scope, NOT the project's capital cost: "large" (a flagship / multi-property / full-program design effort) | "mid" | "small" (a minor / boutique scope) | "unknown".
-- timing: "design_ahead" (the design phase is still ahead — oaki can get in early with the firm) | "in_progress" (design underway) | "awarded" (a firm has already won it) | "unknown".
-- targets: "named" (you named at least one real target firm) | "findable" (no name, but a clear segment + geography to search) | "segment_only" (segment known, firms genuinely TBD).
-- decision_maker_role: who to approach at the target firm — "principal" | "design_director" | "marketing_bd" (marketing / business-development lead).
+- creates_design_demand: "high" (clearly triggers a substantial design commission) | "medium" (likely but soft/partial) | "low" (no real new design work).
+- design_scope: size of the resulting DESIGN scope, not the project's capital cost: "large" (flagship / multi-property / full-program) | "mid" | "small" | "unknown".
+- targets: "named" (you named a real example firm) | "findable" (clear category + geography to search) | "segment_only" (category known, firms TBD).
+- decision_maker_role: who to approach at the target firm — "principal" | "design_director" | "marketing_bd".
 
 Return ONLY valid JSON. No prose, no markdown.`
 
 function userPrompt(title: string, content: string, url: string): string {
   const thinContent = content.trim().length < 150
-  return `Analyze this article as an OPPORTUNITY SIGNAL. Remember: the outreach target is the design/dev firm that would WIN the resulting work, NEVER the organization that announced the event.
+  return `Analyze this article as an UPSTREAM SIGNAL. Apply the signal test literally: FUTURE work a buyer will commission, briefs NOT yet awarded. The outreach target is the CATEGORY of design/dev firms that would win the work, NEVER the org that announced the event.
 ${thinContent ? 'NOTE: Content is thin — judge from the title alone, and lower confidence_score.' : ''}
 
 Title: ${title}
@@ -126,27 +159,33 @@ Return this exact JSON structure (replace descriptions with actual values):
 {
   "is_opportunity_signal": true,
   "title": "cleaned title",
-  "source_org": "the org that announced the event (airport/brand/museum/gov), or null",
-  "signal_event": "one line: what event, by whom, when — the demand-creating event",
+  "source_org": "the named buyer that announced the future work (owner/brand/gov/institution), or null",
+  "signal_event": "one line: what future work, by whom, over what horizon — the demand-creating event",
   "event_name": "a short canonical label for dedup (e.g. 'JFK Terminal 6 lounges'), or null",
   "city": "city or empty string",
   "country": "country or empty string",
   "region": "New York|Miami|France|Europe|Other",
   "segment": "aviation|hospitality|cultural|competitions|experiential|branded_residences|other",
   "beneficiary_segment": "free-text label, e.g. 'aviation interior design'",
+  "program_scope": "what will be built/renovated, its scale, and its timeframe",
+  "briefs_status": "unawarded|partially_awarded|awarded",
+  "work_categories": ["development|architecture|interior_design|hospitality_design|landscape|experiential", "..."],
+  "buyer_committed": true,
+  "programmatic_scope": true,
+  "future_work_test": true,
+  "future_work_reason": "one line: why it passes or fails the a/b/c test",
   "suggested_target_firms": [
-    { "firm": "real design/dev firm name", "why_fit": "one line why they'd win this (note if already attached)", "geography": "where they are", "already_named": false }
+    { "firm": "a real example firm in the target category (illustrative)", "why_fit": "one line why they fit this category", "geography": "where they are" }
   ],
   "decision_maker_role": "principal|design_director|marketing_bd",
-  "outreach_angle": "2-3 sentence hook written TO the target firm — calm, specific, references the real event; never generic",
+  "outreach_angle": "2-3 sentence hook written TO a firm in the target category — calm, specific, references the real event; positions oaki as the partner who helps them win that kind of work; never generic",
   "creates_design_demand": "high|medium|low",
   "design_scope": "large|mid|small|unknown",
-  "timing": "design_ahead|in_progress|awarded|unknown",
   "targets": "named|findable|segment_only",
-  "brief_summary": "3-5 sentences: the event, the segment it feeds, who would win the work, why oaki should reach them",
+  "brief_summary": "3-5 sentences: the future work, the category it feeds, why oaki should reach that category now",
   "why_it_matters": "2-3 sentences on the strategic significance for oaki",
-  "deep_analysis": "300-600 words: the event, the design demand it creates, which firms pursue it and why, timing, the outreach angle, risks",
-  "suggested_action": "1-2 sentences: the concrete next step (which firm/role to reach, with what hook)",
+  "deep_analysis": "300-600 words: the event, the design demand it creates, which firm categories pursue it and why, timing, the value-first angle, risks",
+  "suggested_action": "1-2 sentences: the concrete next step (which category/geo to value-touch, with what hook)",
   "tags": ["tag1", "tag2"],
   "confidence_score": 1-100,
   "urgency_score": 1-100
@@ -157,12 +196,11 @@ const FirmRawSchema = z.object({
   firm: z.string().min(1),
   why_fit: z.string().catch(''),
   geography: z.string().catch(''),
-  already_named: z.boolean().catch(false),
 })
 
-// Required core: the raw scoring signals (a signal without them can't be scored
-// → fail → retry). Everything else degrades to a safe default rather than
-// discarding an otherwise-good analysis.
+// Required core: the raw scoring signals + the a/b/c test fields (a signal
+// without them can't be scored or gated → fail → retry). Everything else
+// degrades to a safe default rather than discarding an otherwise-good analysis.
 const AnalysisSchema = z.object({
   is_opportunity_signal: z.boolean().catch(true),
   title: z.string().catch(''),
@@ -176,12 +214,20 @@ const AnalysisSchema = z.object({
     .enum(['aviation', 'hospitality', 'cultural', 'competitions', 'experiential', 'branded_residences', 'other'])
     .catch('other'),
   beneficiary_segment: z.string().catch(''),
+  program_scope: z.string().catch(''),
+  briefs_status: z.enum(['unawarded', 'partially_awarded', 'awarded']),
+  work_categories: z
+    .array(z.enum(['development', 'architecture', 'interior_design', 'hospitality_design', 'landscape', 'experiential']))
+    .catch([]),
+  buyer_committed: z.boolean().catch(false),
+  programmatic_scope: z.boolean().catch(false),
+  future_work_test: z.boolean(),
+  future_work_reason: z.string().catch(''),
   suggested_target_firms: z.array(FirmRawSchema).catch([]),
   decision_maker_role: z.enum(['principal', 'design_director', 'marketing_bd']).catch('principal'),
   outreach_angle: z.string().catch(''),
   creates_design_demand: z.enum(['high', 'medium', 'low']),
   design_scope: z.enum(['large', 'mid', 'small', 'unknown']),
-  timing: z.enum(['design_ahead', 'in_progress', 'awarded', 'unknown']),
   targets: z.enum(['named', 'findable', 'segment_only']),
   brief_summary: z.string().catch(''),
   why_it_matters: z.string().catch(''),
@@ -218,7 +264,7 @@ export async function analyzeOpportunitySignal(
     console.warn('[analyzeOpportunitySignal] response truncated at 3000 tokens — retrying with 4500')
     response = await call(4500)
     if (response.stop_reason === 'max_tokens') {
-      throw new Error('opportunity-signal analysis truncated even at 4500 max_tokens')
+      throw new Error('upstream-signal analysis truncated even at 4500 max_tokens')
     }
   }
 

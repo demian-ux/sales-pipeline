@@ -18,3 +18,31 @@ export function isInTargetGeo(region: string | null | undefined): boolean {
 // capped below the strong_opportunity threshold (70). Enforced in code so
 // prompt drift can't reintroduce geography bleed.
 export const OUT_OF_GEO_SCORE_CAP = 55
+
+// ── Firm-pool geo bucket (2026-07-10) ───────────────────────────────────────
+// Maps the analyzer's coarse `region` (+ country for Middle-East detection)
+// onto the value-lane firm-pool's `geo` vocabulary, so a signal joins to the
+// firm population by geo. Derived in code, not the prompt, so it can't drift.
+// Note the region→geo widening: Miami → South Florida, France → Europe.
+import type { Geo } from '@/lib/types'
+
+const MIDDLE_EAST_COUNTRIES = [
+  'united arab emirates', 'uae', 'saudi arabia', 'saudi', 'qatar', 'kuwait',
+  'bahrain', 'oman', 'israel', 'jordan', 'lebanon', 'egypt', 'turkey', 'türkiye',
+]
+
+export function regionToGeo(
+  region: string | null | undefined,
+  country?: string | null,
+): Geo {
+  const c = (country ?? '').trim().toLowerCase()
+  if (c && MIDDLE_EAST_COUNTRIES.some((m) => c.includes(m))) return 'middle_east'
+
+  switch ((region ?? '').trim()) {
+    case 'New York': return 'nyc'
+    case 'Miami':    return 'south_florida'
+    case 'France':
+    case 'Europe':   return 'europe'
+    default:         return 'other'
+  }
+}
