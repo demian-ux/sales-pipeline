@@ -6,7 +6,7 @@ import SupplyHealthWidget from '@/components/discoveries/SupplyHealthWidget'
 import FilterPanel, { DEFAULT_FILTERS, type DiscoveryFilterState } from '@/components/discoveries/FilterPanel'
 import { Empty } from '@/components/ui/primitives'
 import { Icon, IconLoader } from '@/components/ui/icons'
-import type { Discovery } from '@/lib/types'
+import type { Discovery, IngestionRun } from '@/lib/types'
 
 // Returns null when the response body isn't JSON (e.g. a Vercel HTML error
 // page). Lets callers avoid the "Unexpected token ..." JSON.parse exception
@@ -36,6 +36,8 @@ export default function DiscoveriesPage() {
   // marker. Updated to "now" once on mount, so the markers persist for the
   // whole session.
   const [lastVisit, setLastVisit] = useState<number | null>(null)
+  // Sources that failed to fetch in the most recent finished run.
+  const [failedSources, setFailedSources] = useState<string[]>([])
 
   useEffect(() => {
     try {
@@ -44,6 +46,36 @@ export default function DiscoveriesPage() {
       localStorage.setItem(LAST_VISIT_KEY, String(Date.now()))
     } catch {
       // localStorage unavailable — no markers, no problem
+    }
+  }, [])
+
+  // Feed health, checked on load.
+  //
+  // The processor has always written `failed_sources` to the run record, and
+  // pollRunStatus has always rendered it — but only into the live progress line of
+  // a run you triggered by hand and stayed to watch. The cron runs every 6h with
+  // nobody watching, so a feed can 404 on every cycle and never say a word. That
+  // is exactly what happened: four project_launch sources (both Urbanize feeds,
+  // Curbed NY, World Architects) were dead, and The Real Deal was switched off on
+  // a misdiagnosis, while the lane they feed was written off as low-supply
+  // (2026-07-14). A fetch failure must be visible to whoever opens the board next,
+  // not only to whoever happened to be looking.
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await fetch('/api/discoveries/ingest')
+        if (!res.ok) return
+        const data = await safeJson<{ runs?: IngestionRun[] }>(res)
+        const lastFinished = data?.runs?.find((r) => r.status !== 'running')
+        if (cancelled || !lastFinished?.failed_sources?.length) return
+        setFailedSources(lastFinished.failed_sources)
+      } catch {
+        // Additive signal — never break the board over it.
+      }
+    })()
+    return () => {
+      cancelled = true
     }
   }, [])
 
@@ -356,6 +388,26 @@ export default function DiscoveriesPage() {
             <span className="mono">NEXT_PUBLIC_SUPABASE_ANON_KEY</span>, and{' '}
             <span className="mono">SUPABASE_SERVICE_ROLE_KEY</span> in your env, then run the SQL
             in <span className="mono">supabase/schema.sql</span> against your project.
+          </div>
+        </div>
+      )}
+
+      {/* Feed health — a source that fails quietly is a supply leak, not a non-event */}
+      {failedSources.length > 0 && (
+        <div
+          className="card card-pad"
+          style={{ borderColor: 'var(--red)', marginBottom: 24 }}
+        >
+          <div style={{ color: 'var(--red)', fontSize: 13, fontWeight: 500, marginBottom: 6 }}>
+            {failedSources.length} source{failedSources.length === 1 ? '' : 's'} failed to fetch in the last run
+          </div>
+          <div className="ink-2" style={{ fontSize: 12, lineHeight: 1.6 }}>
+            <span className="mono">{failedSources.join(' · ')}</span>
+            <div className="micro" style={{ color: 'var(--ink-3)', marginTop: 8 }}>
+              A dead feed returns nothing and costs supply in silence. Check the URL in{' '}
+              <span className="mono">sources</span> before concluding the publisher blocked us —
+              the last four of these were moved endpoints, not hostile ones.
+            </div>
           </div>
         </div>
       )}

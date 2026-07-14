@@ -746,6 +746,12 @@ export interface IngestionRun {
   articles_analyzed: number
   articles_new: number
   errors: string[]
+  // Sources that threw on fetch this run. The column has existed since the
+  // 2026-06-09 migration and the processor has always written it — but this type
+  // omitted it, so no caller could read it, and four dead feeds went unnoticed
+  // for weeks (2026-07-14). Surfaced on the discoveries board via the last-run
+  // health banner; never let a fetch failure be visible only to console.log.
+  failed_sources?: string[]
   current_step?: string
   progress_percent: number
   status: 'running' | 'done' | 'failed'

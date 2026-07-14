@@ -453,18 +453,37 @@ insert into sources (name, url, source_type, region, sector, active, sort_order)
   ('GNews Hospitality EU', 'https://news.google.com/rss/search?q=hotel+hospitality+development+europe&hl=en&gl=US&ceid=US:en',   'rss', 'europe',   'hospitality',       true,  40),
   ('GNews Luxury Resi',    'https://news.google.com/rss/search?q=luxury+residential+development+architecture+(%22New+York%22+OR+Manhattan+OR+Brooklyn+OR+Miami+OR+Paris+OR+France+OR+Europe)&hl=en&gl=US&ceid=US:en','rss','global','luxury_residential', true,  50),
   ('GNews France RE',      'https://news.google.com/rss/search?q=immobilier+developpement+france&hl=fr&gl=FR&ceid=FR:fr',        'rss', 'france',   'general',           true,  60),
-  ('Urbanize Miami',       'https://miami.urbanize.city/feed',                           'rss', 'miami',    'general',      true,  70),
-  ('Urbanize NYC',         'https://ny.urbanize.city/feed',                              'rss', 'new_york', 'general',      true,  80),
+  -- Urbanize (repaired 2026-07-14): the publisher moved its feeds to /rss.xml, and the
+  -- New York subdomain is `nyc.`, not `ny.` — the old `ny.` host no longer resolves at all.
+  ('Urbanize Miami',       'https://miami.urbanize.city/rss.xml',                        'rss', 'miami',    'general',      true,  70),
+  ('Urbanize NYC',         'https://nyc.urbanize.city/rss.xml',                          'rss', 'new_york', 'general',      true,  80),
   ('NY YIMBY',             'https://newyorkyimby.com/feed',                              'rss', 'new_york', 'general',      true,  85),
   ('6sqft',                'https://www.6sqft.com/feed/',                                'rss', 'new_york', 'general',      true,  86),
-  ('Curbed NY',            'https://ny.curbed.com/rss/index.xml',                        'rss', 'new_york', 'general',      true,  90),
+  -- The Real Deal (repaired 2026-07-14): never bot-blocked, never paywalled. The old
+  -- `/feed/` URL 301-redirects to the homepage — it was simply the wrong endpoint. The
+  -- market feeds each return HTTP 200 with 10 items, unpaywalled, and robots.txt is
+  -- `Allow: /`. See docs/source-viability-report-2026-07-14.md §2.
+  ('The Real Deal NY',     'https://therealdeal.com/new-york/feed/',                     'rss', 'new_york', 'general',      true,  90),
+  ('The Real Deal Miami',  'https://therealdeal.com/miami/feed/',                        'rss', 'miami',    'general',      true,  91),
   ('Commercial Observer',  'https://commercialobserver.com/feed/',                       'rss', 'new_york', 'general',      true, 100),
   ('Dezeen',               'https://www.dezeen.com/feed/',                               'rss', 'global',   'architecture', true, 110),
   ('ArchDaily',            'https://www.archdaily.com/feed',                             'rss', 'global',   'architecture', true, 120),
-  ('World Architecture',   'https://www.world-architects.com/en/rss',                    'rss', 'global',   'architecture', true, 130),
-  ('The Architect''s Newspaper', 'https://www.archpaper.com/feed/',                      'rss', 'global',   'cultural',     true, 125),
-  -- Known-inactive: bot-blocked / paywalled / feed discontinued
-  ('The Real Deal',        'https://therealdeal.com/feed/',                              'rss', 'new_york', 'general',      false, 200),
+  -- Known-inactive. Every row below carries the HTTP status actually observed on
+  -- 2026-07-14 — from the pipeline (ingestion_runs.errors) and by direct fetch.
+  --
+  -- Record the status you SAW. The note that used to sit here said "bot-blocked /
+  -- paywalled / feed discontinued" and covered The Real Deal, which was none of those —
+  -- its URL was simply wrong. That one unverified word starved the launch lane for weeks.
+  -- Bot-blocking is real, but it is real for archpaper and world-architects, NOT for TRD
+  -- or Commercial Observer (both open, unpaywalled, and active above).
+  ('Curbed NY',            'https://ny.curbed.com/rss/index.xml',                        'rss', 'new_york', 'general',      false, 200),  -- 410 Gone; folded into NY Mag
+  -- 403 to Vercel's datacenter IPs, but HTTP 200 + 10 valid items from a residential IP
+  -- using this pipeline's exact User-Agent — so it is the IP, not the crawler identity.
+  -- The feed is good and the URL is right; we just cannot reach it from the deploy env.
+  -- RECOVERABLE: proxy the fetch, or add a GNews query scoped to `site:archpaper.com`
+  -- (Google's crawler is not blocked) — the same workaround the GNews sources already are.
+  ('The Architect''s Newspaper', 'https://www.archpaper.com/feed/',                      'rss', 'global',   'cultural',     false, 200),  -- 403 from Vercel; live elsewhere
+  ('World Architecture',   'https://www.world-architects.com/en/rss',                    'rss', 'global',   'architecture', false, 200),  -- 403 from Vercel; RSS path also 404s in a browser
   ('Bisnow',               'https://www.bisnow.com/feed',                                'rss', 'global',   'general',      false, 200),
   ('CoStar News',          'https://www.costar.com/rss/news',                            'rss', 'global',   'general',      false, 200),
   ('Reuters Business',     'https://feeds.reuters.com/reuters/businessNews',             'rss', 'global',   'general',      false, 200),
@@ -477,9 +496,14 @@ on conflict (url) do update set active = excluded.active, sort_order = excluded.
 -- BUILD, a site/hotel acquired to REDEVELOP, a design-led operator doubling its
 -- pipeline. The analyzer classifies these `capital_event` (KEEP) only when it
 -- can quote forward development intent; loans/refis/stabilized trades stay DROP.
--- Direct trade-press RSS (The Real Deal, Bisnow, PERE, Commercial Observer) is
--- bot-blocked/paywalled (see the inactive rows above), so these are shaped
--- Google-News queries, matching the rest of the source list.
+-- These are shaped Google-News queries.
+--
+-- CORRECTION (2026-07-14): the note that used to sit here claimed direct trade-press RSS
+-- was "bot-blocked/paywalled", and used that to justify reaching the trade press only
+-- through Google News. It was false. The Real Deal and Commercial Observer both serve
+-- open, unpaywalled RSS (both are active above). These GNews queries are kept because a
+-- keyword query casts wider than any single outlet — NOT as a workaround for a paywall
+-- that never existed. Verify before you disable: see docs/source-viability-report-2026-07-14.md.
 insert into sources (name, url, source_type, region, sector, active, sort_order) values
   ('GNews Capital · Dev Funds',      'https://news.google.com/rss/search?q=(%22closes+fund%22+OR+%22capital+raise%22+OR+raises+OR+%22launches+fund%22+OR+%22new+fund%22)+(condominium+OR+residential+OR+%22branded+residences%22+OR+hotel+OR+resort+OR+development)+(develop+OR+%22to+build%22+OR+pipeline)+(%22New+York%22+OR+Miami+OR+%22South+Florida%22+OR+London+OR+Paris+OR+Europe)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'luxury_residential',    true, 140),
   ('GNews Capital · Redev Acquisitions','https://news.google.com/rss/search?q=(acquires+OR+acquisition+OR+buys)+(%22development+site%22+OR+hotel+OR+%22for+redevelopment%22+OR+%22to+redevelop%22+OR+%22to+develop%22+OR+repositioning)+(%22New+York%22+OR+Miami+OR+%22South+Florida%22+OR+London+OR+Paris+OR+Europe)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'mixed_use',             true, 150),
