@@ -20,6 +20,7 @@ async function main() {
   const apply = process.argv.includes('--apply')
   const db = getSupabaseAdmin()
   const gmail = await getGmailClient()
+  if (!gmail) throw new Error('Gmail is not connected — cannot confirm sends, so nothing is written.')
 
   const { data: touches, error } = await db
     .from('value_touches')
