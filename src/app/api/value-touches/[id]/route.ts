@@ -7,6 +7,9 @@
 import { type NextRequest } from 'next/server'
 import { getSupabaseAdmin, isSupabaseAdminConfigured } from '@/lib/supabase'
 import { REPLY_STATUSES } from '@/lib/vocab'
+import { rejectUnknownKeys } from '@/lib/api/strict-body'
+
+const WRITABLE = ['reply_status', 'gmail_thread_id', 'notes', 'contact_id', 'sent_at', 'bump_due'] as const
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   if (!isSupabaseAdminConfigured()) {
@@ -17,6 +20,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (!body || typeof body !== 'object') {
     return Response.json({ error: 'Body must be JSON' }, { status: 400 })
   }
+  const unknown = rejectUnknownKeys(body, WRITABLE)
+  if (unknown) return unknown
 
   const supabase = getSupabaseAdmin()
   const { data: existing } = await supabase

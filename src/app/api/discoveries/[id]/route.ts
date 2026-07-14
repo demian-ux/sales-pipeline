@@ -6,10 +6,12 @@ import { type NextRequest } from 'next/server'
 import { getSupabaseAdmin, isSupabaseAdminConfigured } from '@/lib/supabase'
 import { WORK_STATUSES, DISCOVERY_BOARD_STATUSES } from '@/lib/vocab'
 import { CONSUMING_STATUSES, type WorkStatus } from '@/lib/types'
+import { rejectUnknownKeys } from '@/lib/api/strict-body'
 
 const ALLOWED_STATUS = DISCOVERY_BOARD_STATUSES
 const ALLOWED_WORK_STATUS = WORK_STATUSES
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+const WRITABLE = ['status', 'work_status', 'work_reason', 're_arm_at'] as const
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   if (!isSupabaseAdminConfigured()) {
@@ -39,6 +41,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (!body || typeof body !== 'object') {
     return Response.json({ error: 'Body must be JSON' }, { status: 400 })
   }
+  const unknown = rejectUnknownKeys(body, WRITABLE)
+  if (unknown) return unknown
 
   // Build the update from whichever of status / work_status is present. Invalid
   // values return an explicit 400 — never a silent no-op, since the automation

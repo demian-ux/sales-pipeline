@@ -7,7 +7,7 @@ import { getSupabaseAdmin, isSupabaseAdminConfigured } from '@/lib/supabase'
 
 const PatchBody = z.object({
   status: z.enum(['new', 'dismissed', 'promoted']),
-})
+}).strict()   // unknown key → 400, never a 200 that quietly drops it
 
 export async function PATCH(
   request: Request,

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
 import { z } from 'zod'
-import { getLeads, getCompanies, getOpportunities, getAIInsights, getInteractions, createLead } from '@/lib/sheets'
+import { getLeads, getCompanies, getOpportunities, getAIInsights, getInteractions, createLead, getCompanyById, findOrCreateCompanyByName } from '@/lib/sheets'
 import type {
   Lead,
   LeadWithCompany,
@@ -179,7 +179,40 @@ export async function POST(req: Request) {
 
     const now = new Date().toISOString()
     const lead_id = `lead_${randomUUID()}`
-    const company_id = body.company_id || `comp_${randomUUID()}`
+
+    // Resolve the company FIRST, and make sure the row actually exists.
+    //
+    // This used to mint `comp_${uuid}` and write it onto the lead without ever
+    // creating the Companies row, so the reference pointed at nothing — 114 of
+    // 185 leads carried a dangling company_id by 14 Jul 2026. A lead whose
+    // company doesn't resolve drops out of every company-joined view silently.
+    //
+    //   • explicit company_id → it must exist, or this is a 400. A caller
+    //     inventing an id is exactly how the dangling refs got written.
+    //   • company_name → find-or-create by name, reusing the existing row when
+    //     the firm is already known rather than minting a second id for it.
+    let company_id: string
+    if (body.company_id) {
+      const known = await getCompanyById(body.company_id)
+      if (!known) {
+        return NextResponse.json(
+          { error: `company_id ${body.company_id} does not exist. Omit it and pass company_name to create the company, or reference a real one.` },
+          { status: 400 },
+        )
+      }
+      company_id = known.company_id
+    } else if (company_name) {
+      const { company } = await findOrCreateCompanyByName(company_name, {
+        website: body.website || undefined,
+        location: body.location || undefined,
+      })
+      company_id = company.company_id
+    } else {
+      return NextResponse.json(
+        { error: 'company_name is required (or pass an existing company_id)' },
+        { status: 400 },
+      )
+    }
 
     const lead: Lead = {
       lead_id,

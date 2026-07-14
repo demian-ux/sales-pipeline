@@ -16,7 +16,7 @@ const PatchBody = z.object({
   snoozed_until: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   link_type:     z.enum(TASK_LINK_TYPES).nullable().optional(),
   link_id:       z.string().nullable().optional(),
-})
+}).strict()   // unknown key → 400, never a 200 that quietly drops it
 
 export async function PATCH(
   request: Request,

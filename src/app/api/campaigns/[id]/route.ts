@@ -26,7 +26,7 @@ const PatchBody = z.object({
   description: z.string().min(1).optional(),
   cta: z.string().min(1).optional(),
   notes: z.string().optional(),
-})
+}).strict()   // unknown key → 400, never a 200 that quietly drops it
 
 export async function PATCH(
   request: Request,

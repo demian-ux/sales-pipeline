@@ -9,6 +9,7 @@ import {
   saveInteraction,
 } from '@/lib/sheets'
 import type { Lead, Opportunity } from '@/lib/types'
+import { rejectUnknownKeys } from '@/lib/api/strict-body'
 
 const ALLOWED_FIELDS: (keyof Opportunity)[] = ['status', 'urgency', 'confidence', 'recommended_action', 'lead_id']
 
@@ -52,6 +53,12 @@ export async function PATCH(
   try {
     const { id } = await params
     const body = await req.json()
+
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Body must be JSON' }, { status: 400 })
+    }
+    const unknown = rejectUnknownKeys(body, ALLOWED_FIELDS as readonly string[])
+    if (unknown) return unknown
 
     const updates: Partial<Opportunity> = {}
     for (const field of ALLOWED_FIELDS) {

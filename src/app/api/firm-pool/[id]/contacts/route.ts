@@ -8,14 +8,24 @@ import { getSupabaseAdmin, isSupabaseAdminConfigured } from '@/lib/supabase'
 
 const EMAIL_STATUSES = ['verified', 'guessed', 'bounced', 'unknown'] as const
 
-const CreateBody = z.object({
-  name:         z.string().optional(),
-  title:        z.string().optional(),
-  email:        z.string().optional(),
-  email_status: z.enum(EMAIL_STATUSES).optional(),
-  linkedin_url: z.string().optional(),
-  is_primary:   z.boolean().optional(),
-})
+// `.strict()`: an unknown key is a 400. This schema previously accepted (and
+// silently discarded) lead_id / enriched_at / source while answering 201 — the
+// caller had no way to know the link it thought it stored was never stored.
+const CreateBody = z
+  .object({
+    name:         z.string().optional(),
+    title:        z.string().optional(),
+    email:        z.string().optional(),
+    email_status: z.enum(EMAIL_STATUSES).optional(),
+    linkedin_url: z.string().optional(),
+    is_primary:   z.boolean().optional(),
+    // Provenance (2026-07-14). enriched_at is the Apollo-credit receipt: a
+    // non-null value means this head is already paid for, don't buy it twice.
+    lead_id:      z.string().optional(),
+    enriched_at:  z.string().optional(),
+    source:       z.string().optional(),
+  })
+  .strict()
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   if (!isSupabaseAdminConfigured()) {
@@ -26,7 +36,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   try { body = await request.json() } catch { return Response.json({ error: 'Body must be JSON' }, { status: 400 }) }
   const parsed = CreateBody.safeParse(body)
   if (!parsed.success) {
-    return Response.json({ error: parsed.error.issues[0]?.message ?? 'Invalid body' }, { status: 400 })
+    const issue = parsed.error.issues[0]
+    const where = issue?.path.length ? ` (${issue.path.join('.')})` : ''
+    return Response.json({ error: `${issue?.message ?? 'Invalid body'}${where}` }, { status: 400 })
   }
   const b = parsed.data
 
@@ -47,6 +59,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       linkedin_url: b.linkedin_url ?? null,
       seat_checked_at: b.email_status === 'verified' ? new Date().toISOString() : null,
       is_primary: b.is_primary ?? true,
+      lead_id: b.lead_id ?? null,
+      enriched_at: b.enriched_at ?? null,
+      source: b.source ?? null,
     })
     .select()
     .single()
