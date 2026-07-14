@@ -150,10 +150,20 @@ async function main() {
   const byEmail = new Map(leads.filter((l) => l.email).map((l) => [l.email!.toLowerCase(), l]))
   const trailByEmail = new Map([...trail.values()].map((c) => [c.email.toLowerCase(), c]))
   const repairs: { contact_id: string; patch: Record<string, string> }[] = []
+  const firmNameById = new Map((firms ?? []).map((f) => [f.firm_id, f.name]))
   for (const c of existing ?? []) {
     if (c.lead_id && c.enriched_at && c.source) continue
     const email = (c.email ?? '').toLowerCase()
-    const lead = byEmail.get(email)
+    // Email is the reliable key, but a LinkedIn-only contact has none (e.g.
+    // REARDONSMITH's). Fall back to person-name + firm-name, which is exactly how
+    // the contact was matched to its firm in the first place.
+    const lead =
+      byEmail.get(email) ??
+      leads.find(
+        (l) =>
+          norm(l.full_name) === norm(c.name) &&
+          norm(l.company_name) === norm(firmNameById.get(c.firm_id)),
+      )
     const t = trailByEmail.get(email)
     const patch: Record<string, string> = {}
     if (!c.lead_id && lead) patch.lead_id = lead.lead_id
