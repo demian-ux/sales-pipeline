@@ -43,7 +43,7 @@ export const DRAFT_STATUSES = ['draft', 'approved', 'sent'] as const
 // this row" signal; `discovery_status` is the board bucket. Published via
 // /api/meta so runs can validate a value before PATCHing (a silent enum drift
 // is the worst failure mode for the write-back automation).
-export const WORK_STATUSES = ['unworked', 'drafted', 'held', 'rejected', 'already_engaged'] as const satisfies readonly WorkStatus[]
+export const WORK_STATUSES = ['unworked', 'benched', 'drafted', 'held', 'rejected', 'already_engaged'] as const satisfies readonly WorkStatus[]
 export const DISCOVERY_BOARD_STATUSES = ['active', 'saved', 'archived'] as const
 
 // Upstream-signal vocabularies (2026-07-10). Published via /api/meta so the

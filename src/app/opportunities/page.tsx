@@ -99,10 +99,26 @@ export default function OpportunitiesPage() {
       {/* Header */}
       <div className="page-head">
         <div>
-          <div className="page-eyebrow">Pipeline</div>
+          <div className="page-eyebrow">Pipeline · Retired</div>
           <div className="page-title">Opportunities</div>
-          <div className="page-sub">Every concrete reason to talk to someone right now.</div>
+          <div className="page-sub">Historical record of the excavation model. Nothing writes here any more.</div>
         </div>
+      </div>
+
+      {/* Retired notice (2026-07-14). This page renders the excavation model —
+          fan one signal out to named leads — which v6 of the prospecting process
+          replaced with the value lane (a firm-pool batch per signal). It has no
+          writer, so it can only ever show closed rows. Kept reachable for audit;
+          removed from the sidebar so it never reads as live work. */}
+      <div
+        className="card"
+        style={{ padding: '10px 14px', marginBottom: 16, borderLeft: '2px solid var(--accent)' }}
+      >
+        <span className="ink-3" style={{ fontSize: 12 }}>
+          <strong className="ink">Retired model.</strong> Lead-excavation from signals ended with v6 of the
+          prospecting process — no new Opportunities are created, and every row here is closed or dismissed.
+          Live work lives in <a href="/discoveries">Discoveries</a> and the <a href="/firm-pool">Firm Pool</a>.
+        </span>
       </div>
 
       {/* Body — filters + result grid */}

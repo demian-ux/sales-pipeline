@@ -27,9 +27,14 @@ const NAV: NavGroup[] = [
     ],
   },
   {
+    // /opportunities is deliberately absent (2026-07-14). It renders the legacy
+    // excavation model — fan one signal out to named leads — which v6 of the
+    // prospecting process retired; nothing writes Opportunities any more and
+    // every row is now Dismissed/closed. The route still resolves for audit of
+    // the historical rows, but a nav item pointing at permanently stale work is
+    // worse than no nav item. The live model is Discoveries → Firm Pool.
     group: 'Pipeline',
     items: [
-      { href: '/opportunities', label: 'Opportunities' },
       { href: '/campaigns', label: 'Campaigns' },
     ],
   },

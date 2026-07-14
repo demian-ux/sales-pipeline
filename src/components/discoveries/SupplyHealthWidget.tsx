@@ -11,15 +11,14 @@ interface RunPoint {
   started_at: string
   discovery_kind: string | null
   net_new: number
-  drafts_staged: number
   status: string
 }
 
 interface SupplyHealth {
   window_days: number
   runs: RunPoint[]
-  inventory: { prime: number; workable: number; workable_plus: number }
-  totals: { runs: number; net_new: number; drafts_staged: number; draft_rate: number }
+  inventory: { new: number; benched: number; prime: number; workable: number; workable_plus: number }
+  totals: { runs: number; net_new: number; drafted: number; draft_rate: number }
 }
 
 export default function SupplyHealthWidget() {
@@ -55,6 +54,7 @@ export default function SupplyHealthWidget() {
 
   const inv = data?.inventory
   const totals = data?.totals
+  const fresh = inv?.new ?? 0
   const runs = data?.runs ?? []
   const doneRuns = runs.filter((r) => r.status === 'done')
   const maxNetNew = Math.max(1, ...doneRuns.map((r) => r.net_new))
@@ -70,14 +70,18 @@ export default function SupplyHealthWidget() {
       >
         <span className="row" style={{ gap: 10, alignItems: 'baseline', flexWrap: 'wrap' }}>
           <span className="micro" style={{ color: 'var(--ink-3)' }}>SUPPLY HEALTH · {data?.window_days ?? 14}d</span>
+          {/* "New" = never reviewed. Reads 0 after a full triage pass — a benched
+              row is reviewed and kept, not backlog, so it is counted separately. */}
           <span className="ink" style={{ fontSize: 13, fontWeight: 600 }}>
-            {inv?.workable_plus ?? 0} unworked
+            {fresh} new since last review
           </span>
+          {fresh > 0 && (
+            <span className="ink-3" style={{ fontSize: 11.5 }}>
+              ({inv?.prime ?? 0} prime · {inv?.workable ?? 0} workable)
+            </span>
+          )}
           <span className="ink-3" style={{ fontSize: 11.5 }}>
-            ({inv?.prime ?? 0} prime · {inv?.workable ?? 0} workable)
-          </span>
-          <span className="ink-3" style={{ fontSize: 11.5 }}>
-            · {totals?.net_new ?? 0} net-new → {totals?.drafts_staged ?? 0} drafted over {totals?.runs ?? 0} runs
+            · {inv?.benched ?? 0} benched · {totals?.drafted ?? 0} drafted ({data?.window_days ?? 14}d)
           </span>
         </span>
         <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{open ? '▲' : '▼'}</span>
@@ -90,13 +94,16 @@ export default function SupplyHealthWidget() {
           ) : (
             <div className="col" style={{ gap: 8 }}>
               <div className="row" style={{ gap: 3, alignItems: 'flex-end', height: 56 }}>
+                {/* Bars are net-new per run. There is deliberately no per-run
+                    draft marker: drafting happens outside the run (lead created
+                    from a discovery, days later), so attributing a draft to one
+                    run was always a fiction — the honest count is the window total. */}
                 {doneRuns.map((r) => {
                   const h = Math.round((r.net_new / maxNetNew) * 48) + 2
-                  const drafted = r.drafts_staged > 0
                   return (
                     <div
                       key={r.id}
-                      title={`${new Date(r.started_at).toLocaleDateString()} · ${r.discovery_kind ?? 'run'} · ${r.net_new} net-new · ${r.drafts_staged} drafted`}
+                      title={`${new Date(r.started_at).toLocaleDateString()} · ${r.discovery_kind ?? 'run'} · ${r.net_new} net-new`}
                       style={{ flex: 1, minWidth: 4, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}
                     >
                       <div
@@ -106,7 +113,6 @@ export default function SupplyHealthWidget() {
                           border: `1px solid ${r.discovery_kind === 'opportunity_signal' ? 'rgba(92,142,212,0.35)' : 'rgba(200,169,110,0.35)'}`,
                         }}
                       />
-                      <div style={{ width: 5, height: 5, borderRadius: '50%', background: drafted ? 'var(--green)' : 'var(--border)' }} />
                     </div>
                   )
                 })}
@@ -114,9 +120,9 @@ export default function SupplyHealthWidget() {
               <div className="row" style={{ gap: 14, flexWrap: 'wrap' }}>
                 <Legend swatch="var(--accent-dim)" label="Launch net-new" />
                 <Legend swatch="var(--blue-dim)" label="Opp net-new" />
-                <Legend swatch="var(--green)" label="Run staged a draft" dot />
                 <span className="ink-3" style={{ fontSize: 11 }}>
-                  Draft rate {totals?.draft_rate ?? 0} per net-new
+                  {totals?.net_new ?? 0} net-new → {totals?.drafted ?? 0} drafted over {totals?.runs ?? 0} runs
+                  {' · '}draft rate {totals?.draft_rate ?? 0} per net-new
                 </span>
               </div>
             </div>

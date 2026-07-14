@@ -5,16 +5,19 @@
 import { getSupabaseAdmin } from '@/lib/supabase'
 
 // Mark a discovery `drafted` when outreach copy is generated for it — but only
-// if it's still `unworked`, so a hand-set held / rejected / already_engaged
-// state is never downgraded. Best-effort: a failure here must never fail the
-// draft generation, so errors are swallowed with a warning.
+// from `unworked` or `benched`, so a hand-set held / rejected / already_engaged
+// state is never downgraded. A benched row IS draftable: bench means "reviewed,
+// kept, available" — drafting it is exactly what the bench is for (2026-07-14).
+// Best-effort: a failure here must never fail the draft generation, so errors
+// are swallowed with a warning.
 export async function markDiscoveryDrafted(discoveryId: string): Promise<void> {
   try {
+    const now = new Date().toISOString()
     const { error } = await getSupabaseAdmin()
       .from('discoveries')
-      .update({ work_status: 'drafted', worked_at: new Date().toISOString() })
+      .update({ work_status: 'drafted', worked_at: now, reviewed_at: now })
       .eq('id', discoveryId)
-      .eq('work_status', 'unworked')
+      .in('work_status', ['unworked', 'benched'])
     // 42703 = column not yet added (migration not applied). Don't warn loudly —
     // it's expected until 2026-07-06_cold_supply_fixes.sql runs.
     if (error && error.code !== '42703') {

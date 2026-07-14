@@ -385,12 +385,22 @@ export type DiscoveryStatus = 'active' | 'saved' | 'archived'
 // re-chewing consumed material. The default active board hides held / rejected
 // / already_engaged. `already_engaged` is set at ingestion when a named actor
 // is already a CRM Company; the rest are set as runs work the row.
+//
+// `unworked` means NEVER REVIEWED (2026-07-14). A row a human/run looked at and
+// deliberately kept for a future hook is `benched` — reviewed, still available,
+// but not backlog. Conflating the two is what made the board shout "34 unworked"
+// the day after every active row had been triaged.
 export type WorkStatus =
   | 'unworked'
+  | 'benched'
   | 'drafted'
   | 'held'
   | 'rejected'
   | 'already_engaged'
+
+// States that mean "a run consumed this row" (stamps worked_at). `benched` is a
+// verdict but not consumption — it stamps reviewed_at only, and stays on the board.
+export const CONSUMING_STATUSES: readonly WorkStatus[] = ['drafted', 'held', 'rejected', 'already_engaged']
 
 // The states hidden from the default new-signal board — worked material that
 // shouldn't be re-judged. Revealed via an explicit filter.
@@ -662,10 +672,13 @@ export interface Discovery extends DiscoveryScoreBreakdown {
   verified_principal?: VerifiedPrincipal | null
   excavation_status?: ExcavationStatus | null
 
-  // Work-tracking (2026-07-06, Workstream C2).
+  // Work-tracking (2026-07-06, Workstream C2; review state 2026-07-14).
   work_status?: WorkStatus
   work_reason?: string | null
-  worked_at?: string | null
+  worked_at?: string | null        // a run consumed the row
+  reviewed_at?: string | null      // any verdict was written, benched included
+  re_arm_at?: string | null        // YYYY-MM-DD; a held row returns to the board on this date
+  duplicate_urls?: string[] | null // later articles about a project we already hold
 
   status: DiscoveryStatus
   raw_content?: string

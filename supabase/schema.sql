@@ -173,9 +173,14 @@ create table if not exists discoveries (
   -- Discovery work-tracking (2026-07-06). Orthogonal to `status`: records
   -- whether a run has acted on the row so the next run doesn't re-chew it. The
   -- default active board hides held / rejected / already_engaged.
-  work_status                text not null default 'unworked', -- unworked | drafted | held | rejected | already_engaged
+  -- 2026-07-14: `unworked` now means NEVER REVIEWED; a row that was reviewed and
+  -- deliberately kept is `benched` (still on the board, still offered to runs).
+  work_status                text not null default 'unworked', -- unworked | benched | drafted | held | rejected | already_engaged
   work_reason                text,
-  worked_at                  timestamptz,
+  worked_at                  timestamptz,                    -- when a run CONSUMED the row (drafted/held/rejected/already_engaged)
+  reviewed_at                timestamptz,                    -- when ANY verdict was written, benched included
+  re_arm_at                  date,                           -- a held row returns to the active board on this date
+  duplicate_urls             text[],                         -- later articles about a project we already hold (ingest dedup)
 
   status                     text not null default 'active',   -- 'active' | 'saved' | 'archived'
   raw_content                text,
@@ -199,6 +204,7 @@ create index if not exists idx_discoveries_project_key on discoveries(project_ke
 create index if not exists idx_discoveries_engaged    on discoveries(already_engaged);
 create index if not exists idx_discoveries_kind       on discoveries(discovery_kind);
 create index if not exists idx_discoveries_work_status on discoveries(work_status);
+create index if not exists idx_discoveries_re_arm_at   on discoveries(re_arm_at);
 -- Upstream-signal join keys + ranking axis (2026-07-10), opp-scoped.
 create index if not exists idx_discoveries_geo           on discoveries(geo) where discovery_kind = 'opportunity_signal';
 create index if not exists idx_discoveries_future_work   on discoveries(future_work_test) where discovery_kind = 'opportunity_signal';

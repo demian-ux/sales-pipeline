@@ -28,7 +28,13 @@ const WORK_STATUS_META: Record<string, { label: string; fg: string; bg: string; 
   held:     { label: '❙❙ Held',    fg: 'var(--accent)',     bg: 'var(--accent-dim)', border: 'rgba(200,169,110,0.3)' },
   rejected: { label: '✕ Rejected', fg: 'var(--red)',        bg: 'transparent',       border: 'var(--border)' },
   drafted:  { label: '✎ Drafted',  fg: 'var(--green)',      bg: 'var(--green-dim)',  border: 'rgba(76,175,134,0.3)' },
+  // Reviewed and kept for a future hook — on the board, but not new (2026-07-14).
+  benched:  { label: '◷ Benched',  fg: 'var(--ink-3)',      bg: 'transparent',       border: 'var(--border)' },
 }
+
+// A held row whose re-arm date has arrived is back on the board — say so, loudly
+// enough that it doesn't read as an ordinary hold nobody needs to look at.
+const REARMED_META = { label: '↻ Re-armed', fg: 'var(--accent)', bg: 'var(--accent-dim)', border: 'rgba(200,169,110,0.45)' }
 
 const PRINCIPAL_ROLE_LABELS: Record<string, string> = {
   developer: 'Developer',
@@ -94,7 +100,13 @@ export default function DiscoveryCard({
   const isOpp = d.discovery_kind === 'opportunity_signal'
   const targetFirms = d.suggested_target_firms ?? []
   const principal = d.verified_principal ?? null
-  const workBadge = d.work_status ? WORK_STATUS_META[d.work_status] : undefined
+  const reArmed =
+    d.work_status === 'held' && !!d.re_arm_at && d.re_arm_at <= new Date().toISOString().slice(0, 10)
+  const workBadge = reArmed
+    ? REARMED_META
+    : d.work_status
+      ? WORK_STATUS_META[d.work_status]
+      : undefined
   // Excavation is worth offering only on cards without a resolved principal yet
   // and above the weak floor (don't spend calls on disqualified/weak rows).
   const worthExcavating = !principal && d.fit_tier !== 'disqualified' && d.fit_tier !== 'weak'

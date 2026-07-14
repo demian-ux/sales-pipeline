@@ -19,6 +19,7 @@ import { segmentToSector, getSegmentConfig } from './opportunity-segments'
 import { isInTargetGeo, OUT_OF_GEO_SCORE_CAP, regionToGeo } from './target-geo'
 import { isDropSignalType } from './signal-type'
 import { makeProjectKey } from './project-key'
+import { findPriorDiscovery, hasInheritedVerdict, noteDuplicateUrl } from './dedup'
 import { extractDiscoveryEntities, matchEntitiesToCompanies, entityMatches } from './roster-match'
 import { fetchRSSFeed, type RawArticleFromRSS } from './rss'
 import { resolveGoogleNewsUrl, isGoogleNewsUrl } from './googleNewsResolver'
@@ -435,27 +436,36 @@ async function processArticle(article: RawArticleFromRSS, resolvedUrl: string, r
   const isDrop = isDropSignalType(analysis.signal_type)
   const status: 'active' | 'archived' = isDrop ? 'archived' : 'active'
 
-  // Project-level dedup: the same development arriving via a second outlet (a
-  // different URL than the source_url unique constraint catches) shouldn't
-  // appear twice. Keyed on the analyzer's project_name + city. Only de-dupe
-  // KEEP rows against other non-archived rows — drops are already off the board.
+  // Project-level dedup + reject-resurrection guard. Keyed on the analyzer's
+  // project_name + city, and now matched across BOTH kinds and every board
+  // status (see lib/discoveries/dedup.ts for why).
   const projectKey = makeProjectKey(analysis.project_name, analysis.city)
   if (!isDrop && projectKey) {
-    // Cross-run duplicate: the same project is already on the board from an
-    // earlier run.
-    const { data: dupe } = await supabase
-      .from('discoveries')
-      .select('id')
-      .eq('project_key', projectKey)
-      .eq('discovery_kind', 'project_launch')   // never dedup a launch against an opp row
-      .neq('status', 'archived')
-      .limit(1)
-      .maybeSingle()
+    const prior = await findPriorDiscovery(supabase, projectKey)
+    if (prior) {
+      // A rejected / already_engaged verdict is about the project, so this
+      // article inherits it instead of re-entering the board as fresh material.
+      if (hasInheritedVerdict(prior)) {
+        console.log(`[ingest] Inheriting ${prior.work_status} verdict for "${analysis.project_name}" — "${article.title.slice(0, 50)}"`)
+        await noteDuplicateUrl(supabase, prior.id, resolvedUrl)
+        await recordAnalyzed(article, tier)
+        return 'archived'
+      }
+      // A live row for this project already exists (in either lane).
+      if (prior.status !== 'archived') {
+        console.log(`[ingest] Duplicate project (already on the board): "${analysis.project_name}" — "${article.title.slice(0, 50)}"`)
+        await noteDuplicateUrl(supabase, prior.id, resolvedUrl)
+        await recordAnalyzed(article, tier)
+        return 'archived'
+      }
+      // Otherwise the prior row was archived as an off-type DROP — a judgment
+      // about that article, not this project. A real launch signal still lands.
+    }
     // Within-run duplicate: claim the key synchronously so a concurrent worker
     // processing the same project via a different outlet loses the race here
     // rather than both inserting.
-    if (dupe || seenProjectKeys.has(projectKey)) {
-      console.log(`[ingest] Duplicate project (already seen): "${analysis.project_name}" — "${article.title.slice(0, 50)}"`)
+    if (seenProjectKeys.has(projectKey)) {
+      console.log(`[ingest] Duplicate project (already seen this run): "${analysis.project_name}" — "${article.title.slice(0, 50)}"`)
       await recordAnalyzed(article, tier)
       return 'archived'
     }
@@ -646,21 +656,28 @@ async function processOpportunitySignal(
   }
   const tier: DiscoverySignalTier = fitTier === 'prime' ? 'strong_opportunity' : 'watchlist'
 
-  // Event-level dedup — the same program arriving via a second outlet shouldn't
-  // appear twice. Scoped to opportunity-signal rows so it never collides with a
-  // launch project of a similar name.
+  // Event-level dedup + reject-resurrection guard. Matched across BOTH kinds:
+  // the same project must not live as an active launch AND an active signal
+  // (Anantara Miami did exactly that on 14 Jul).
   const projectKey = makeProjectKey(analysis.event_name, analysis.city)
   if (projectKey) {
-    const { data: dupe } = await supabase
-      .from('discoveries')
-      .select('id')
-      .eq('project_key', projectKey)
-      .eq('discovery_kind', 'opportunity_signal')
-      .neq('status', 'archived')
-      .limit(1)
-      .maybeSingle()
-    if (dupe || seenProjectKeys.has(projectKey)) {
-      console.log(`[ingest] Duplicate opportunity event: "${analysis.event_name}" — "${article.title.slice(0, 50)}"`)
+    const prior = await findPriorDiscovery(supabase, projectKey)
+    if (prior) {
+      if (hasInheritedVerdict(prior)) {
+        console.log(`[ingest] Inheriting ${prior.work_status} verdict for "${analysis.event_name}" — "${article.title.slice(0, 50)}"`)
+        await noteDuplicateUrl(supabase, prior.id, resolvedUrl)
+        await recordAnalyzed(article, tier)
+        return 'archived'
+      }
+      if (prior.status !== 'archived') {
+        console.log(`[ingest] Duplicate opportunity event (already on the board): "${analysis.event_name}" — "${article.title.slice(0, 50)}"`)
+        await noteDuplicateUrl(supabase, prior.id, resolvedUrl)
+        await recordAnalyzed(article, tier)
+        return 'archived'
+      }
+    }
+    if (seenProjectKeys.has(projectKey)) {
+      console.log(`[ingest] Duplicate opportunity event (already seen this run): "${analysis.event_name}" — "${article.title.slice(0, 50)}"`)
       await recordAnalyzed(article, tier)
       return 'archived'
     }
