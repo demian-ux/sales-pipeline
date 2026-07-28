@@ -389,6 +389,12 @@ function LeadRow({
   last: boolean
 }) {
   const tempCls = lead.relationship_temperature ? TEMP_DOT[lead.relationship_temperature] : ''
+  // A Held lead whose held_until has arrived is due back in rotation. Sheets
+  // stores RAW YYYY-MM-DD text, so lexicographic comparison is correct (same
+  // approach as the discoveries re-armed chip).
+  const reArmDue =
+    lead.pipeline_stage === 'Held' && !!lead.held_until &&
+    lead.held_until <= new Date().toISOString().slice(0, 10)
   const stageIdx = STAGE_ORDER.indexOf(lead.pipeline_stage)
   const stageNum = stageIdx >= 0 ? String(stageIdx).padStart(2, '0') : '··'
   const identity = [lead.title, lead.company_name].filter(Boolean).join(' · ')
@@ -422,6 +428,22 @@ function LeadRow({
 
       <div className="rs-meta">
         <QuickLog leadId={lead.lead_id} leadName={lead.full_name} />
+        {reArmDue && (
+          <span
+            title={`Held until ${lead.held_until}${lead.held_reason ? ` — ${lead.held_reason}` : ''} · due back in rotation`}
+            style={{
+              fontSize: 10.5,
+              fontWeight: 600,
+              color: 'var(--accent)',
+              border: '1px solid var(--accent-line)',
+              borderRadius: 999,
+              padding: '1px 8px',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            ↻ Re-arm due
+          </span>
+        )}
         {openOpps > 0 && (
           <span
             title={`${openOpps} open opportunit${openOpps === 1 ? 'y' : 'ies'}`}

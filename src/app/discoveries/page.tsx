@@ -97,9 +97,11 @@ export default function DiscoveriesPage() {
     if (f.date_to)          params.set('date_to', f.date_to)
     if (f.status)           params.set('status', f.status)
     // Work-view: default board hides worked material (held/rejected/
-    // already_engaged); 'all' reveals it. The existing-account view is the
-    // Account = "Existing accounts" filter (engagement=engaged).
+    // already_engaged); 'all' reveals it; 'held' is the bench — held rows only,
+    // ordered by re-arm date. The existing-account view is the Account =
+    // "Existing accounts" filter (engagement=engaged).
     if (f.work_view === 'all') params.set('show_worked', 'true')
+    if (f.work_view === 'held') params.set('work_status', 'held')
     if (f.search)           params.set('search', f.search)
     if (f.signal_type)      params.set('signal_type', f.signal_type)
     if (f.engagement)       params.set('engagement', f.engagement)
@@ -107,7 +109,7 @@ export default function DiscoveriesPage() {
     if (f.tenure)           params.set('tenure', f.tenure)
     if (f.sector_fit)       params.set('sector_fit', f.sector_fit)
     if (!f.hide_disqualified) params.set('hide_disqualified', 'false')
-    params.set('sort_by', f.sort_by)
+    params.set('sort_by', f.work_view === 'held' ? 're_arm' : f.sort_by)
     params.set('limit', '50')
 
     try {
@@ -149,6 +151,25 @@ export default function DiscoveriesPage() {
         body: JSON.stringify({ status }),
       })
       if (res.ok) fetchDiscoveries(filters)
+    },
+    [filters, fetchDiscoveries],
+  )
+
+  // Bench writes (2026-07-28): hold / edit re-arm date + reason / release from
+  // the card. PATCH existed for a year of API-only writes — this is the UI half.
+  const setWork = useCallback(
+    async (id: string, patch: { work_status?: string; work_reason?: string | null; re_arm_at?: string | null }) => {
+      const res = await fetch(`/api/discoveries/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      })
+      if (res.ok) {
+        fetchDiscoveries(filters)
+      } else {
+        const data = await safeJson<{ error?: string }>(res)
+        setIngestMsg(`Hold update failed: ${data?.error ?? `(${res.status})`}`)
+      }
     },
     [filters, fetchDiscoveries],
   )
@@ -512,6 +533,7 @@ export default function DiscoveriesPage() {
                 selected={selected.has(d.id)}
                 onToggleSelect={() => toggleSelect(d.id)}
                 onStatusChange={setStatus}
+                onWorkChange={setWork}
                 onExcavate={excavate}
                 isNew={isNew(d)}
               />

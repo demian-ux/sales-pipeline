@@ -13,6 +13,10 @@ import { rejectUnknownKeys } from '@/lib/api/strict-body'
 
 const ALLOWED_FIELDS: (keyof Opportunity)[] = ['status', 'urgency', 'confidence', 'recommended_action', 'lead_id']
 
+// Must match Opportunity['status'] in types.ts and the hardcoded tab buckets in
+// /opportunities/page.tsx — an off-enum value makes the row invisible in every tab.
+const OPP_STATUSES: readonly Opportunity['status'][] = ['Open', 'In Progress', 'Contacted', 'Snoozed', 'Closed', 'Dismissed', 'Archived']
+
 // When an opportunity is marked Contacted, write through to the lead so the
 // Today queue and campaign-due signals reflect reality: log an Outbound
 // interaction, set last_touch_date, bump New Lead → Contacted.
@@ -59,6 +63,13 @@ export async function PATCH(
     }
     const unknown = rejectUnknownKeys(body, ALLOWED_FIELDS as readonly string[])
     if (unknown) return unknown
+
+    if (body.status !== undefined && !OPP_STATUSES.includes(body.status)) {
+      return NextResponse.json(
+        { error: `Invalid status: ${body.status} — expected ${OPP_STATUSES.join(' | ')}` },
+        { status: 400 },
+      )
+    }
 
     const updates: Partial<Opportunity> = {}
     for (const field of ALLOWED_FIELDS) {

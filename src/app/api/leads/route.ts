@@ -55,7 +55,7 @@ const CreateLeadBody = z
     owner: z.string().optional(),
     notes: z.string().optional(),
     held_reason: z.string().optional(),
-    held_until: z.string().optional(),
+    held_until: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'held_until must be YYYY-MM-DD').or(z.literal('')).optional(),
   })
   .refine(
     (b) => !!b.full_name?.trim() || (!!b.first_name?.trim() && !!b.last_name?.trim()),

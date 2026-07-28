@@ -16,6 +16,9 @@ interface DiscoveryCardProps {
   selected?: boolean
   onToggleSelect?: () => void
   onStatusChange?: (id: string, status: 'saved' | 'archived' | 'active') => Promise<void> | void
+  // Bench wiring (2026-07-28): hold / edit re-arm date + reason / release.
+  // Sends a PATCH-shaped partial; optional — the card renders without it.
+  onWorkChange?: (id: string, patch: { work_status?: string; work_reason?: string | null; re_arm_at?: string | null }) => Promise<void> | void
   // On-demand excavation: resolve the actual developer/designer-of-record.
   // Optional — the card renders without the Resolve affordance when absent.
   onExcavate?: (id: string) => Promise<void> | void
@@ -91,10 +94,14 @@ export default function DiscoveryCard({
   selected,
   onToggleSelect,
   onStatusChange,
+  onWorkChange,
   onExcavate,
   isNew,
 }: DiscoveryCardProps) {
   const [busy, setBusy] = useState<string | null>(null)
+  const [holdOpen, setHoldOpen] = useState(false)
+  const [holdDate, setHoldDate] = useState(d.re_arm_at ?? '')
+  const [holdReason, setHoldReason] = useState(d.work_reason ?? '')
   const tier = TIER_META[discoveryTier(d.discovery_score, d.signal_tier)]
 
   const isOpp = d.discovery_kind === 'opportunity_signal'
@@ -131,6 +138,35 @@ export default function DiscoveryCard({
     setBusy(status)
     try {
       await onStatusChange(d.id, status)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const isHeld = d.work_status === 'held'
+
+  async function saveHold() {
+    if (!onWorkChange || busy) return
+    setBusy('hold')
+    try {
+      await onWorkChange(d.id, {
+        work_status: 'held',
+        work_reason: holdReason.trim() || null,
+        re_arm_at: holdDate || null,
+      })
+      setHoldOpen(false)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  // Release = explicit re-arm now: back to unworked, date cleared.
+  async function releaseHold() {
+    if (!onWorkChange || busy) return
+    setBusy('hold')
+    try {
+      await onWorkChange(d.id, { work_status: 'unworked', re_arm_at: null })
+      setHoldOpen(false)
     } finally {
       setBusy(null)
     }
@@ -428,6 +464,16 @@ export default function DiscoveryCard({
               Find firms
             </Link>
           )}
+          {onWorkChange && (
+            <button
+              className="btn btn-xs btn-ghost"
+              onClick={() => setHoldOpen((o) => !o)}
+              disabled={!!busy}
+              title={isHeld ? 'Edit the re-arm date / reason, or release back to the board' : 'Park this for later with a reason and an optional re-arm date'}
+            >
+              {isHeld ? 'Edit hold' : 'Hold'}
+            </button>
+          )}
           {onStatusChange && d.status !== 'saved' && (
             <button
               className="btn btn-xs btn-ghost"
@@ -461,6 +507,47 @@ export default function DiscoveryCard({
           </Link>
         </div>
       </div>
+
+      {/* Inline hold editor — reason + re-arm date. The date is when the row
+          returns to the default board on its own (auto-re-arm on GET). */}
+      {holdOpen && onWorkChange && (
+        <div
+          className="col"
+          style={{ gap: 8, borderTop: '1px solid var(--border)', paddingTop: 12 }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="row" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <span className="micro" style={{ color: 'var(--ink-3)' }}>RE-ARM</span>
+            <input
+              type="date"
+              className="input"
+              value={holdDate}
+              onChange={(e) => setHoldDate(e.target.value)}
+              style={{ width: 150, colorScheme: 'dark' }}
+            />
+          </div>
+          <input
+            className="input"
+            value={holdReason}
+            onChange={(e) => setHoldReason(e.target.value)}
+            placeholder="Why held — e.g. weak hook today, contact missing, cooldown"
+          />
+          <div className="row" style={{ gap: 6, justifyContent: 'flex-end' }}>
+            {isHeld && (
+              <button className="btn btn-xs btn-ghost" onClick={releaseHold} disabled={!!busy}
+                      title="Back to the board now — clears the hold and the re-arm date">
+                {busy === 'hold' ? '…' : 'Release now'}
+              </button>
+            )}
+            <button className="btn btn-xs btn-ghost" onClick={() => setHoldOpen(false)} disabled={!!busy}>
+              Cancel
+            </button>
+            <button className="btn btn-xs" onClick={saveHold} disabled={!!busy}>
+              {busy === 'hold' ? '…' : isHeld ? 'Update hold' : 'Hold'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

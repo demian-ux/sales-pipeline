@@ -15,7 +15,15 @@ const UpdatableFields = z.object({
   next_followup_date: z.string().optional(),
   last_touch_date: z.string().optional(),
   notes: z.string().optional(),
+  held_reason: z.string().optional(),
+  held_until: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'held_until must be YYYY-MM-DD').optional(),
 }).strict()
+  // Same guard as the single-lead routes: a bulk move to Held without a reason
+  // used to slip past — no silent parks (2026-07-28).
+  .refine(
+    (f) => f.pipeline_stage !== 'Held' || !!f.held_reason?.trim(),
+    { message: 'held_reason is required when setting stage Held' },
+  )
 
 const Body = z.object({
   ids: z.array(z.string().min(1)).min(1, 'ids is required').max(500, 'Max 500 ids per call'),

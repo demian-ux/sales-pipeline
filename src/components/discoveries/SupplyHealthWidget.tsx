@@ -17,7 +17,7 @@ interface RunPoint {
 interface SupplyHealth {
   window_days: number
   runs: RunPoint[]
-  inventory: { new: number; benched: number; prime: number; workable: number; workable_plus: number }
+  inventory: { new: number; benched: number; held?: number; re_arm_due?: number; prime: number; workable: number; workable_plus: number }
   totals: { runs: number; net_new: number; drafted: number; draft_rate: number }
 }
 
@@ -81,8 +81,14 @@ export default function SupplyHealthWidget() {
             </span>
           )}
           <span className="ink-3" style={{ fontSize: 11.5 }}>
-            · {inv?.benched ?? 0} benched · {totals?.drafted ?? 0} drafted ({data?.window_days ?? 14}d)
+            · {inv?.benched ?? 0} benched · {inv?.held ?? 0} held · {totals?.drafted ?? 0} drafted ({data?.window_days ?? 14}d)
           </span>
+          {/* Passed re-arm triggers must be visible without opening the bench view. */}
+          {(inv?.re_arm_due ?? 0) > 0 && (
+            <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--accent)' }}>
+              ↻ {inv?.re_arm_due} re-armed
+            </span>
+          )}
         </span>
         <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{open ? '▲' : '▼'}</span>
       </button>

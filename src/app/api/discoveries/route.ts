@@ -1,10 +1,17 @@
 // GET /api/discoveries — list with filters (ported from Terminal's
 // /api/opportunities). Returns the Discovery rows the feed page renders.
+// POST /api/discoveries — manual creation (2026-07-28). Out-of-feed signals
+// (agent research runs, manual sweeps, the migrated bench ledger) enter the
+// same machinery as ingested rows: work_status/re_arm_at and the board's
+// auto-re-arm apply to them identically.
 
+import { randomUUID } from 'crypto'
 import { type NextRequest } from 'next/server'
+import { z } from 'zod'
 import { getSupabaseAdmin, isSupabaseAdminConfigured } from '@/lib/supabase'
 import { normalizeDiscoveryKind } from '@/lib/discoveries/kind'
-import { DISCOVERY_BOARD_STATUSES, WORK_STATUSES } from '@/lib/vocab'
+import { DISCOVERY_BOARD_STATUSES, WORK_STATUSES, GEOS } from '@/lib/vocab'
+import { CONSUMING_STATUSES, type WorkStatus } from '@/lib/types'
 
 // Every query param this route understands. An unknown param is a 400, not a
 // silent no-op: `?kind=upstream_signal` used to be ignored, so a run that asked
@@ -98,9 +105,10 @@ export async function GET(request: NextRequest) {
       { status: 400 },
     )
   }
-  // Sort: 'combined' (blended fit×deal, default) | 'score' (raw discovery_score) | 'date'.
+  // Sort: 'combined' (blended fit×deal, default) | 'score' (raw discovery_score)
+  // | 'date' | 're_arm' (soonest re-arm first, undated holds last — bench view).
   const sortParam  = sp.get('sort_by')
-  const sortBy     = sortParam === 'date' ? 'date' : sortParam === 'score' ? 'score' : 'combined'
+  const sortBy     = sortParam === 'date' ? 'date' : sortParam === 'score' ? 'score' : sortParam === 're_arm' ? 're_arm' : 'combined'
   const tenure     = sp.get('tenure')            ?? ''
   const sectorFit  = sp.get('sector_fit')        ?? ''
   const fitTier    = sp.get('fit_tier')          ?? ''
@@ -138,7 +146,12 @@ export async function GET(request: NextRequest) {
     .from('discoveries')
     .select(LIST_COLUMNS, { count: 'exact' })
 
-  if (sortBy === 'date') {
+  if (sortBy === 're_arm') {
+    // Ascending with nulls LAST: overdue re-arms first, undated holds at the end.
+    query = query
+      .order('re_arm_at', { ascending: true, nullsFirst: false })
+      .order('combined_score', { ascending: false, nullsFirst: false })
+  } else if (sortBy === 'date') {
     query = query
       .order('date_published', { ascending: false, nullsFirst: false })
       .order('combined_score', { ascending: false, nullsFirst: false })
@@ -214,4 +227,128 @@ export async function GET(request: NextRequest) {
   }
 
   return Response.json({ discoveries: data, total: count, offset, limit })
+}
+
+// ---------------------------------------------------------------------------
+// POST — manual discovery creation. Mirrors the PATCH clock semantics in
+// [id]/route.ts: reviewed_at stamps now (a manual entry has, by definition,
+// been looked at), worked_at only when the work_status is consuming.
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+
+const CreateDiscoveryBody = z
+  .object({
+    title: z.string({ required_error: 'title is required' }).min(1, 'title is required'),
+    // Where this came from — e.g. "Manual bench 2026-07-28" or "Agent research".
+    source: z.string({ required_error: 'source is required' }).min(1, 'source is required'),
+    // The why-benched line. Mirrors the lead held_reason philosophy: no silent parks.
+    work_reason: z.string({ required_error: 'work_reason is required' }).min(1, 'work_reason is required'),
+    url: z.string().url('url must be a valid URL').optional(),
+    // `category` lands in `sector` — the launch-lane classification column.
+    category: z.string().optional(),
+    geo: z.enum(GEOS, { errorMap: () => ({ message: `geo must be one of: ${GEOS.join(' | ')}` }) }).optional(),
+    icp_fit_score: z.number().min(0, 'icp_fit_score must be 0–100').max(100, 'icp_fit_score must be 0–100').optional(),
+    re_arm_at: z.string().regex(ISO_DATE, 're_arm_at must be YYYY-MM-DD').optional(),
+    work_status: z.enum(WORK_STATUSES, { errorMap: () => ({ message: `work_status must be one of: ${WORK_STATUSES.join(' | ')}` }) }).default('held'),
+    status: z.enum(DISCOVERY_BOARD_STATUSES, { errorMap: () => ({ message: `status must be one of: ${DISCOVERY_BOARD_STATUSES.join(' | ')}` }) }).default('active'),
+  })
+  .strict()
+
+// Escape ilike wildcards so a title containing % or _ dedups literally.
+function escapeIlike(s: string): string {
+  return s.replace(/([%_\\])/g, '\\$1')
+}
+
+export async function POST(request: NextRequest) {
+  if (!isSupabaseAdminConfigured()) {
+    return Response.json({ error: 'Supabase not configured' }, { status: 503 })
+  }
+
+  const json = await request.json().catch(() => null)
+  if (!json || typeof json !== 'object') {
+    return Response.json({ error: 'Body must be JSON' }, { status: 400 })
+  }
+
+  const parsed = CreateDiscoveryBody.safeParse(json)
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0]
+    const field = issue?.path.join('.') || 'body'
+    return Response.json({ error: `${field}: ${issue?.message ?? 'invalid'}` }, { status: 400 })
+  }
+  const body = parsed.data
+  const supabase = getSupabaseAdmin()
+
+  // Soft dedup against ACTIVE rows: identical title (case-insensitive) or
+  // identical non-empty url. Archived/saved rows don't block re-entry.
+  const [byTitle, byUrl] = await Promise.all([
+    supabase
+      .from('discoveries')
+      .select('id, title')
+      .eq('status', 'active')
+      .ilike('title', escapeIlike(body.title.trim()))
+      .limit(1),
+    body.url
+      ? supabase.from('discoveries').select('id, title').eq('status', 'active').eq('source_url', body.url).limit(1)
+      : Promise.resolve({ data: null, error: null }),
+  ])
+  for (const res of [byTitle, byUrl]) {
+    if (res.error) {
+      if (res.error.code === '42703') {
+        return Response.json(
+          { error: 'Database is missing columns from a pending migration — apply the latest files in supabase/migrations/ or re-run supabase/schema.sql.', code: '42703' },
+          { status: 503 },
+        )
+      }
+      return Response.json({ error: res.error.message }, { status: 500 })
+    }
+    const dup = res.data?.[0]
+    if (dup) {
+      return Response.json(
+        { error: `Duplicate of active discovery ${dup.id} ("${dup.title}")`, duplicate_of: dup.id },
+        { status: 409 },
+      )
+    }
+  }
+
+  const now = new Date().toISOString()
+  const ws = body.work_status as WorkStatus
+  const row: Record<string, unknown> = {
+    title: body.title.trim(),
+    source: body.source.trim(),
+    // source_url is NOT NULL UNIQUE in the schema — synthesize a unique
+    // placeholder when the signal has no URL (agent research, verbal leads).
+    source_url: body.url ?? `manual://${randomUUID()}`,
+    source_type: 'manual',
+    status: body.status,
+    work_status: ws,
+    work_reason: body.work_reason.trim(),
+    re_arm_at: body.re_arm_at ?? null,
+    // Same two clocks as PATCH /api/discoveries/[id]: a manual entry is by
+    // definition reviewed; it is "worked" only if it enters in a consuming state.
+    reviewed_at: now,
+    worked_at: CONSUMING_STATUSES.includes(ws) ? now : null,
+  }
+  if (body.category) row.sector = body.category
+  if (body.geo) row.geo = body.geo
+  if (body.icp_fit_score !== undefined) row.icp_fit_score = body.icp_fit_score
+
+  const { data, error } = await supabase.from('discoveries').insert(row).select().single()
+
+  if (error) {
+    if (error.code === '42703') {
+      return Response.json(
+        { error: 'Database is missing columns from a pending migration — apply the latest files in supabase/migrations/ or re-run supabase/schema.sql.', code: '42703' },
+        { status: 503 },
+      )
+    }
+    // 23505 = unique violation on source_url — same signal as the soft dedup,
+    // just raced or non-active. Report it as a conflict, not a server error.
+    if (error.code === '23505') {
+      return Response.json({ error: `A discovery with url ${body.url} already exists` }, { status: 409 })
+    }
+    console.error('[discoveries] insert error:', error.message)
+    return Response.json({ error: error.message }, { status: 500 })
+  }
+
+  return Response.json({ discovery: data }, { status: 201 })
 }

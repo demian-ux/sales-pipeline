@@ -27,11 +27,13 @@ export interface DiscoveryFilterState {
   tenure: string
   sector_fit: string
   hide_disqualified: boolean
-  // Work-tracking view (2026-07-06). 'active' (default) hides worked material
-  // (held / rejected / already_engaged) so the board shows only new signals;
-  // 'all' reveals it. The existing-account view is the Account = "Existing
-  // accounts" filter (engagement=engaged).
-  work_view: 'active' | 'all'
+  // Work-tracking view (2026-07-06; bench view 2026-07-28). 'active' (default)
+  // hides worked material (held / rejected / already_engaged) so the board
+  // shows only new signals; 'all' reveals it; 'held' is the bench — only held
+  // rows, sorted by re-arm date (soonest first, undated last). The
+  // existing-account view is the Account = "Existing accounts" filter
+  // (engagement=engaged).
+  work_view: 'active' | 'all' | 'held'
   // 'combined' = blended fit×deal (default) | 'score' = raw deal score | 'date'
   sort_by: 'combined' | 'score' | 'date'
 }
@@ -254,19 +256,24 @@ export default function FilterPanel({ filters, onChange, mode }: FilterPanelProp
         </label>
       </div>
       <div className="filter-section">
-        <label
-          className="row"
-          style={{ gap: 8, cursor: 'pointer', alignItems: 'center' }}
-          title="Reveal worked material — held, rejected, and already-engaged rows the board hides by default"
-        >
-          <input
-            type="checkbox"
-            checked={filters.work_view === 'all'}
-            onChange={(e) => set('work_view', e.target.checked ? 'all' : 'active')}
-            style={{ accentColor: 'var(--accent)', cursor: 'pointer' }}
-          />
-          <span className="filter-label" style={{ marginBottom: 0 }}>Show worked (held / rejected)</span>
-        </label>
+        <span className="filter-label">Worked material</span>
+        <div className="seg" style={{ width: '100%' }}>
+          {([
+            { value: 'active', label: 'New',   title: 'Default board — worked material (held / rejected / already engaged) hidden' },
+            { value: 'all',    label: 'All',   title: 'Reveal everything, worked included' },
+            { value: 'held',   label: 'Bench', title: 'Held items only, sorted by re-arm date — soonest first, undated last' },
+          ] as const).map((opt) => (
+            <button
+              key={opt.value}
+              className={`seg-btn ${filters.work_view === opt.value ? 'active' : ''}`}
+              onClick={() => set('work_view', opt.value)}
+              title={opt.title}
+              style={{ flex: 1, justifyContent: 'center' }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
       </div>
       <div className="filter-section">
         <span className="filter-label">Account</span>

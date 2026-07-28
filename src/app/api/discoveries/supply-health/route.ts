@@ -37,7 +37,9 @@ export async function GET() {
   const onBoard = (workStatus: string) =>
     activeCount(workStatus).or('fit_tier.is.null,fit_tier.neq.disqualified')
 
-  const [runsRes, newRes, benchedRes, primeRes, workableRes, draftedRes] = await Promise.all([
+  const today = new Date().toISOString().slice(0, 10)
+
+  const [runsRes, newRes, benchedRes, primeRes, workableRes, draftedRes, heldRes, reArmDueRes] = await Promise.all([
     supabase
       .from('ingestion_runs')
       .select('id, started_at, finished_at, discovery_kind, articles_analyzed, articles_new, status')
@@ -54,11 +56,15 @@ export async function GET() {
       .select('id', { count: 'exact', head: true })
       .eq('work_status', 'drafted')
       .gte('worked_at', since),
+    // Bench inventory (2026-07-28): held rows, and the subset whose re-arm
+    // date has arrived — those are already back on the default board.
+    activeCount('held'),
+    activeCount('held').lte('re_arm_at', today),
   ])
 
   // Any of these columns missing (42703) means a migration hasn't been applied
   // yet — surface an actionable 503 rather than a generic 500.
-  const migrationError = [runsRes.error, newRes.error, benchedRes.error, primeRes.error, workableRes.error, draftedRes.error]
+  const migrationError = [runsRes.error, newRes.error, benchedRes.error, primeRes.error, workableRes.error, draftedRes.error, heldRes.error, reArmDueRes.error]
     .find((e) => e?.code === '42703')
   if (migrationError) {
     return Response.json(
@@ -102,6 +108,9 @@ export async function GET() {
       // pass and stays 0 until the next ingest lands something.
       new: fresh,
       benched,
+      held: heldRes.count ?? 0,
+      // Held rows whose re-arm date has passed — visible triggers.
+      re_arm_due: reArmDueRes.count ?? 0,
       // Fit breakdown of the *new* rows only.
       prime,
       workable,
