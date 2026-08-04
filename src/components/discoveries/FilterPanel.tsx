@@ -6,7 +6,8 @@ export interface DiscoveryFilterState {
   // Which discovery mode's board to show. Driven by the board's mode toggle,
   // not a sidebar filter; sent as the discovery_kind query param. '' = All
   // (both kinds mixed).
-  discovery_kind: DiscoveryKind | ''
+  // 'offering_plan,permit_filing' is the combined NY-filings view (2026-08-04).
+  discovery_kind: DiscoveryKind | '' | 'offering_plan,permit_filing'
   region: string
   country: string
   city: string
@@ -44,7 +45,7 @@ interface FilterPanelProps {
   // The active board mode. In opportunity_signal mode the launch-only controls
   // (Signal, Type, Client, Tenure, Sector fit) are hidden — those columns are
   // NULL on opp rows, so the filters would only ever empty the board. '' = All.
-  mode?: DiscoveryKind | ''
+  mode?: DiscoveryFilterState['discovery_kind']
 }
 
 const REGION_OPTIONS = [

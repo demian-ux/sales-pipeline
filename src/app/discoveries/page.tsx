@@ -337,7 +337,9 @@ export default function DiscoveriesPage() {
           <div className="page-title">Discoveries</div>
           <div className="page-sub">
             {isAll
-              ? 'All discoveries — Project Launches and Opportunity Signals together.'
+              ? 'All discoveries — Project Launches, Opportunity Signals, and NY filings together.'
+              : mode === 'offering_plan,permit_filing'
+              ? 'NY filings — AG offering plans (manual entry) and DOB new-building permits. NY presents papers, not press.'
               : isOpp
               ? 'Opportunity Signals — upstream events that create design work, mapped to the firms who would win it.'
               : 'Project Launches — market signals where the prospect is the source of the project. The radar.'}
@@ -385,6 +387,13 @@ export default function DiscoveriesPage() {
             onClick={() => setMode('opportunity_signal')}
           >
             Opportunity Signals
+          </button>
+          <button
+            className={`seg-btn ${mode === 'offering_plan,permit_filing' ? 'active' : ''}`}
+            onClick={() => setMode('offering_plan,permit_filing')}
+            title="NY-native filings — AG offering plans (manual) + DOB new-building permits"
+          >
+            NY Filings
           </button>
           <button
             className={`seg-btn ${isAll ? 'active' : ''}`}

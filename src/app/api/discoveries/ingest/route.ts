@@ -18,15 +18,18 @@
 
 import { type NextRequest, after } from 'next/server'
 import { getSupabaseAdmin, isSupabaseAdminConfigured } from '@/lib/supabase'
-import { runIngestion } from '@/lib/discoveries/processor'
+import { runIngestion, createIngestProgress } from '@/lib/discoveries/processor'
+import { runStructuredIngestion, isStructuredSource } from '@/lib/discoveries/ny-native'
 import { isIngestAuthorized } from '@/lib/auth'
 import { normalizeIngestMode } from '@/lib/discoveries/kind'
 import type { DiscoveryKind } from '@/lib/types'
 
 export const maxDuration = 300
 
-// The modes the daily cron runs, in order.
-const CRON_MODES: DiscoveryKind[] = ['project_launch', 'opportunity_signal']
+// The modes the daily cron runs, in order. 'permit_filing' is the DOB
+// new-building lane (2026-08-04); 'offering_plan' is manual-entry only (the AG
+// database has no API), so it is not cron-run.
+const CRON_MODES: DiscoveryKind[] = ['project_launch', 'opportunity_signal', 'permit_filing']
 
 // Accepts 'upstream_signal' as an alias for 'opportunity_signal'; anything else
 // (or absent) falls back to 'project_launch'.
@@ -91,7 +94,26 @@ async function cleanupStaleRuns(): Promise<void> {
   }
 }
 
-interface SourceRow { name: string; url: string }
+interface SourceRow { name: string; url: string; source_type?: string | null }
+
+// Structured (Socrata/API) sources are dispatched to the NY-native runner;
+// everything else goes through the RSS pipeline. Structured runs first (fast,
+// deterministic), then runIngestion — which also finalizes the shared run
+// record — processes the RSS sources with the same progress object.
+async function runModeIngestion(
+  sources: SourceRow[],
+  runId: string,
+  deadlineMs: number,
+  mode: DiscoveryKind,
+): Promise<void> {
+  const structured = sources.filter(isStructuredSource)
+  const rss = sources.filter((s) => !isStructuredSource(s))
+  const progress = createIngestProgress()
+  if (structured.length > 0) {
+    await runStructuredIngestion(structured, progress, deadlineMs)
+  }
+  await runIngestion(rss, runId, progress, deadlineMs, mode)
+}
 
 // Active sources for a mode, ordered by sort_order. Tolerates a pre-migration
 // schema (no discovery_kind column, code 42703): launch falls back to all active
@@ -101,7 +123,7 @@ async function loadActiveSources(mode: DiscoveryKind): Promise<{ sources: Source
 
   const ordered = await supabase
     .from('sources')
-    .select('name, url')
+    .select('name, url, source_type')
     .eq('active', true)
     .eq('discovery_kind', mode)
     .order('sort_order', { ascending: true })
@@ -112,18 +134,18 @@ async function loadActiveSources(mode: DiscoveryKind): Promise<{ sources: Source
     if (mode === 'opportunity_signal') return { sources: [] }
     const legacy = await supabase
       .from('sources')
-      .select('name, url')
+      .select('name, url, source_type')
       .eq('active', true)
       .order('sort_order', { ascending: true })
     if (!legacy.error) return { sources: legacy.data ?? [] }
-    const noOrder = await supabase.from('sources').select('name, url').eq('active', true)
+    const noOrder = await supabase.from('sources').select('name, url, source_type').eq('active', true)
     return noOrder.error ? { error: noOrder.error.message } : { sources: noOrder.data ?? [] }
   }
 
   // Some other error (e.g. sort_order quirk) — retry without ordering.
   const noOrder = await supabase
     .from('sources')
-    .select('name, url')
+    .select('name, url, source_type')
     .eq('active', true)
     .eq('discovery_kind', mode)
   return noOrder.error ? { error: noOrder.error.message } : { sources: noOrder.data ?? [] }
@@ -176,7 +198,7 @@ async function startBackgroundRun(mode: DiscoveryKind): Promise<Response> {
   const deadlineMs = Date.now() + (maxDuration - 30) * 1000
   after(async () => {
     try {
-      await runIngestion(loaded.sources, run.id, undefined, deadlineMs, mode)
+      await runModeIngestion(loaded.sources, run.id, deadlineMs, mode)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       console.error('[ingest] background run crashed:', message)
@@ -261,7 +283,7 @@ async function startCronRun(): Promise<Response> {
           runId = run.id
         }
         try {
-          await runIngestion(loaded.sources, runId, undefined, deadlineMs, mode)
+          await runModeIngestion(loaded.sources, runId, deadlineMs, mode)
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err)
           console.error(`[ingest] Cron ${mode} run crashed:`, message)

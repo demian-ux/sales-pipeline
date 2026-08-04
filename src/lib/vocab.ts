@@ -49,7 +49,7 @@ export const DISCOVERY_BOARD_STATUSES = ['active', 'saved', 'archived'] as const
 // Upstream-signal vocabularies (2026-07-10). Published via /api/meta so the
 // weekly value-lane run can validate a value before matching/ranking on it.
 // WORK_CATEGORIES + GEOS are the firm-pool join keys (category ∩ geo).
-export const WORK_CATEGORIES = ['development', 'architecture', 'interior_design', 'hospitality_design', 'landscape', 'experiential'] as const satisfies readonly WorkCategory[]
+export const WORK_CATEGORIES = ['development', 'architecture', 'interior_design', 'hospitality_design', 'landscape', 'experiential', 'new_dev_marketing'] as const satisfies readonly WorkCategory[]
 export const GEOS = ['nyc', 'south_florida', 'europe', 'middle_east', 'other'] as const satisfies readonly Geo[]
 export const BRIEFS_STATUSES = ['unawarded', 'partially_awarded', 'awarded'] as const satisfies readonly BriefsStatus[]
 

@@ -18,6 +18,7 @@ import { computeOpportunityScore, fitTierFromScore, briefsStatusToTiming } from 
 import { segmentToSector, getSegmentConfig } from './opportunity-segments'
 import { isInTargetGeo, OUT_OF_GEO_SCORE_CAP, regionToGeo } from './target-geo'
 import { isDropSignalType } from './signal-type'
+import { gate0Reason } from './gate0'
 import { makeProjectKey } from './project-key'
 import { findPriorDiscovery, hasInheritedVerdict, noteDuplicateUrl } from './dedup'
 import { extractDiscoveryEntities, matchEntitiesToCompanies, entityMatches } from './roster-match'
@@ -472,6 +473,22 @@ async function processArticle(article: RawArticleFromRSS, resolvedUrl: string, r
     seenProjectKeys.add(projectKey)
   }
 
+  // Gate-0 (2026-08-04): standing-rulings auto-kills, mirrored at ingestion so
+  // the feed doesn't accumulate what the runs will reject anyway. Applied only
+  // to KEEP-type rows — the segment/geo rules are verdicts about the PROJECT,
+  // so inserting them as work_status='rejected' correctly makes later articles
+  // inherit the rejection. (DROP-type rows stay untouched: an off-type article
+  // carries no project verdict — see lib/discoveries/dedup.ts.)
+  const gate0 = isDrop ? null : gate0Reason({
+    title: analysis.title || article.title,
+    sector: analysis.sector,
+    project_type: analysis.project_type,
+    brief_summary: analysis.brief_summary,
+    tags: analysis.tags,
+    region: analysis.region,
+    country: analysis.country,
+  })
+
   // CRM cross-reference: tag the discovery if a named actor matches a Company
   // already in the roster, so worked firms are badged rather than re-surfaced
   // as new. Off the active board only via the UI filter — never auto-archived.
@@ -545,9 +562,11 @@ async function processArticle(article: RawArticleFromRSS, resolvedUrl: string, r
     engaged_company_id:   engaged?.company_id ?? null,
     engaged_company_name: engaged?.company_name ?? null,
     // Work-tracking: a firm already in the CRM starts as already_engaged so it
-    // drops off the new-signal board into the existing-account view; everything
-    // else starts unworked. (2026-07-06)
-    work_status:          engaged ? 'already_engaged' : 'unworked',
+    // drops off the new-signal board into the existing-account view; a gate-0
+    // hit enters pre-rejected with the rule that fired; everything else starts
+    // unworked. (2026-07-06 / gate-0 2026-08-04)
+    work_status:          engaged ? 'already_engaged' : gate0 ? 'rejected' : 'unworked',
+    work_reason:          !engaged && gate0 ? `ingestion gate-0: ${gate0}` : null,
 
     // ICP-fit layer (combined_score is DB-generated — never inserted)
     tenure:                   analysis.tenure,

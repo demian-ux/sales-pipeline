@@ -32,12 +32,12 @@ create table if not exists sources (
   id          uuid primary key default uuid_generate_v4(),
   name        text not null,
   url         text not null unique,
-  source_type text not null,                  -- 'rss' | 'api' | 'manual'
+  source_type text not null,                  -- 'rss' | 'api' | 'manual' | 'socrata_dob' | 'socrata_zap' | 'ag_offering_plans'
   region      text,
   sector      text,
   active      boolean not null default true,
   sort_order  integer not null default 100,
-  discovery_kind text not null default 'project_launch',  -- 'project_launch' | 'opportunity_signal'
+  discovery_kind text not null default 'project_launch',  -- 'project_launch' | 'opportunity_signal' | 'offering_plan' | 'permit_filing'
   created_at  timestamptz not null default now()
 );
 
@@ -133,7 +133,7 @@ create table if not exists discoveries (
   -- Opportunity Signals mode (2026-06-25) — second discovery mode. Upstream
   -- demand events mapped to the design/dev firm that would WIN the work (the
   -- prospect is never the source org). Launch rows keep discovery_kind default.
-  discovery_kind             text not null default 'project_launch',  -- 'project_launch' | 'opportunity_signal'
+  discovery_kind             text not null default 'project_launch',  -- 'project_launch' | 'opportunity_signal' | 'offering_plan' | 'permit_filing'
   source_org                 text,                          -- the org that announced the event (NOT the target)
   signal_event               text,                          -- one-line description of the upstream event
   beneficiary_segment        text,                          -- the segment that captures the resulting work
@@ -536,6 +536,21 @@ insert into sources (name, url, source_type, region, sector, active, sort_order,
 on conflict (url) do update set
   name = excluded.name, region = excluded.region, sector = excluded.sector,
   active = excluded.active, sort_order = excluded.sort_order,
+  discovery_kind = excluded.discovery_kind;
+
+-- ── NY-native filing sources (2026-08-04) ───────────────────────────────────
+-- NY presents papers, not press. Structured (non-RSS) sources dispatched by
+-- source_type in lib/discoveries/ny-native.ts. The AG offering-plan lane is
+-- MANUAL (no API) — registered inactive; entries arrive via POST
+-- /api/discoveries with discovery_kind='offering_plan'. See
+-- docs/ny-native-sources.md and migrations/2026-08-04_ny_native.sql.
+insert into sources (name, url, source_type, region, sector, active, sort_order, discovery_kind) values
+  ('NY · DOB NB Filings',            'https://data.cityofnewyork.us/resource/w9ak-ipjd.json', 'socrata_dob',       'new_york', 'mixed_use',          true,  400, 'permit_filing'),
+  ('NY · DCP ZAP / ULURP',           'https://data.cityofnewyork.us/resource/hgx4-8ukb.json', 'socrata_zap',       'new_york', 'mixed_use',          true,  410, 'opportunity_signal'),
+  ('NY · AG Offering Plans (manual)','https://offeringplandatasearch.ag.ny.gov/REF/welcome.jsp', 'ag_offering_plans', 'new_york', 'luxury_residential', false, 420, 'offering_plan')
+on conflict (url) do update set
+  name = excluded.name, source_type = excluded.source_type, region = excluded.region,
+  sector = excluded.sector, active = excluded.active, sort_order = excluded.sort_order,
   discovery_kind = excluded.discovery_kind;
 
 -- ============================================================================

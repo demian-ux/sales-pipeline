@@ -10,7 +10,8 @@ import { type NextRequest } from 'next/server'
 import { z } from 'zod'
 import { getSupabaseAdmin, isSupabaseAdminConfigured } from '@/lib/supabase'
 import { normalizeDiscoveryKind } from '@/lib/discoveries/kind'
-import { DISCOVERY_BOARD_STATUSES, WORK_STATUSES, GEOS } from '@/lib/vocab'
+import { DISCOVERY_BOARD_STATUSES, WORK_STATUSES, GEOS, WORK_CATEGORIES } from '@/lib/vocab'
+import { makeProjectKey } from '@/lib/discoveries/project-key'
 import { CONSUMING_STATUSES, type WorkStatus } from '@/lib/types'
 
 // Every query param this route understands. An unknown param is a 400, not a
@@ -97,14 +98,22 @@ export async function GET(request: NextRequest) {
   // (the value-lane consumer uses that name); '' means all kinds. `kind` is
   // accepted as a spelling of `discovery_kind` — it used to be ignored, which
   // handed launches to a caller that asked for signals.
+  // A comma-separated list is accepted (e.g. 'offering_plan,permit_filing' —
+  // the board's NY-filings view); each token is normalized and validated.
+  const VALID_KINDS = ['project_launch', 'opportunity_signal', 'offering_plan', 'permit_filing']
   const rawKind = sp.get('discovery_kind') ?? sp.get('kind')
-  const discoveryKind = normalizeDiscoveryKind(rawKind)
-  if (discoveryKind && discoveryKind !== 'project_launch' && discoveryKind !== 'opportunity_signal') {
-    return Response.json(
-      { error: `Invalid discovery_kind: ${rawKind} — expected project_launch | opportunity_signal | upstream_signal` },
-      { status: 400 },
-    )
+  const discoveryKinds = rawKind?.includes(',')
+    ? rawKind.split(',').map((k) => normalizeDiscoveryKind(k.trim()))
+    : [normalizeDiscoveryKind(rawKind)]
+  for (const k of discoveryKinds) {
+    if (k && !VALID_KINDS.includes(k)) {
+      return Response.json(
+        { error: `Invalid discovery_kind: ${rawKind} — expected project_launch | opportunity_signal | upstream_signal | offering_plan | permit_filing (comma-separated ok)` },
+        { status: 400 },
+      )
+    }
   }
+  const discoveryKind = discoveryKinds.filter(Boolean)
   // Sort: 'combined' (blended fit×deal, default) | 'score' (raw discovery_score)
   // | 'date' | 're_arm' (soonest re-arm first, undated holds last — bench view).
   const sortParam  = sp.get('sort_by')
@@ -165,7 +174,8 @@ export async function GET(request: NextRequest) {
       .order('date_published', { ascending: false, nullsFirst: false })
   }
 
-  if (discoveryKind) query = query.eq('discovery_kind', discoveryKind)
+  if (discoveryKind.length === 1) query = query.eq('discovery_kind', discoveryKind[0])
+  else if (discoveryKind.length > 1) query = query.in('discovery_kind', discoveryKind)
   if (status !== 'all') query = query.eq('status', status)
   if (region)        query = query.ilike('region', REGION_VALUES[region] ?? region)
   if (country)       query = query.ilike('country', `%${country}%`)
@@ -249,6 +259,14 @@ const CreateDiscoveryBody = z
     geo: z.enum(GEOS, { errorMap: () => ({ message: `geo must be one of: ${GEOS.join(' | ')}` }) }).optional(),
     icp_fit_score: z.number().min(0, 'icp_fit_score must be 0–100').max(100, 'icp_fit_score must be 0–100').optional(),
     re_arm_at: z.string().regex(ISO_DATE, 're_arm_at must be YYYY-MM-DD').optional(),
+    // NY-native manual lanes (2026-08-04). The AG offering-plan database has no
+    // API, so accepted plans enter here with discovery_kind='offering_plan':
+    // address+sponsor become the dedup identity, work_categories the value-lane
+    // join key (offering plans match new_dev_marketing + development).
+    discovery_kind: z.enum(['project_launch', 'opportunity_signal', 'upstream_signal', 'offering_plan', 'permit_filing']).optional(),
+    address: z.string().optional(),
+    sponsor: z.string().optional(),
+    work_categories: z.array(z.enum(WORK_CATEGORIES)).optional(),
     work_status: z.enum(WORK_STATUSES, { errorMap: () => ({ message: `work_status must be one of: ${WORK_STATUSES.join(' | ')}` }) }).default('held'),
     status: z.enum(DISCOVERY_BOARD_STATUSES, { errorMap: () => ({ message: `status must be one of: ${DISCOVERY_BOARD_STATUSES.join(' | ')}` }) }).default('active'),
   })
@@ -331,6 +349,15 @@ export async function POST(request: NextRequest) {
   if (body.category) row.sector = body.category
   if (body.geo) row.geo = body.geo
   if (body.icp_fit_score !== undefined) row.icp_fit_score = body.icp_fit_score
+  if (body.discovery_kind) row.discovery_kind = normalizeDiscoveryKind(body.discovery_kind)
+  if (body.sponsor) row.developer = body.sponsor.trim()
+  if (body.work_categories?.length) row.work_categories = body.work_categories
+  if (body.address) {
+    // The filing identity: dedup future ingested articles about the same
+    // project onto this row (address + city 'New York' for NY filings).
+    row.project_name = body.address.trim()
+    row.project_key = makeProjectKey(body.address, body.geo === 'nyc' ? 'New York' : null)
+  }
 
   const { data, error } = await supabase.from('discoveries').insert(row).select().single()
 

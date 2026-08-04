@@ -496,7 +496,11 @@ export type FitTier = 'prime' | 'workable' | 'complement' | 'weak' | 'disqualifi
 // of the event). 'opportunity_signal' = upstream demand-creating events mapped to
 // the design/dev firm that would WIN the resulting work (the prospect is never
 // the source org).
-export type DiscoveryKind = 'project_launch' | 'opportunity_signal'
+// NY-native filing kinds (2026-08-04): 'offering_plan' = NYS AG offering-plan
+// submission/acceptance (sales start in weeks — the imagery-purchase moment);
+// 'permit_filing' = DOB new-building filing (pre-design speculative hook).
+// ZAP/ULURP items are stored as 'opportunity_signal' (they ARE upstream signals).
+export type DiscoveryKind = 'project_launch' | 'opportunity_signal' | 'offering_plan' | 'permit_filing'
 
 // The beneficiary segment a demand-creating event maps to. Drives the
 // deterministic opportunity score (segment fit + imagery-heaviness) and the
@@ -526,6 +530,11 @@ export type WorkCategory =
   | 'hospitality_design'
   | 'landscape'
   | 'experiential'
+  // Brokerage new-development marketing divisions (Corcoran Sunshine, Elliman
+  // Development Marketing, SERHANT New Dev, …). Demi ruling 4-ago-2026:
+  // deliberate exception to "brokerages = noise" — agencies-of-record of dozens
+  // of simultaneous launches. offering_plan signals match this + development.
+  | 'new_dev_marketing'
 
 // Firm-pool geography vocabulary (matches the firm-pool store's `geo`). Derived
 // deterministically from region+country in code (lib/discoveries/target-geo.ts),

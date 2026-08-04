@@ -14,6 +14,9 @@ const KIND_ALIASES: Record<string, DiscoveryKind> = {
   upstream_signal:    'opportunity_signal',
   opportunity_signal: 'opportunity_signal',
   project_launch:     'project_launch',
+  // NY-native filing lanes (2026-08-04).
+  offering_plan:      'offering_plan',
+  permit_filing:      'permit_filing',
 }
 
 /**
