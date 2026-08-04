@@ -10,8 +10,9 @@
 //                      JSP search app is not reliably scrapable headless. The
 //                      lane exists as a MANUAL step: enter accepted plans via
 //                      POST /api/discoveries with discovery_kind 'offering_plan'
-//                      (see docs/ny-native-sources.md). A source row of this
-//                      type that is switched active fails loudly, not silently.
+//                      (see docs/ny-native-sources.md). The source row is kept
+//                      ACTIVE so every run logs the manual step in
+//                      failed_sources — visible, never silent (fixpack ronda 2).
 //
 // Rows enter the same discoveries table + dedup machinery as ingested articles
 // (findPriorDiscovery on project_key = address/name + city), so a filing that
@@ -66,6 +67,9 @@ interface StructuredSignal {
   discovery_kind: 'permit_filing' | 'opportunity_signal'
   title: string
   project_name: string
+  // When set, overrides project_name as the dedup identity — used by multi-lot
+  // DOB clusters, which are keyed by owner+week rather than any single address.
+  project_key_name?: string
   source_url: string
   date_published: string | null
   brief_summary: string
@@ -124,10 +128,12 @@ async function fetchStructuredSource(
     case 'socrata_zap':
       return fetchZapProjects(source, progress)
     case 'ag_offering_plans':
-      // Deliberate loud failure — see module header. The offering_plan lane is
-      // manual until the AG exposes something scrapable.
+      // Deliberate loud failure (fixpack ronda 2: silence looks like success).
+      // The source is kept ACTIVE so every offering_plan run records this in
+      // failed_sources — surfaced by the board's failed-feeds banner — until
+      // the sweep enters the week's plans manually or the AG exposes an API.
       throw new Error(
-        'NYS AG offering plans have no API — enter Monday pre-sweep finds via POST /api/discoveries with discovery_kind=offering_plan (docs/ny-native-sources.md)',
+        'manual lane — the AG database has no API; enter this week\'s offering plans via POST /api/discoveries with discovery_kind=offering_plan (docs/ny-native-sources.md)',
       )
     default:
       throw new Error(`Unknown structured source_type: ${source.source_type}`)
@@ -152,44 +158,93 @@ async function fetchDobFilings(source: StructuredSourceRow, progress: IngestProg
   const records = await fetchJsonArray(url)
   progress.articles_found += records.length
 
-  const signals: StructuredSignal[] = []
+  interface DobFiling {
+    address: string
+    borough: string
+    description: string
+    stories: number
+    cost: number
+    owner: string | null
+    jobId: string
+    filed: string | null
+  }
+
+  const filings: DobFiling[] = []
   for (const r of records) {
     const borough = str(r, 'borough').toLowerCase()
     const address = [str(r, 'house_no', 'house__', 'house_number'), str(r, 'street_name')]
       .filter(Boolean).join(' ').replace(/\s+/g, ' ').trim()
     const description = str(r, 'job_description')
-    const stories = num(r, 'proposed_no_of_stories')
-    const cost = num(r, 'initial_cost')
+    if (!address) { progress.articles_skipped_irrelevant++; continue }
     if (borough === 'brooklyn' && !matchesBrooklynCorridor(`${address} ${description}`)) {
       progress.articles_skipped_irrelevant++
       continue
     }
+    filings.push({
+      address,
+      borough,
+      description,
+      stories: num(r, 'proposed_no_of_stories'),
+      cost: num(r, 'initial_cost'),
+      owner: str(r, 'owner_s_business_name', 'owner_business_name') || null,
+      jobId: str(r, 'job_filing_number', 'job__', 'job_number') || address,
+      filed: str(r, 'filing_date') || null,
+    })
+  }
 
-    const owner = str(r, 'owner_s_business_name', 'owner_business_name') || null
-    const jobId = str(r, 'job_filing_number', 'job__', 'job_number') || address
-    const filed = str(r, 'filing_date') || null
-    if (!address) { progress.articles_skipped_irrelevant++; continue }
+  // Multi-lot clustering (fixpack ronda 2): same owner + same filing week = ONE
+  // project split across lots (the E 125th cluster arrived as 7 rows). The lot
+  // with the most stories represents the cluster; the dedup identity becomes
+  // owner+week so later lots of the same batch collapse onto it across runs.
+  // Filings without an owner can't cluster — they stay address-keyed.
+  const groups = new Map<string, DobFiling[]>()
+  for (const f of filings) {
+    const key = f.owner ? `${f.owner.toLowerCase()}|${filingWeek(f.filed)}` : `addr|${f.address.toLowerCase()}`
+    const g = groups.get(key)
+    if (g) g.push(f)
+    else groups.set(key, [f])
+  }
+
+  const signals: StructuredSignal[] = []
+  for (const group of groups.values()) {
+    group.sort((a, b) => b.stories - a.stories)
+    const rep = group[0]
+    const isCluster = group.length > 1
+    const totalCost = group.reduce((s, f) => s + f.cost, 0)
+    const allAddresses = group.map((f) => f.address).join(', ')
 
     signals.push({
       discovery_kind: 'permit_filing',
-      title: `NB filing — ${address}, ${cap(borough)}`,
-      project_name: address,
-      source_url: `https://data.cityofnewyork.us/resource/w9ak-ipjd.json#${encodeURIComponent(jobId)}`,
-      date_published: filed,
+      title: isCluster
+        ? `NB filings — ${rep.address} +${group.length - 1} lots, ${cap(rep.borough)}`
+        : `NB filing — ${rep.address}, ${cap(rep.borough)}`,
+      project_name: rep.address,
+      project_key_name: isCluster && rep.owner ? `${rep.owner} NB ${filingWeek(rep.filed)}` : undefined,
+      source_url: `https://data.cityofnewyork.us/resource/w9ak-ipjd.json#${encodeURIComponent(rep.jobId)}`,
+      date_published: rep.filed,
       brief_summary:
-        `DOB new-building filing at ${address}, ${cap(borough)}: ` +
-        `${stories ? `${stories} stories` : 'stories n/a'}, ` +
-        `${cost ? `est. cost $${Math.round(cost / 1_000_000)}M` : 'cost n/a'}` +
-        `${owner ? `, owner ${owner}` : ''}. ${description}`.trim(),
+        `DOB new-building filing${isCluster ? `s (${group.length} lots: ${allAddresses})` : ` at ${rep.address}`}, ${cap(rep.borough)}: ` +
+        `${rep.stories ? `${rep.stories} stories${isCluster ? ' (tallest lot)' : ''}` : 'stories n/a'}, ` +
+        `${totalCost ? `est. cost $${Math.round(totalCost / 1_000_000)}M` : 'cost n/a'}` +
+        `${rep.owner ? `, owner ${rep.owner}` : ''}. ${rep.description}`.trim(),
       why_it_matters:
         'Pre-design window — the site exists, the design does not. The angle that converted on Extell 65th St. Speculative hook: the draft carries a conditional per the skill.',
-      developer: owner,
+      developer: rep.owner,
       signal_tier: 'watchlist',
       discovery_score: 55,
-      tags: ['ny-native', 'dob', 'permit'],
+      tags: ['ny-native', 'dob', 'permit', ...(isCluster ? ['multi-lot'] : [])],
     })
   }
   return signals
+}
+
+// ISO-ish year-week bucket for clustering ("2026-w31"). Exact ISO week edges
+// don't matter — same-batch filings land the same day or one apart.
+function filingWeek(filed: string | null): string {
+  const d = filed ? new Date(filed) : new Date()
+  const jan1 = new Date(Date.UTC(d.getUTCFullYear(), 0, 1))
+  const week = Math.floor((d.getTime() - jan1.getTime()) / (7 * 86_400_000))
+  return `${d.getUTCFullYear()}-w${week}`
 }
 
 // ── DCP ZAP / ULURP projects (Socrata) ──────────────────────────────────────
@@ -254,7 +309,7 @@ async function insertStructuredSignal(
 
   // Dedup by address/name + city — the handoff's "dirección+sponsor, not just
   // title" requirement: the key IS the address for DOB, the project name for ZAP.
-  const projectKey = makeProjectKey(signal.project_name, 'New York')
+  const projectKey = makeProjectKey(signal.project_key_name ?? signal.project_name, 'New York')
   if (projectKey) {
     const prior = await findPriorDiscovery(supabase, projectKey)
     if (prior) {

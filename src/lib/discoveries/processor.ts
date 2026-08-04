@@ -719,6 +719,17 @@ async function processOpportunitySignal(
     return true
   })
 
+  // Gate-0 (fixpack 2026-08-04): the upstream feeds carry no geo terms at all,
+  // so Dallas/Ohio-grade off-geo events were entering unworked. Same rules as
+  // the launch lane; a hit inserts pre-rejected with the rule named.
+  const gate0 = gate0Reason({
+    title: analysis.title || article.title,
+    brief_summary: analysis.brief_summary,
+    tags: analysis.tags,
+    region: analysis.region,
+    country: analysis.country,
+  })
+
   // CRM cross-reference on the example firms, not the source org. Tag
   // already_engaged when one is already a Company, and flag each firm's in_crm.
   const firmNames = cleanFirms.map((f) => f.firm)
@@ -783,7 +794,8 @@ async function processOpportunitySignal(
     already_engaged: !!engaged,
     engaged_company_id: engaged?.company_id ?? null,
     engaged_company_name: engaged?.company_name ?? null,
-    work_status: engaged ? 'already_engaged' : 'unworked',
+    work_status: engaged ? 'already_engaged' : gate0 ? 'rejected' : 'unworked',
+    work_reason: !engaged && gate0 ? `ingestion gate-0: ${gate0}` : null,
     fit_tier: fitTier,
     fit_reason: opp.fit_reason,
 

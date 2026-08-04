@@ -21,12 +21,13 @@
 -- ── Part A: NY-native sources ───────────────────────────────────────────────
 -- source_type drives the ingest dispatch (lib/discoveries/ny-native.ts):
 -- 'socrata_dob' / 'socrata_zap' are structured JSON fetchers; 'ag_offering_plans'
--- is registered INACTIVE — activating it makes the run fail loudly with the
--- manual-entry instructions rather than silently pretending to scrape.
+-- is registered ACTIVE (fixpack ronda 2) so every offering_plan run records the
+-- manual step in failed_sources — visible on the board's failed-feeds banner —
+-- rather than silently returning nothing.
 insert into sources (name, url, source_type, region, sector, active, sort_order, discovery_kind) values
   ('NY · DOB NB Filings',            'https://data.cityofnewyork.us/resource/w9ak-ipjd.json', 'socrata_dob',       'new_york', 'mixed_use',          true,  400, 'permit_filing'),
   ('NY · DCP ZAP / ULURP',           'https://data.cityofnewyork.us/resource/hgx4-8ukb.json', 'socrata_zap',       'new_york', 'mixed_use',          true,  410, 'opportunity_signal'),
-  ('NY · AG Offering Plans (manual)','https://offeringplandatasearch.ag.ny.gov/REF/welcome.jsp', 'ag_offering_plans', 'new_york', 'luxury_residential', false, 420, 'offering_plan')
+  ('NY · AG Offering Plans (manual)','https://offeringplandatasearch.ag.ny.gov/REF/welcome.jsp', 'ag_offering_plans', 'new_york', 'luxury_residential', true,  420, 'offering_plan')
 on conflict (url) do update set
   name = excluded.name, source_type = excluded.source_type, region = excluded.region,
   sector = excluded.sector, active = excluded.active, sort_order = excluded.sort_order,

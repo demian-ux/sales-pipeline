@@ -10,7 +10,7 @@ the discovery board alongside the RSS lanes. Handoff:
 |---|---|---|---|
 | DOB new-building filings | `permit_filing` | NYC Open Data Socrata `w9ak-ipjd` (DOB NOW job filings) | Automatic — cron + "Run research" dispatch via `lib/discoveries/ny-native.ts` |
 | ZAP / ULURP | `opportunity_signal` | NYC Open Data Socrata `hgx4-8ukb` (DCP ZAP project data) | Automatic — runs with the opportunity-signal mode; feeds the value lane (`work_categories` development+architecture, geo nyc) |
-| AG offering plans | `offering_plan` | NYS AG Real Estate Finance Bureau offering-plan database | **Manual** — no public API; the JSP search app is not reliably scrapable headless |
+| AG offering plans | `offering_plan` | NYS AG Real Estate Finance Bureau offering-plan database | **Manual** — no public API; the JSP search app is not reliably scrapable headless. The source row stays ACTIVE so every `mode=offering_plan` run logs the manual step in `failed_sources` (board banner) — 0 items is never silent |
 
 ## Filters (in code, `lib/discoveries/ny-native.ts`)
 
