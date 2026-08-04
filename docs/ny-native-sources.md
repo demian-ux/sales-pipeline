@@ -14,10 +14,11 @@ the discovery board alongside the RSS lanes. Handoff:
 
 ## Filters (in code, `lib/discoveries/ny-native.ts`)
 
-- **DOB**: job_type "New Building", boroughs Manhattan/Brooklyn, corridor
-  whitelist (57th St / Billionaires Row, Tribeca, West Chelsea / High Line,
-  Hudson Yards, Williamsburg, Greenpoint, Dumbo), ≥15 stories OR ≥$50M est.
-  cost, 120-day lookback. Medium score (55, watchlist) — the hook is
+- **DOB**: job_type "New Building", boroughs Manhattan/Brooklyn, ≥15 stories OR
+  ≥$50M est. cost (filtered server-side via Socrata `::number` casts), 120-day
+  lookback. Manhattan filings that clear the size bar qualify anywhere (the
+  Extell 65th St hook sits on no named corridor); Brooklyn additionally requires
+  a waterfront-corridor match (Williamsburg / Greenpoint / Dumbo streets). Medium score (55, watchlist) — the hook is
   speculative ("the site exists, the design doesn't"), drafts carry a
   conditional per the skill.
 - **ZAP**: residential/mixed-use briefs only, ≥100 units or ≥200k sf parsed

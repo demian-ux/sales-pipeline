@@ -46,13 +46,18 @@ const DOB_MIN_COST = 50_000_000
 const ZAP_MIN_UNITS = 100
 const ZAP_MIN_SQFT = 200_000
 
-// Corridor whitelist (handoff A3). Matched against address + job description.
-const DOB_CORRIDORS = [
-  '57th street', 'west 57', 'east 57', 'billionaire',
-  'tribeca', 'west chelsea', 'high line', 'hudson yards',
-  'williamsburg', 'greenpoint', 'dumbo',
+// Corridor whitelist (handoff A3) — gates BROOKLYN only (the waterfront:
+// Williamsburg / Greenpoint / Dumbo). A Manhattan filing that clears the size
+// bar qualifies anywhere: the canonical converted hook (Extell 65th St) sits on
+// none of the named corridors, so a strict Manhattan whitelist would have
+// dropped the exact filings this lane exists for. Matched against address +
+// job description; street names arrive as "KENT AVENUE" so neighborhood words
+// only hit via the description — borough+size is the real Brooklyn filter,
+// corridor words narrow it when present.
+const DOB_BROOKLYN_CORRIDORS = [
+  'williamsburg', 'greenpoint', 'dumbo', 'kent avenue', 'river street',
+  'west street', 'commercial street', 'water street', 'front street', 'wythe',
 ]
-const DOB_BOROUGHS = new Set(['manhattan', 'brooklyn'])
 
 type JsonRecord = Record<string, unknown>
 
@@ -133,25 +138,32 @@ async function fetchStructuredSource(
 
 async function fetchDobFilings(source: StructuredSourceRow, progress: IngestProgress): Promise<StructuredSignal[]> {
   const since = lookbackIso()
+  // Borough + size are filtered SERVER-side (Socrata ::number casts verified
+  // live 2026-08-04): the 100-record window must contain only qualifying
+  // filings — the most-recent-citywide window is 95%+ small outer-borough homes
+  // and would starve the lane.
+  const where =
+    `job_type='New Building' AND (borough='Manhattan' OR borough='Brooklyn')` +
+    ` AND (proposed_no_of_stories::number >= ${DOB_MIN_STORIES} OR initial_cost::number >= ${DOB_MIN_COST})` +
+    ` AND filing_date>'${since}'`
   const url =
     `${source.url}?$limit=${MAX_RECORDS_PER_SOURCE}&$order=filing_date%20DESC` +
-    `&$where=${encodeURIComponent(`job_type='New Building' AND filing_date>'${since}'`)}`
+    `&$where=${encodeURIComponent(where)}`
   const records = await fetchJsonArray(url)
   progress.articles_found += records.length
 
   const signals: StructuredSignal[] = []
   for (const r of records) {
     const borough = str(r, 'borough').toLowerCase()
-    if (!DOB_BOROUGHS.has(borough)) { progress.articles_skipped_irrelevant++; continue }
-
     const address = [str(r, 'house_no', 'house__', 'house_number'), str(r, 'street_name')]
-      .filter(Boolean).join(' ').trim()
+      .filter(Boolean).join(' ').replace(/\s+/g, ' ').trim()
     const description = str(r, 'job_description')
     const stories = num(r, 'proposed_no_of_stories')
     const cost = num(r, 'initial_cost')
-    const corridorHit = matchesCorridor(`${address} ${description}`)
-    const bigEnough = stories >= DOB_MIN_STORIES || cost >= DOB_MIN_COST
-    if (!corridorHit || !bigEnough) { progress.articles_skipped_irrelevant++; continue }
+    if (borough === 'brooklyn' && !matchesBrooklynCorridor(`${address} ${description}`)) {
+      progress.articles_skipped_irrelevant++
+      continue
+    }
 
     const owner = str(r, 'owner_s_business_name', 'owner_business_name') || null
     const jobId = str(r, 'job_filing_number', 'job__', 'job_number') || address
@@ -365,9 +377,9 @@ function extractNumber(text: string, pattern: RegExp): number {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
-function matchesCorridor(text: string): boolean {
+function matchesBrooklynCorridor(text: string): boolean {
   const t = text.toLowerCase()
-  return DOB_CORRIDORS.some((c) => t.includes(c))
+  return DOB_BROOKLYN_CORRIDORS.some((c) => t.includes(c))
 }
 
 function cap(s: string): string {
