@@ -26,10 +26,14 @@ import type { DiscoveryKind } from '@/lib/types'
 
 export const maxDuration = 300
 
-// The modes the daily cron runs, in order. 'permit_filing' is the DOB
-// new-building lane (2026-08-04); 'offering_plan' is manual-entry only (the AG
-// database has no API), so it is not cron-run.
-const CRON_MODES: DiscoveryKind[] = ['project_launch', 'opportunity_signal', 'permit_filing']
+// The modes the daily cron runs, in order. 'permit_filing' (the DOB
+// new-building lane, 2026-08-04) runs FIRST: it is a ~5s structured fetch,
+// while the two news modes together consume the whole wall-clock budget —
+// with permit_filing last it was deadline-starved on every cron cycle from
+// 2026-08-05 to 2026-08-13 and never ran again after launch day.
+// 'offering_plan' is manual-entry only (the AG database has no API), so it is
+// not cron-run.
+const CRON_MODES: DiscoveryKind[] = ['permit_filing', 'project_launch', 'opportunity_signal']
 
 // Accepts 'upstream_signal' as an alias for 'opportunity_signal'; anything else
 // (or absent) falls back to 'project_launch'.
