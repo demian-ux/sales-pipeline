@@ -21,7 +21,12 @@
 
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { isAuthConfigured, verifySessionCookieValue, SESSION_COOKIE_NAME } from '@/lib/auth'
+import {
+  isAuthConfigured,
+  verifyApiKey,
+  verifySessionCookieValue,
+  SESSION_COOKIE_NAME,
+} from '@/lib/auth'
 import { env } from '@/lib/env'
 
 const PUBLIC_PREFIXES = [
@@ -69,6 +74,19 @@ export async function middleware(request: NextRequest) {
 
   // Always let public paths through (login form, OAuth callback, cron).
   if (isPublic(pathname)) return passThrough(request)
+
+  // API key auth: `Authorization: Bearer <OAKI_API_KEY>` on API routes only.
+  // Same access level as the session; wrong key falls through to the generic
+  // 401 below (never reveal whether a key is configured or close).
+  if (pathname.startsWith('/api/')) {
+    const authHeader = request.headers.get('authorization')
+    if (authHeader?.startsWith('Bearer ')) {
+      if (await verifyApiKey(authHeader.slice('Bearer '.length))) {
+        console.log(`[auth] auth=api_key ${request.method} ${pathname}`)
+        return passThrough(request)
+      }
+    }
+  }
 
   const cookie = request.cookies.get(SESSION_COOKIE_NAME)?.value
   const ok = await verifySessionCookieValue(cookie)

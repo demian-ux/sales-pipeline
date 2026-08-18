@@ -37,6 +37,10 @@ const schema = z.object({
   NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
 
+  // API key auth: full-access alternative to the session cookie, for
+  // programmatic clients (Cowork sandbox). `Authorization: Bearer <key>`.
+  OAKI_API_KEY: z.string().min(32).optional(),
+
   // Discoveries ingestion
   INGEST_SECRET: z.string().min(16).optional(),
   // Vercel cron auth: when set, Vercel sends `Authorization: Bearer ${CRON_SECRET}`

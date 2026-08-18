@@ -88,6 +88,18 @@ export async function verifySessionCookieValue(value: string | undefined | null)
   }
 }
 
+// Timing-safe comparison of a presented API key against OAKI_API_KEY.
+// Edge-safe: `node:crypto.timingSafeEqual` isn't available in middleware, so
+// compare HMAC digests of both values under an ephemeral key — digests are
+// fixed-length and comparing them leaks nothing about the real key.
+export async function verifyApiKey(presented: string | undefined | null): Promise<boolean> {
+  if (!presented || !env.OAKI_API_KEY) return false
+  const ephemeral = bytesToBase64Url(crypto.getRandomValues(new Uint8Array(32)))
+  const a = await hmacSha256Base64Url(ephemeral, presented)
+  const b = await hmacSha256Base64Url(ephemeral, env.OAKI_API_KEY)
+  return a === b
+}
+
 // Verify a submitted password against APP_PASSWORD. Single equality check is
 // fine for a single-user app — timing attacks aren't a realistic threat here.
 export function isPasswordCorrect(submitted: string): boolean {
