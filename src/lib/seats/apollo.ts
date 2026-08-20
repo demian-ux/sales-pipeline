@@ -66,7 +66,7 @@ function toPerson(p: any): ApolloPerson {
 
 /** Free people search by company domain + title keywords. No credits spent. */
 export async function searchPeople(domain: string, titles: string[]): Promise<ApolloPerson[]> {
-  const data = await apolloFetch('/v1/mixed_people/search', {
+  const data = await apolloFetch('/v1/mixed_people/api_search', {
     q_organization_domains_list: [domain],
     person_titles: titles,
     page: 1,
