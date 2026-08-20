@@ -43,6 +43,7 @@ const NAV: NavGroup[] = [
     items: [
       { href: '/discoveries', label: 'Discoveries' },
       { href: '/firm-pool', label: 'Firm Pool' },
+      { href: '/seats', label: 'Seats Queue' },
       { href: '/research', label: 'Research' },
     ],
   },

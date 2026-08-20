@@ -4,6 +4,14 @@
     {
       "path": "/api/discoveries/ingest",
       "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/seats/run",
+      "schedule": "30 6 * * *"
+    },
+    {
+      "path": "/api/seats/poll",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

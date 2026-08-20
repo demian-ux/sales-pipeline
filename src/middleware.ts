@@ -34,6 +34,9 @@ const PUBLIC_PREFIXES = [
   '/api/auth/',
   '/api/gmail/callback',
   '/api/discoveries/ingest',
+  // Seats worker crons — bearer/cron protected in-route (no cookie possible).
+  '/api/seats/run',
+  '/api/seats/poll',
 ]
 
 function isPublic(pathname: string): boolean {
@@ -65,7 +68,11 @@ export async function middleware(request: NextRequest) {
     if (env.NODE_ENV !== 'production') return passThrough(request)
     // Cron/bearer-authenticated ingest does its own auth — let it through so
     // a missing APP_PASSWORD doesn't silently stop scheduled research.
-    if (pathname.startsWith('/api/discoveries/ingest')) return passThrough(request)
+    if (
+      pathname.startsWith('/api/discoveries/ingest') ||
+      pathname.startsWith('/api/seats/run') ||
+      pathname.startsWith('/api/seats/poll')
+    ) return passThrough(request)
     return new NextResponse(
       'Auth not configured: set APP_PASSWORD and SESSION_SECRET in the environment.',
       { status: 503, headers: { 'content-type': 'text/plain' } },

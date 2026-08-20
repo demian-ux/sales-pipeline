@@ -57,6 +57,13 @@ const schema = z.object({
   JINA_TIMEOUT_MS: z.coerce.number().int().positive().default(25_000),
   ARTICLE_MAX_CHARS: z.coerce.number().int().positive().default(20_000),
 
+  // Seats worker (Apollo REST — server key, not the OAuth MCP)
+  APOLLO_API_KEY: z.string().optional(),
+  APOLLO_WATERFALL_PATH: z.string().optional(),           // override if Apollo moves the waterfall route
+  SEATS_WEEKLY_CREDIT_BUDGET: z.coerce.number().int().positive().default(30),
+  // The `programados` staging sheet (separate spreadsheet, read-only dedup net)
+  PROGRAMADOS_SHEET_ID: z.string().default('1OTjcpAaWnknmXx1PT3sDvX7vhZiOirKHOF7N5dlXTEs'),
+
   // App auth
   APP_PASSWORD: z.string().min(8).optional(),
   SESSION_SECRET: z.string().min(32).optional(),
