@@ -36,7 +36,11 @@ export async function fetchRSSFeed(
     const response = await fetch(url, {
       signal: controller.signal,
       headers: {
-        'User-Agent': 'OakiDiscoveries/1.0 (RSS reader)',
+        // A browser-like UA, not a custom bot string: The Real Deal's WAF
+        // (and others) 403 unknown agents while serving the same feed to
+        // browsers — both TRD feeds were dead for weeks on the old
+        // 'OakiDiscoveries/1.0' UA (verified 2026-08-25: 403 vs 200 by UA only).
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
         'Accept': 'application/rss+xml, application/xml, text/xml, */*',
       },
     })

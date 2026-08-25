@@ -38,6 +38,12 @@ create table if not exists sources (
   active      boolean not null default true,
   sort_order  integer not null default 100,
   discovery_kind text not null default 'project_launch',  -- 'project_launch' | 'opportunity_signal' | 'offering_plan' | 'permit_filing'
+  -- Health tracking (2026-08-25 migration): stamped by every ingestion run.
+  last_success_at      timestamptz,
+  last_failure_at      timestamptz,
+  consecutive_failures integer not null default 0,
+  health               text not null default 'ok',  -- ok | degraded | dead
+  last_error           text,
   created_at  timestamptz not null default now()
 );
 

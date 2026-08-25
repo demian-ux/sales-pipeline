@@ -149,6 +149,14 @@ export async function POST(req: Request) {
 
     const parsed = CreateLeadBody.safeParse(json)
     if (!parsed.success) {
+      // The most common API-client stumble: sending `name` instead of
+      // `full_name`. Say exactly which field to use instead of the generic error.
+      if (typeof json === 'object' && json !== null && 'name' in json) {
+        return NextResponse.json(
+          { error: 'Unknown field `name` — use `full_name` (or `first_name` + `last_name`)' },
+          { status: 400 },
+        )
+      }
       return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Invalid body' }, { status: 400 })
     }
     const body = parsed.data

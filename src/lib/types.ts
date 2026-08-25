@@ -394,17 +394,20 @@ export type WorkStatus =
   | 'unworked'
   | 'benched'
   | 'drafted'
+  // A weekly value-outreach batch consumed this upstream signal (2026-08-25;
+  // the prospecting skill's verdict for "used as a value-touch hook, done").
+  | 'value-batch-consumed'
   | 'held'
   | 'rejected'
   | 'already_engaged'
 
 // States that mean "a run consumed this row" (stamps worked_at). `benched` is a
 // verdict but not consumption — it stamps reviewed_at only, and stays on the board.
-export const CONSUMING_STATUSES: readonly WorkStatus[] = ['drafted', 'held', 'rejected', 'already_engaged']
+export const CONSUMING_STATUSES: readonly WorkStatus[] = ['drafted', 'value-batch-consumed', 'held', 'rejected', 'already_engaged']
 
 // The states hidden from the default new-signal board — worked material that
 // shouldn't be re-judged. Revealed via an explicit filter.
-export const WORKED_HIDDEN_STATUSES: readonly WorkStatus[] = ['held', 'rejected', 'already_engaged']
+export const WORKED_HIDDEN_STATUSES: readonly WorkStatus[] = ['held', 'rejected', 'already_engaged', 'value-batch-consumed']
 
 export type DiscoveryType = 'service' | 'tender' | 'trend'
 

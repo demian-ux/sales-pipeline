@@ -23,6 +23,7 @@ import { makeProjectKey } from './project-key'
 import { findPriorDiscovery, hasInheritedVerdict, noteDuplicateUrl } from './dedup'
 import { extractDiscoveryEntities, matchEntitiesToCompanies, entityMatches } from './roster-match'
 import { fetchRSSFeed, type RawArticleFromRSS } from './rss'
+import { recordSourceOutcomes } from './source-health'
 import { resolveGoogleNewsUrl, isGoogleNewsUrl } from './googleNewsResolver'
 import type { DiscoverySignalTier, Company, DiscoveryKind, SuggestedTargetFirm, FitTier } from '@/lib/types'
 
@@ -174,6 +175,9 @@ export async function runIngestion(
 
   await updateRunProgress(runId, progress, `Scanning ${sources.length} sources`, 5)
   const sourceResults = await Promise.all(sources.map(fetchSourceArticles))
+  // Stamp per-source health (last_success_at / consecutive_failures / health)
+  // so a dead feed is visible on the source row, not just in this run's errors.
+  await recordSourceOutcomes(sourceResults.map((r) => ({ url: r.source.url, ok: !r.error, error: r.error })))
   progress.articles_found += sourceResults.reduce((sum, r) => sum + r.articles.length, 0)
   await updateRunProgress(runId, progress, `Found ${progress.articles_found} articles`, 15)
 

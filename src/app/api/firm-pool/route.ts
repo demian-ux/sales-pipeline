@@ -23,15 +23,22 @@ export async function GET(request: NextRequest) {
   const geo            = sp.get('geo')             ?? ''
   const poolStatus     = sp.get('pool_status')     ?? ''
   const untouchedSince = sp.get('untouched_since') ?? ''
+  const signalRef      = sp.get('signal_ref')      ?? ''
   const limit          = Math.min(parseInt(sp.get('limit') ?? '200', 10), 500)
+  const offset         = Math.max(0, parseInt(sp.get('offset') ?? '0', 10))
 
   const supabase = getSupabaseAdmin()
-  let query = supabase.from('firm_pool').select('*').order('name', { ascending: true }).limit(limit)
+  let query = supabase
+    .from('firm_pool')
+    .select('*', { count: 'exact' })
+    .order('name', { ascending: true })
+    .range(offset, offset + limit - 1)
   if (category)   query = query.contains('categories', [category])
   if (geo)        query = query.eq('geo', geo)
   if (poolStatus) query = query.eq('pool_status', poolStatus)
+  if (signalRef)  query = query.eq('signal_ref', signalRef)
 
-  const { data, error } = await query
+  const { data, error, count } = await query
   if (error) {
     if (error.code === '42P01') {
       return Response.json(
@@ -45,6 +52,8 @@ export async function GET(request: NextRequest) {
   let firms = data ?? []
   if (untouchedSince) {
     // Exclude firms touched (sent) on/after the cutoff; keep never-touched ones.
+    // Note this filters AFTER the DB page, so `total` reflects the pre-filter
+    // count — the pool is small enough that callers pass a large limit here.
     const { data: touched } = await supabase
       .from('value_touches')
       .select('firm_id')
@@ -53,7 +62,7 @@ export async function GET(request: NextRequest) {
     firms = firms.filter((f) => !touchedIds.has(f.firm_id))
   }
 
-  return Response.json({ firms, total: firms.length })
+  return Response.json({ firms, total: count ?? firms.length, offset, limit })
 }
 
 const CreateBody = z.object({

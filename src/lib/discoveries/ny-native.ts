@@ -23,6 +23,7 @@ import { makeProjectKey } from './project-key'
 import { findPriorDiscovery, hasInheritedVerdict, noteDuplicateUrl } from './dedup'
 import { gate0Reason } from './gate0'
 import type { IngestProgress } from './processor'
+import { recordSourceOutcomes } from './source-health'
 
 export const STRUCTURED_SOURCE_TYPES = ['socrata_dob', 'socrata_zap', 'ag_offering_plans'] as const
 
@@ -109,11 +110,14 @@ export async function runStructuredIngestion(
         if (outcome === 'inserted') progress.articles_new++
         else if (outcome === 'duplicate') progress.raw_articles_duplicate++
       }
+      await recordSourceOutcomes([{ url: source.url, ok: true }])
     } catch (err) {
       const msg = `${source.name}: ${err instanceof Error ? err.message : String(err)}`
       progress.errors.push(msg)
       progress.failed_sources.push(source.name)
       console.error(`[ingest] Structured source failed: ${msg}`)
+      // No-op for the AG manual lane (recordSourceOutcomes skips it by design).
+      await recordSourceOutcomes([{ url: source.url, ok: false, error: msg }])
     }
   }
 }

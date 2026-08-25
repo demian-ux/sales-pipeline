@@ -209,7 +209,7 @@ export async function GET(request: NextRequest) {
     const today = new Date().toISOString().slice(0, 10)
     query = query.or(
       'work_status.is.null,' +
-      'work_status.not.in.(held,rejected,already_engaged),' +
+      'work_status.not.in.(held,rejected,already_engaged,value-batch-consumed),' +
       `and(work_status.eq.held,re_arm_at.lte.${today})`,
     )
   }
@@ -236,7 +236,10 @@ export async function GET(request: NextRequest) {
     return Response.json({ error: error.message }, { status: 500 })
   }
 
-  return Response.json({ discoveries: data, total: count, offset, limit })
+  // `kind` mirrors `discovery_kind` in every row: the filter param is spelled
+  // `kind`, so consumers kept looking for a `kind` field and found nothing.
+  const rows = (data as unknown as Record<string, unknown>[] | null)?.map((d) => ({ ...d, kind: d.discovery_kind })) ?? []
+  return Response.json({ discoveries: rows, total: count, offset, limit })
 }
 
 // ---------------------------------------------------------------------------

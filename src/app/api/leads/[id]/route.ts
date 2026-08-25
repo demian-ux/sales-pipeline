@@ -61,7 +61,9 @@ const PatchBody = z.object({
   last_touch_date: z.string().optional(),
   last_meaningful_touch: z.string().optional(),
   next_action: z.string().optional(),
-  next_followup_date: z.string().optional(),
+  // null clears the date (same as '') — API clients send null for "unset",
+  // and a 400 on null forced them to know the ''-clears convention.
+  next_followup_date: z.string().nullable().transform((v) => v ?? '').optional(),
   known_pain_points: z.string().optional(),
   notes: z.string().optional(),
   held_reason: z.string().optional(),
