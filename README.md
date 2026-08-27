@@ -74,6 +74,10 @@ API from a sandbox; the sections below document what that surface covers.
   batch consumed the signal; hidden from the default board like other worked states).
 - `next_followup_date` on lead PATCH accepts `null` or `''` to clear.
 - Discovery list rows include both `discovery_kind` and its alias `kind`.
+- `GET /api/discoveries` without `kind=` returns ONLY `project_launch` rows
+  (the default board). Pass `kind=` (explicit empty) for every lane, or name
+  one (`opportunity_signal`/`upstream_signal`, `offering_plan`, `permit_filing`).
+  An "everything saved today" audit is `status=all&kind=&created_after=...`.
 - Firm-pool GET filters: `category`, `geo`, `pool_status`, `signal_ref`,
   `untouched_since`, plus `limit`/`offset`.
 
