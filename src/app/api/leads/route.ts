@@ -26,7 +26,9 @@ const CreateLeadBody = z
     first_name: z.string().optional(),
     last_name: z.string().optional(),
     full_name: z.string().optional(),
-    company_name: z.string().min(1, 'company_name is required'),
+    company_name: z.string().min(1, 'company_name is required').optional(),
+    // Alias: API clients naturally send `company` — accept it as company_name.
+    company: z.string().optional(),
     company_id: z.string().optional(),
     campaign_id: z.string().optional(),
     email: z.string().email('Invalid email').or(z.literal('')).optional(),
@@ -157,12 +159,15 @@ export async function POST(req: Request) {
           { status: 400 },
         )
       }
-      return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Invalid body' }, { status: 400 })
+      const issue = parsed.error.issues[0]
+      const field = issue?.path?.join('.')
+      const msg = issue ? (field ? `${field}: ${issue.message}` : issue.message) : 'Invalid body'
+      return NextResponse.json({ error: msg }, { status: 400 })
     }
     const body = parsed.data
     const first_name = cleanName(body.first_name)
     const last_name = cleanName(body.last_name)
-    const company_name = cleanName(body.company_name)
+    const company_name = cleanName(body.company_name || body.company)
     const full_name = cleanName(body.full_name) || cleanName(`${first_name} ${last_name}`)
 
     // Duplicate guard beyond exact email: normalized name + company too.
