@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { getCompanyById, updateCompany } from '@/lib/sheets'
+import { getCompanyById, updateCompany, deleteCompany, getLeads } from '@/lib/sheets'
 import type { Company } from '@/lib/types'
 import { cleanName } from '@/lib/vocab'
 
@@ -72,5 +72,37 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   } catch (err) {
     console.error('PATCH /api/companies/[id] error:', err)
     return NextResponse.json({ error: 'Failed to update company' }, { status: 500 })
+  }
+}
+
+// DELETE /api/companies/[id] — remove a Company row (2026-08-27). Refuses if
+// leads still reference it (delete or repoint them first, or use
+// /api/companies/merge); ?force=true overrides and leaves those refs dangling.
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await params
+    const company = await getCompanyById(id)
+    if (!company) return NextResponse.json({ error: 'Company not found' }, { status: 404 })
+
+    const force = new URL(req.url).searchParams.get('force') === 'true'
+    if (!force) {
+      const referencing = (await getLeads()).filter((l) => l.company_id === id)
+      if (referencing.length > 0) {
+        return NextResponse.json(
+          {
+            error: `${referencing.length} lead(s) still reference ${id} (${company.company_name}). Repoint or delete them first, use /api/companies/merge, or pass ?force=true to leave dangling refs.`,
+            lead_ids: referencing.map((l) => l.lead_id),
+          },
+          { status: 409 },
+        )
+      }
+    }
+
+    const deleted = await deleteCompany(id)
+    if (!deleted) return NextResponse.json({ error: 'Company not found in sheet' }, { status: 404 })
+    return NextResponse.json({ deleted: true })
+  } catch (err) {
+    console.error('DELETE /api/companies/[id] error:', err)
+    return NextResponse.json({ error: 'Failed to delete company' }, { status: 500 })
   }
 }

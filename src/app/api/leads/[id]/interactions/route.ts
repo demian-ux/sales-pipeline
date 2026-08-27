@@ -5,15 +5,22 @@ import { getLeadById, getInteractionsForLead, saveInteraction, updateLead } from
 import type { Interaction, Lead } from '@/lib/types'
 import { INTERACTION_CHANNELS, INTERACTION_DIRECTIONS, INTERACTION_TYPE_TO_CHANNEL } from '@/lib/vocab'
 
-// GET /api/leads/[id]/interactions — interaction history for one lead.
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+// GET /api/leads/[id]/interactions?limit=&offset= — interaction history for
+// one lead, paginated (2026-08-27): verifying a logged send used to require
+// parsing the truncated recent_interactions embed on the lead.
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
     const lead = await getLeadById(id)
     if (!lead) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
+    const { searchParams } = new URL(req.url)
+    const limit = Math.max(0, Number(searchParams.get('limit')) || 0)
+    const offset = Math.max(0, Number(searchParams.get('offset')) || 0)
     const interactions = await getInteractionsForLead(id)
     interactions.sort((a, b) => new Date(b.sent_at ?? b.created_at).getTime() - new Date(a.sent_at ?? a.created_at).getTime())
-    return NextResponse.json({ interactions })
+    const total = interactions.length
+    const page = limit > 0 ? interactions.slice(offset, offset + limit) : interactions.slice(offset)
+    return NextResponse.json({ interactions: page, total, limit: limit || null, offset })
   } catch (err) {
     console.error('GET /api/leads/[id]/interactions error:', err)
     return NextResponse.json({ error: 'Failed to fetch interactions' }, { status: 500 })
@@ -65,6 +72,19 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const body = parsed.data
 
     const sentAt = normalizeSentAt(body.sent_at ?? body.date ?? new Date().toISOString())
+
+    // Idempotency (2026-08-27): the same send logged twice (retry after a
+    // timeout, reconciliation replays) must not duplicate. Identity is
+    // (lead, gmail_thread_id, sent_at) — return the existing row as 200.
+    if (body.gmail_thread_id) {
+      const existing = (await getInteractionsForLead(id)).find(
+        (i) => i.gmail_thread_id === body.gmail_thread_id && normalizeSentAt(i.sent_at ?? '') === sentAt,
+      )
+      if (existing) {
+        return NextResponse.json({ interaction: existing, already_logged: true }, { status: 200 })
+      }
+    }
+
     const summary = body.body_summary ?? body.summary
     const interaction: Interaction = {
       interaction_id: `int_${randomUUID()}`,

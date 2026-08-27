@@ -1,6 +1,6 @@
 import type { Company } from '../types'
 import { mockCompanies } from '../mock-data'
-import { USE_MOCK, readTab, appendRowByMap, updateRow, rowsToObjects, withFallback } from './client'
+import { USE_MOCK, readTab, appendRowByMap, updateRow, rowsToObjects, withFallback, deleteRowsAt, batchUpdateCells, columnIndexToLetter } from './client'
 import { sessionCache } from './cache'
 
 const TAB = 'Companies'
@@ -58,6 +58,80 @@ export async function updateCompany(companyId: string, updates: Partial<Company>
   })
   await updateRow(TAB, rowIndex + 1, updated)
   return true
+}
+
+export async function deleteCompany(companyId: string): Promise<boolean> {
+  if (USE_MOCK) {
+    const before = sessionCache.companies.length
+    sessionCache.companies = sessionCache.companies.filter((c) => c.company_id !== companyId)
+    return sessionCache.companies.length < before
+  }
+  const rows = await readTab(TAB, { fresh: true })
+  const rowIndex = rows.findIndex((r) => r[0] === companyId)
+  if (rowIndex < 1) return false
+  await deleteRowsAt(TAB, [rowIndex])
+  return true
+}
+
+// Repoint every row in `tab` whose company_id matches one of `fromIds` to
+// `toId` (and, when the tab has a company_name column and `toName` is given,
+// rewrite that too). One read + one batchUpdate per tab.
+async function repointCompanyRefs(
+  tab: string,
+  fromIds: Set<string>,
+  toId: string,
+  toName?: string,
+): Promise<number> {
+  const rows = await readTab(tab, { fresh: true })
+  if (rows.length < 2) return 0
+  const headers = rows[0]
+  const idCol = headers.indexOf('company_id')
+  if (idCol < 0) return 0
+  const nameCol = toName ? headers.indexOf('company_name') : -1
+  const updates: { tab: string; row: number; col: string; value: string }[] = []
+  let matched = 0
+  for (let i = 1; i < rows.length; i++) {
+    if (!fromIds.has(rows[i][idCol])) continue
+    matched++
+    const sheetRow = i + 1
+    updates.push({ tab, row: sheetRow, col: columnIndexToLetter(idCol), value: toId })
+    if (nameCol >= 0) updates.push({ tab, row: sheetRow, col: columnIndexToLetter(nameCol), value: toName! })
+  }
+  if (updates.length > 0) await batchUpdateCells(updates)
+  return matched
+}
+
+// Merge duplicate Companies: repoint Leads / Opportunities / Interactions from
+// the merge_ids onto keep_id, then delete the merged Company rows. The kept
+// row's own fields are left untouched — edit them in Sheets if the merged rows
+// carried better data.
+export async function mergeCompanies(
+  keepId: string,
+  mergeIds: string[],
+): Promise<{ leads_repointed: number; opportunities_repointed: number; interactions_repointed: number; companies_deleted: number }> {
+  const keep = await getCompanyById(keepId)
+  if (!keep) throw new Error(`keep_id ${keepId} does not exist`)
+  const fromIds = new Set(mergeIds.filter((id) => id !== keepId))
+
+  const leads = await repointCompanyRefs('Leads', fromIds, keepId, keep.company_name)
+  const opps = await repointCompanyRefs('Opportunities', fromIds, keepId)
+  const ints = await repointCompanyRefs('Interactions', fromIds, keepId)
+
+  let deleted = 0
+  if (USE_MOCK) {
+    const before = sessionCache.companies.length
+    sessionCache.companies = sessionCache.companies.filter((c) => !fromIds.has(c.company_id))
+    deleted = before - sessionCache.companies.length
+  } else {
+    const rows = await readTab(TAB, { fresh: true })
+    const indices: number[] = []
+    for (let i = 1; i < rows.length; i++) {
+      if (fromIds.has(rows[i][0])) indices.push(i)
+    }
+    if (indices.length > 0) await deleteRowsAt(TAB, indices)
+    deleted = indices.length
+  }
+  return { leads_repointed: leads, opportunities_repointed: opps, interactions_repointed: ints, companies_deleted: deleted }
 }
 
 // Case-insensitive name match. Returns the existing Company if one already

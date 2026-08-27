@@ -38,6 +38,32 @@ API from a sandbox; the sections below document what that surface covers.
 - Health is stamped by every ingestion run: 1–2 consecutive failed fetches =
   `degraded`, 3+ = `dead`. Requires `supabase/migrations/2026-08-25_source_health.sql`.
 
+### Daily-workflow endpoints (2026-08-27)
+
+- `POST /api/log-send` — compound send logger: `{ email, subject,
+  gmail_thread_id, sent_at, direction?, create_if_missing?: { full_name,
+  company, title?, notes? } }`. Resolves the lead by exact email (creates it
+  when `create_if_missing` is given), logs the Email interaction, advances
+  New Lead/Held/Nurture/Dormant → Contacted, sets `next_followup_date`
+  = sent_at + 7d. Idempotent on (email, gmail_thread_id, sent_at): replays
+  return `200 { already_logged: true }`.
+- `POST /api/leads/batch` — array of leads (or `{ leads: [...] }`), max 100;
+  per-item `{ ok, lead_id | error }`. `PATCH /api/leads/batch` — array of
+  `{ lead_id, changes }` (or `{ updates: [...] }`), per-item results.
+- `GET /api/leads` filters: `email=` (exact), `followup_due=YYYY-MM-DD|today`
+  (next_followup_date on/before), `updated_after=` (incremental cursor), plus
+  the existing `stage`, `temperature`, `company`, `q`.
+- `GET /api/leads/{id}/interactions?limit=&offset=` — paginated, `total`
+  included. `POST` there is idempotent on (gmail_thread_id, sent_at) → `200
+  { already_logged: true }`. `DELETE /api/leads/{id}/interactions/{int_id}`
+  removes a mis-logged row.
+- `GET /api/discoveries` filters: `created_after=` / `created_before=` (row
+  creation, not article pub date) and `sort_by=created_at`. `status=all` now
+  really returns every row (worked + disqualified included).
+- `DELETE /api/companies/{id}` (409s if leads still reference it; `?force=true`
+  overrides). `POST /api/companies/merge { keep_id, merge_ids }` repoints
+  Leads/Opportunities/Interactions and deletes the merged rows.
+
 ### API quirks worth knowing
 
 - Pagination is `limit` + `offset` everywhere it exists (discoveries, leads,

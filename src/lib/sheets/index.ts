@@ -11,7 +11,7 @@ export {
   bulkAssignCampaign,
   clearLeadCampaign,
 } from './leads'
-export { getCompanies, getCompanyById, createCompany, updateCompany, findOrCreateCompanyByName } from './companies'
+export { getCompanies, getCompanyById, createCompany, updateCompany, findOrCreateCompanyByName, deleteCompany, mergeCompanies } from './companies'
 export {
   getOpportunities,
   getOpportunitiesForLead,
@@ -22,7 +22,7 @@ export {
   clearOpportunityCampaign,
 } from './opportunities'
 export { getResearchFindings, getResearchForLead, saveResearchFinding } from './research'
-export { getInteractions, getInteractionsForLead, saveInteraction } from './interactions'
+export { getInteractions, getInteractionsForLead, saveInteraction, deleteInteraction } from './interactions'
 export { getAIInsights, getInsightsForLead, saveAIInsight } from './insights'
 export { getCampaigns, updateCampaign, createCampaign, deleteCampaign } from './campaigns'
 export { saveMeetingPrep, getMeetingPrep } from './meeting-prep'

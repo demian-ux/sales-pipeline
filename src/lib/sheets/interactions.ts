@@ -1,6 +1,6 @@
 import type { Interaction } from '../types'
 import { mockInteractions } from '../mock-data'
-import { USE_MOCK, readTab, appendRowByMap, rowsToObjects, withFallback } from './client'
+import { USE_MOCK, readTab, appendRowByMap, rowsToObjects, withFallback, deleteRowsAt } from './client'
 import { sessionCache } from './cache'
 
 const TAB = 'Interactions'
@@ -36,4 +36,17 @@ export async function saveInteraction(interaction: Interaction): Promise<void> {
     return
   }
   await appendRowByMap(TAB, interactionToMap(interaction), INTERACTION_COLUMNS)
+}
+
+export async function deleteInteraction(interactionId: string): Promise<boolean> {
+  if (USE_MOCK) {
+    const before = sessionCache.interactions.length
+    sessionCache.interactions = sessionCache.interactions.filter((i) => i.interaction_id !== interactionId)
+    return sessionCache.interactions.length < before
+  }
+  const rows = await readTab(TAB, { fresh: true })
+  const rowIndex = rows.findIndex((r) => r[0] === interactionId)
+  if (rowIndex < 1) return false
+  await deleteRowsAt(TAB, [rowIndex])
+  return true
 }

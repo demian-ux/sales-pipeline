@@ -23,6 +23,7 @@ const KNOWN_PARAMS = new Set([
   'discovery_kind', 'kind', 'sort_by', 'tenure', 'sector_fit', 'fit_tier',
   'signal_type', 'geo', 'work_category', 'briefs_status', 'future_work_test',
   'engagement', 'work_status', 'show_worked', 'hide_disqualified',
+  'created_after', 'created_before',
   'limit', 'offset',
 ])
 
@@ -117,7 +118,17 @@ export async function GET(request: NextRequest) {
   // Sort: 'combined' (blended fit×deal, default) | 'score' (raw discovery_score)
   // | 'date' | 're_arm' (soonest re-arm first, undated holds last — bench view).
   const sortParam  = sp.get('sort_by')
-  const sortBy     = sortParam === 'date' ? 'date' : sortParam === 'score' ? 'score' : sortParam === 're_arm' ? 're_arm' : 'combined'
+  const sortBy     = sortParam === 'date' ? 'date' : sortParam === 'score' ? 'score' : sortParam === 're_arm' ? 're_arm' : sortParam === 'created_at' ? 'created_at' : 'combined'
+  // Row-creation window (2026-08-27): "what did today's runs save" used to
+  // require paginating every row and filtering client-side. These filter on
+  // created_at (when WE saved it), unlike date_from/date_to (article pub date).
+  const createdAfter  = sp.get('created_after')  ?? ''
+  const createdBefore = sp.get('created_before') ?? ''
+  for (const [name, v] of [['created_after', createdAfter], ['created_before', createdBefore]] as const) {
+    if (v && Number.isNaN(new Date(v).getTime())) {
+      return Response.json({ error: `${name}: must be an ISO date or timestamp` }, { status: 400 })
+    }
+  }
   const tenure     = sp.get('tenure')            ?? ''
   const sectorFit  = sp.get('sector_fit')        ?? ''
   const fitTier    = sp.get('fit_tier')          ?? ''
@@ -161,7 +172,9 @@ export async function GET(request: NextRequest) {
     .from('discoveries')
     .select(LIST_COLUMNS, { count: 'exact' })
 
-  if (sortBy === 're_arm') {
+  if (sortBy === 'created_at') {
+    query = query.order('created_at', { ascending: false })
+  } else if (sortBy === 're_arm') {
     // Ascending with nulls LAST: overdue re-arms first, undated holds at the end.
     query = query
       .order('re_arm_at', { ascending: true, nullsFirst: false })
@@ -189,6 +202,8 @@ export async function GET(request: NextRequest) {
   if (sector)        query = query.eq('sector', sector)
   if (source)        query = query.ilike('source', `%${source}%`)
   if (scoreMin > 0)  query = query.gte('discovery_score', scoreMin)
+  if (createdAfter)  query = query.gte('created_at', createdAfter)
+  if (createdBefore) query = query.lte('created_at', /^\d{4}-\d{2}-\d{2}$/.test(createdBefore) ? createdBefore + 'T23:59:59' : createdBefore)
   if (dateFrom)      query = query.gte('date_published', dateFrom)
   if (dateTo)        query = query.lte('date_published', dateTo + 'T23:59:59')
   if (oppType)       query = query.contains('opportunity_type', [oppType])
