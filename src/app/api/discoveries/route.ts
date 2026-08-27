@@ -142,10 +142,16 @@ export async function GET(request: NextRequest) {
       { status: 400 },
     )
   }
-  const showWorked = sp.get('show_worked') === 'true'
-  // Hide disqualified is ON unless explicitly disabled, but never overrides an
-  // explicit fit_tier filter (so you can still inspect disqualified rows).
-  const hideDisq   = sp.get('hide_disqualified') !== 'false'
+  // status=all promises "every row" — so it also disables the worked-material
+  // and disqualified hides (both still overridable explicitly). Before
+  // 2026-08-27 those defaults applied even under status=all, so an API consumer
+  // paginating "everything" silently missed every held/rejected/already_engaged/
+  // disqualified row and read fresh runs as an insert failure.
+  const showWorked = sp.get('show_worked') === 'true' || (status === 'all' && sp.get('show_worked') !== 'false')
+  // Hide disqualified is ON unless explicitly disabled (or status=all), but
+  // never overrides an explicit fit_tier filter.
+  const hideDisqParam = sp.get('hide_disqualified')
+  const hideDisq   = hideDisqParam === 'true' ? true : hideDisqParam === 'false' ? false : status !== 'all'
   const limit      = Math.min(parseInt(sp.get('limit') ?? '50', 10), 100)
   const offset     = parseInt(sp.get('offset') ?? '0', 10)
 
