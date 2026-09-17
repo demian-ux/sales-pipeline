@@ -115,6 +115,19 @@ type IngestAuthRequest = {
   cookies: { get: (name: string) => { value: string } | undefined }
 }
 
+// True when the request carries Vercel's cron markers. Vercel does NOT send
+// `x-vercel-cron: 1` (the header this app gated on until 2026-09-17 — which is
+// why the scheduled ingest never once fired); it sends `x-vercel-cron-schedule`
+// and a `vercel-cron/1.0` user agent. All of these are client-spoofable, so
+// this only classifies a request — authorize it separately.
+export function isVercelCronRequest(request: Pick<IngestAuthRequest, 'headers'>): boolean {
+  return (
+    request.headers.get('x-vercel-cron-schedule') !== null ||
+    request.headers.get('x-vercel-cron') === '1' ||
+    (request.headers.get('user-agent') ?? '').startsWith('vercel-cron/')
+  )
+}
+
 export async function isIngestAuthorized(request: IngestAuthRequest): Promise<boolean> {
   const authHeader = request.headers.get('authorization')
 
@@ -124,9 +137,9 @@ export async function isIngestAuthorized(request: IngestAuthRequest): Promise<bo
   //    is only honored while CRON_SECRET is not yet configured (and we log
   //    loudly so it gets configured).
   if (env.CRON_SECRET && authHeader === `Bearer ${env.CRON_SECRET}`) return true
-  if (!env.CRON_SECRET && request.headers.get('x-vercel-cron') === '1') {
+  if (!env.CRON_SECRET && isVercelCronRequest(request)) {
     console.warn(
-      '[auth] Accepting unauthenticated x-vercel-cron header — set CRON_SECRET to close this spoofable path',
+      '[auth] Accepting unauthenticated Vercel cron headers — set CRON_SECRET to close this spoofable path',
     )
     return true
   }

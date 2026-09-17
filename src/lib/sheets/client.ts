@@ -28,7 +28,7 @@ async function getSheets() {
 export class SheetsError extends Error {
   constructor(
     message: string,
-    public readonly code: 'tab_missing' | 'api_disabled' | 'permission_denied' | 'unknown'
+    public readonly code: 'tab_missing' | 'api_disabled' | 'permission_denied' | 'rate_limited' | 'unknown'
   ) {
     super(message)
     this.name = 'SheetsError'
@@ -75,6 +75,15 @@ export function getSheetsStatus(): SheetsStatus {
 // Retries transient Sheets API failures (rate limits + server errors) with
 // exponential backoff: 1s/2s/4s plus jitter. Anything else throws immediately.
 const RETRYABLE_STATUS = new Set([429, 500, 503])
+
+// True when an error is the Sheets per-minute quota (429) surviving withRetry.
+// Routes use it to answer 429 + Retry-After instead of a generic 500 — a burst
+// of single-lead PATCHes (3 tab reads each vs 60 reads/min) hits this.
+export function isSheetsRateLimit(e: unknown): boolean {
+  if (e instanceof SheetsError) return e.code === 'rate_limited'
+  if (getErrorStatus(e) === 429) return true
+  return e instanceof Error && /quota exceeded|rate limit/i.test(e.message)
+}
 
 function getErrorStatus(e: unknown): number | null {
   if (e && typeof e === 'object') {
@@ -138,6 +147,9 @@ export async function readTab(tabName: string, opts?: { fresh?: boolean }): Prom
     return rows
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e)
+    if (getErrorStatus(e) === 429 || /quota exceeded/i.test(msg)) {
+      throw new SheetsError('Google Sheets rate limit hit (60 reads/min). Retry in a minute.', 'rate_limited')
+    }
     if (msg.includes('Unable to parse range') || msg.includes('notFound')) {
       throw new SheetsError(`Sheet tab "${tabName}" not found. Add it to your spreadsheet.`, 'tab_missing')
     }

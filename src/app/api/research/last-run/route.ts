@@ -7,11 +7,14 @@
 //     last_by_mode:    latest finished run per discovery mode,
 //     sources_health:  every source whose health <> 'ok' (needs the 2026-08-25
 //                      source_health migration; [] with a note until applied),
+//     sources_summary: { active, ok, unhealthy } — so an empty sources_health
+//                      reads as "all N feeds ok", not "health isn't recorded",
 //   }
 // Each run report: mode, status, started/finished, duration_seconds, counters,
 // failed_sources (the red-banner list), errors.
 
 import { getSupabaseAdmin, isSupabaseAdminConfigured } from '@/lib/supabase'
+import { cleanupStaleRuns } from '@/lib/discoveries/run-manager'
 
 interface RunRow {
   id: string
@@ -52,6 +55,7 @@ export async function GET() {
     return Response.json({ error: 'Supabase not configured' }, { status: 503 })
   }
   const supabase = getSupabaseAdmin()
+  await cleanupStaleRuns()
 
   const { data: runs, error } = await supabase
     .from('ingestion_runs')
@@ -73,24 +77,27 @@ export async function GET() {
 
   // Sources whose health is degraded/dead. Tolerate the pre-migration schema.
   let sourcesHealth: unknown[] = []
+  let sourcesSummary: { active: number; ok: number; unhealthy: number } | undefined
   let healthNote: string | undefined
-  const { data: unhealthy, error: healthErr } = await supabase
+  const { data: activeSources, error: healthErr } = await supabase
     .from('sources')
     .select('id, name, url, discovery_kind, active, health, consecutive_failures, last_success_at, last_failure_at, last_error')
-    .neq('health', 'ok')
     .eq('active', true)
   if (healthErr) {
     healthNote = healthErr.code === '42703'
       ? 'Source health columns missing — apply supabase/migrations/2026-08-25_source_health.sql'
       : healthErr.message
   } else {
-    sourcesHealth = unhealthy ?? []
+    const all = activeSources ?? []
+    sourcesHealth = all.filter((s) => s.health !== 'ok')
+    sourcesSummary = { active: all.length, ok: all.length - sourcesHealth.length, unhealthy: sourcesHealth.length }
   }
 
   return Response.json({
     last_run: report(runs[0] as RunRow),
     last_by_mode: lastByMode,
     sources_health: sourcesHealth,
+    ...(sourcesSummary ? { sources_summary: sourcesSummary } : {}),
     ...(healthNote ? { sources_health_note: healthNote } : {}),
   })
 }

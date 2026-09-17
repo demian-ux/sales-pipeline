@@ -278,6 +278,10 @@ const CreateDiscoveryBody = z
     // The why-benched line. Mirrors the lead held_reason philosophy: no silent parks.
     work_reason: z.string({ required_error: 'work_reason is required' }).min(1, 'work_reason is required'),
     url: z.string().url('url must be a valid URL').optional(),
+    // Aliases for the field names GET returns — clients round-tripping a row
+    // sent source_url/brief_summary and got a bare strict-mode 400 (2026-09-17).
+    source_url: z.string().url('source_url must be a valid URL').optional(),
+    brief_summary: z.string().optional(),
     // `category` lands in `sector` — the launch-lane classification column.
     category: z.string().optional(),
     geo: z.enum(GEOS, { errorMap: () => ({ message: `geo must be one of: ${GEOS.join(' | ')}` }) }).optional(),
@@ -313,11 +317,25 @@ export async function POST(request: NextRequest) {
 
   const parsed = CreateDiscoveryBody.safeParse(json)
   if (!parsed.success) {
+    const unknownKeys = parsed.error.issues
+      .filter((i) => i.code === 'unrecognized_keys')
+      .flatMap((i) => (i as { keys?: string[] }).keys ?? [])
+    if (unknownKeys.length > 0) {
+      return Response.json(
+        {
+          error: `Unknown fields: ${unknownKeys.join(', ')}`,
+          rejected_fields: unknownKeys,
+          accepted_fields: Object.keys(CreateDiscoveryBody.shape),
+          required_fields: ['title', 'source', 'work_reason'],
+        },
+        { status: 400 },
+      )
+    }
     const issue = parsed.error.issues[0]
     const field = issue?.path.join('.') || 'body'
     return Response.json({ error: `${field}: ${issue?.message ?? 'invalid'}` }, { status: 400 })
   }
-  const body = parsed.data
+  const body = { ...parsed.data, url: parsed.data.url ?? parsed.data.source_url }
   const supabase = getSupabaseAdmin()
 
   // Soft dedup against ACTIVE rows: identical title (case-insensitive) or
@@ -370,6 +388,7 @@ export async function POST(request: NextRequest) {
     reviewed_at: now,
     worked_at: CONSUMING_STATUSES.includes(ws) ? now : null,
   }
+  if (body.brief_summary?.trim()) row.brief_summary = body.brief_summary.trim()
   if (body.category) row.sector = body.category
   if (body.geo) row.geo = body.geo
   if (body.icp_fit_score !== undefined) row.icp_fit_score = body.icp_fit_score

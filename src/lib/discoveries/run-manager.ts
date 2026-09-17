@@ -13,8 +13,12 @@ export interface SourceRow { name: string; url: string; source_type?: string | n
 
 // A run that has shown no sign of life for this long is considered dead
 // (the serverless function was killed). Its candidates keep status='new'
-// and are reclaimed by the next run.
-const STALE_RUN_MINUTES = 15
+// and are reclaimed by the next run. Every run route has maxDuration = 300s,
+// so anything still 'running' past 8 minutes was hard-killed by the platform.
+// Swept on every run start AND on every status read (run/job poll, last-run),
+// so a killed run fails within minutes instead of sitting 'running' until the
+// next trigger (run 767704a2 sat 16h, 2026-09-15).
+const STALE_RUN_MINUTES = 8
 
 export async function cleanupStaleRuns(): Promise<void> {
   const supabase = getSupabaseAdmin()

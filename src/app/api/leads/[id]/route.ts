@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import {
   getLeadById,
+  getLeadByIdStrict,
   getCompanyById,
   getOpportunitiesForLead,
   getInteractionsForLead,
@@ -10,6 +11,7 @@ import {
   updateLead,
   deleteLead,
 } from '@/lib/sheets'
+import { isSheetsRateLimit } from '@/lib/sheets/client'
 import type { Lead } from '@/lib/types'
 import { cleanName, PIPELINE_STAGES, LEAD_STATUSES } from '@/lib/vocab'
 
@@ -87,7 +89,7 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params
-    const lead = await getLeadById(id)
+    const lead = await getLeadByIdStrict(id)
     if (!lead) return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
 
     let json: unknown
@@ -143,11 +145,11 @@ export async function PATCH(
     }
     updates.updated_at = new Date().toISOString()
 
-    const { ok, unwritten } = await updateLead(id, updates)
+    const { ok, unwritten, lead: written } = await updateLead(id, updates)
     if (!ok) {
       return NextResponse.json({ error: 'Lead not found in sheet' }, { status: 404 })
     }
-    const updated = await getLeadById(id)
+    const updated = written ?? (await getLeadById(id))
     // Never a silent drop: if a requested field's column is missing from the
     // Leads tab (e.g. held_reason/held_until before the sheet is synced), the
     // write for that field did NOT land — say so explicitly.
@@ -163,6 +165,17 @@ export async function PATCH(
     return NextResponse.json({ lead: updated })
   } catch (err) {
     console.error('PATCH /api/leads/[id] error:', err)
+    // Sheets quota, not a bad lead: tell the client to wait and retry, and
+    // point bulk callers at the batch endpoint (fewer reads per lead).
+    if (isSheetsRateLimit(err)) {
+      return NextResponse.json(
+        {
+          error: 'Google Sheets rate limit hit — nothing was written. Retry after 60s; for many leads use PATCH /api/leads/batch.',
+          retryable: true,
+        },
+        { status: 429, headers: { 'Retry-After': '60' } },
+      )
+    }
     return NextResponse.json({ error: 'Failed to update lead' }, { status: 500 })
   }
 }

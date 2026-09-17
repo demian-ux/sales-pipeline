@@ -8,7 +8,7 @@
 //   start the same runs; GET /api/jobs/[jobId] polls them.
 //
 // GET: returns recent runs (auth required), OR — when called with the
-//   `x-vercel-cron: 1` header — kicks off a background run of BOTH modes
+//   Vercel cron markers (`x-vercel-cron-schedule` / `vercel-cron` UA) — kicks off a background run of BOTH modes
 //   sequentially (one run record each), so the daily cron covers launches and
 //   opportunity signals in one pass.
 //
@@ -27,7 +27,7 @@ import {
   runModeIngestion,
   markRunFailed,
 } from '@/lib/discoveries/run-manager'
-import { isIngestAuthorized } from '@/lib/auth'
+import { isIngestAuthorized, isVercelCronRequest } from '@/lib/auth'
 import { normalizeIngestMode } from '@/lib/discoveries/kind'
 import type { DiscoveryKind } from '@/lib/types'
 
@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  if (request.headers.get('x-vercel-cron') === '1') return startCronRun()
+  if (isVercelCronRequest(request)) return startCronRun()
 
   const { data, error } = await getSupabaseAdmin()
     .from('ingestion_runs')

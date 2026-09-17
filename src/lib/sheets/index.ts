@@ -3,6 +3,7 @@ export { USE_MOCK } from './client'
 export {
   getLeads,
   getLeadById,
+  getLeadByIdStrict,
   createLead,
   updateLead,
   deleteLead,

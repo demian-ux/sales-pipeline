@@ -47,8 +47,11 @@ export async function getLeads(): Promise<Lead[]> {
   }
   if (USE_MOCK) return mockResult()
   const rows = await withFallback(() => readTab(TAB), [] as string[][])
-  const leads = rowsToObjects<Lead>(rows)
-  return leads.map((l) => ({
+  return rowsToLeads(rows)
+}
+
+function rowsToLeads(rows: string[][]): Lead[] {
+  return rowsToObjects<Lead>(rows).map((l) => ({
     ...l,
     business_fit_score: l.business_fit_score ? Number(l.business_fit_score) : undefined,
     taste_score: l.taste_score ? Number(l.taste_score) : undefined,
@@ -61,6 +64,14 @@ export async function getLeads(): Promise<Lead[]> {
 export async function getLeadById(leadId: string): Promise<Lead | null> {
   const leads = await getLeads()
   return leads.find((l) => l.lead_id === leadId) ?? null
+}
+
+// Write-path lookup: a failed Sheets read THROWS instead of degrading to an
+// empty list. With the fallback, a rate-limited read made an existing lead
+// look like a 404 "Lead not found" (2026-09-17 backfill).
+export async function getLeadByIdStrict(leadId: string): Promise<Lead | null> {
+  if (USE_MOCK) return getLeadById(leadId)
+  return rowsToLeads(await readTab(TAB)).find((l) => l.lead_id === leadId) ?? null
 }
 
 export async function createLead(lead: Lead): Promise<void> {
@@ -82,6 +93,8 @@ export async function createLead(lead: Lead): Promise<void> {
 export interface UpdateLeadResult {
   ok: boolean
   unwritten: string[]
+  // The lead as written — saves callers a third full-tab read per update.
+  lead?: Lead
 }
 
 export async function updateLead(leadId: string, updates: Partial<Lead>): Promise<UpdateLeadResult> {
@@ -111,7 +124,7 @@ export async function updateLead(leadId: string, updates: Partial<Lead>): Promis
     )
   }
   await updateRow(TAB, rowIndex + 1, updated)
-  return { ok: true, unwritten }
+  return { ok: true, unwritten, lead: rowsToLeads([headers, updated])[0] }
 }
 
 // ─── Delete + bulk ─────────────────────────────────────────────────────────

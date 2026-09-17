@@ -7,6 +7,7 @@
 
 import { type NextRequest } from 'next/server'
 import { getSupabaseAdmin, isSupabaseAdminConfigured } from '@/lib/supabase'
+import { cleanupStaleRuns } from '@/lib/discoveries/run-manager'
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ jobId: string }> }) {
   if (!isSupabaseAdminConfigured()) {
@@ -14,6 +15,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ job
   }
 
   const { jobId } = await params
+  await cleanupStaleRuns()
   const { data, error } = await getSupabaseAdmin()
     .from('ingestion_runs')
     .select('*')

@@ -25,7 +25,13 @@ API from a sandbox; the sections below document what that surface covers.
 - `GET /api/jobs/{job_id}` → `{ status: queued|running|done|failed, progress_pct,
   phase, mode, candidates_analyzed, new_saved, failed_sources, run }`.
 - `GET /api/research/last-run` → report of the latest finished run + latest per
-  mode + `sources_health` (feeds currently degraded/dead).
+  mode + `sources_health` (ONLY feeds currently degraded/dead — `[]` means all
+  healthy; `sources_summary: { active, ok, unhealthy }` confirms the count).
+  Reading it (or polling a run/job) also sweeps killed runs: anything still
+  `running` after 8 min is marked failed and the lock released.
+- Scheduled ingest: Vercel cron every 6h runs `permit_filing` → `project_launch`
+  → `opportunity_signal`. Until 2026-09-17 the cron never fired a run (the route
+  gated on an `x-vercel-cron` header Vercel doesn't send).
 - `POST /api/discoveries/ingest?mode=` remains the underlying endpoint (cron + UI).
 
 ### Sources CRUD + feed health
@@ -50,6 +56,16 @@ API from a sandbox; the sections below document what that surface covers.
 - `POST /api/leads/batch` — array of leads (or `{ leads: [...] }`), max 100;
   per-item `{ ok, lead_id | error }`. `PATCH /api/leads/batch` — array of
   `{ lead_id, changes }` (or `{ updates: [...] }`), per-item results.
+- `PATCH /api/leads/{id}` answers `429` + `Retry-After: 60` (`retryable: true`,
+  nothing written) when Google Sheets throttles (60 reads/min) — wait and retry,
+  or use `PATCH /api/leads/batch` for many leads. It never 404s a real lead on a
+  throttled read anymore.
+- `POST /api/discoveries` (manual entry) — required: `title`, `source`,
+  `work_reason` (the why-benched line; no silent parks). Optional: `url` (alias
+  `source_url`), `brief_summary`, `category`, `geo`, `icp_fit_score`,
+  `re_arm_at`, `discovery_kind`, `address`, `sponsor`, `work_categories`,
+  `work_status` (default `held`), `status`. Unknown fields → 400 listing
+  `rejected_fields` + `accepted_fields`.
 - `GET /api/leads` filters: `email=` (exact), `followup_due=YYYY-MM-DD|today`
   (next_followup_date on/before), `updated_after=` (incremental cursor), plus
   the existing `stage`, `temperature`, `company`, `q`.
