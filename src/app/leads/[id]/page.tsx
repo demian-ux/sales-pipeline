@@ -28,6 +28,7 @@ const LEAD_STATUS_TONE: Record<LeadStatus, 'ok' | 'warn' | 'info'> = {
   Active: 'ok',
   Inactive: 'warn',
   Archived: 'info',
+  'Do Not Contact': 'warn',
 }
 
 function shortDate(d?: string): string {

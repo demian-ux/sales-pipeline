@@ -7,6 +7,7 @@ import {
 } from '@/lib/sheets'
 import StrategicMapClient from '@/components/strategic-map/StrategicMapClient'
 import type { Lead, Opportunity, AIInsight, Interaction, ResearchFinding } from '@/lib/types'
+import { isRetiredLead } from '@/lib/vocab'
 
 export const dynamic = 'force-dynamic'
 
@@ -197,7 +198,7 @@ export default async function StrategicMapPage() {
 
   // Health groups
   const healthLeads: LeadHealth[] = leads
-    .filter((l) => l.lead_status !== 'Archived')
+    .filter((l) => !isRetiredLead(l))
     .map(classifyHealth)
 
   const healthGroups: Record<HealthGroup, LeadHealth[]> = {

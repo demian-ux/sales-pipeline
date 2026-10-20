@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCompanyById, getLeads } from '@/lib/sheets'
 import { prioritizeStakeholders } from '@/lib/claude'
 import { sessionCache } from '@/lib/sheets/cache'
+import { isRetiredLead } from '@/lib/vocab'
 
 // POST /api/ai/prioritize-stakeholders
 // Body: { company_id: string }
@@ -21,7 +22,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Company not found' }, { status: 404 })
     }
 
-    const companyLeads = allLeads.filter((l) => l.company_id === company_id && l.lead_status !== 'Archived')
+    const companyLeads = allLeads.filter((l) => l.company_id === company_id && !isRetiredLead(l))
 
     if (companyLeads.length === 0) {
       return NextResponse.json({ error: 'No active leads at this company' }, { status: 400 })

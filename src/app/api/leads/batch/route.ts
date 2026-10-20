@@ -37,7 +37,7 @@ export async function POST(req: Request) {
       results.push(
         r.ok
           ? { ok: true, lead_id: r.lead.lead_id, lead: r.lead }
-          : { ok: false, error: r.error, ...(r.duplicate_of ? { duplicate_of: r.duplicate_of } : {}) },
+          : { ok: false, error: r.error, ...(r.duplicate_of ? { duplicate_of: r.duplicate_of, lead_status: r.lead_status, do_not_contact: r.do_not_contact } : {}) },
       )
     }
     const created = results.filter((r) => r.ok).length

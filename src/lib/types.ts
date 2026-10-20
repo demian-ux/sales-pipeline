@@ -55,7 +55,9 @@ export const STAGE_ORDER: PipelineStage[] = [
   'Lost',
 ]
 
-export type LeadStatus = 'Active' | 'Inactive' | 'Archived'
+// 'Do Not Contact' (2026-10-20): explicit opt-out. Distinct from Archived so a
+// dedup hit on this lead can say "don't write to them" instead of just "exists".
+export type LeadStatus = 'Active' | 'Inactive' | 'Archived' | 'Do Not Contact'
 export type RelationshipTemperature = 'Hot' | 'Warm' | 'Cool' | 'Cold'
 export type UrgencyLevel = 'High' | 'Medium' | 'Low'
 export type ConfidenceLevel = 'High' | 'Medium' | 'Low'

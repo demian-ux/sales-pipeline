@@ -13,9 +13,8 @@ import type {
   LinkedInDMStatus,
   LinkedInWarmth,
 } from '@/lib/types'
-import { cleanName, PIPELINE_STAGES } from '@/lib/vocab'
+import { cleanName, PIPELINE_STAGES, LEAD_STATUSES } from '@/lib/vocab'
 
-const LEAD_STATUSES = ['Active', 'Inactive', 'Archived'] as const satisfies readonly LeadStatus[]
 const TEMPERATURES = ['Hot', 'Warm', 'Cool', 'Cold'] as const satisfies readonly RelationshipTemperature[]
 const LINKEDIN_CONNECTION_STATUSES = ['Not Connected', 'Connection Ready', 'Connection Sent', 'Connected', 'Unknown'] as const satisfies readonly LinkedInConnectionStatus[]
 const LINKEDIN_DM_STATUSES = ['Not Started', 'DM Ready', 'DM Sent', 'Replied', 'Not Interested', 'Unknown'] as const satisfies readonly LinkedInDMStatus[]
@@ -74,7 +73,7 @@ export const CreateLeadBody = z
 
 export type CreateLeadResult =
   | { ok: true; status: 201; lead: Lead }
-  | { ok: false; status: number; error: string; duplicate_of?: string }
+  | { ok: false; status: number; error: string; duplicate_of?: string; lead_status?: LeadStatus; do_not_contact?: boolean }
 
 // Validate + dedup + resolve company + insert. `json` is the raw request body
 // for one lead. Returns a result object rather than a Response so batch/compound
@@ -113,8 +112,13 @@ export async function createLeadFromJson(json: unknown): Promise<CreateLeadResul
       return {
         ok: false,
         status: 409,
-        error: `Duplicate of existing lead ${dup.lead_id} (${dup.full_name} at ${dup.company_name}). Pass force: true to create anyway.`,
+        error: dup.lead_status === 'Do Not Contact'
+          ? `Duplicate of existing lead ${dup.lead_id} (${dup.full_name} at ${dup.company_name}) — lead_status is Do Not Contact. Do not write to them.`
+          : `Duplicate of existing lead ${dup.lead_id} (${dup.full_name} at ${dup.company_name}). Pass force: true to create anyway.`,
         duplicate_of: dup.lead_id,
+        // Surfaced so a client's dedup step sees the opt-out without a second GET.
+        lead_status: dup.lead_status,
+        do_not_contact: dup.lead_status === 'Do Not Contact',
       }
     }
   }

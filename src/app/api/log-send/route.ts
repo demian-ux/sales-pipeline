@@ -137,6 +137,9 @@ export async function POST(req: Request) {
         lead_created: leadCreated,
         interaction,
         lead_updates: updates,
+        // The send already happened, so it is logged either way — but a client
+        // that did not check lead_status before sending needs to hear it now.
+        ...(lead.lead_status === 'Do Not Contact' ? { do_not_contact: true, warning: 'Lead is Do Not Contact — this send should not have gone out; stop the sequence.' } : {}),
         ...(upd.unwritten.length > 0 ? { warning: `Leads tab is missing columns; not written: ${upd.unwritten.join(', ')}` } : {}),
       },
       { status: 201 },

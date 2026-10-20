@@ -3,11 +3,13 @@ import { getLeads, getCompanies, getOpportunities, getAIInsights, getInteraction
 import type { LeadWithCompany } from '@/lib/types'
 import { createLeadFromJson } from '@/lib/leads/create'
 
-// GET /api/leads?stage=&temperature=&company=&q=&email=&followup_due=&updated_after=&limit=&offset=
+// GET /api/leads?stage=&status=&temperature=&company=&q=&email=&followup_due=&updated_after=&limit=&offset=
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url)
     const stage = searchParams.get('stage')
+    // status= filters on lead_status (e.g. status=Do%20Not%20Contact for the opt-out list).
+    const status = searchParams.get('status')
     const temperature = searchParams.get('temperature')
     const companyFilter = searchParams.get('company')?.toLowerCase().trim()
     const q = searchParams.get('q')?.toLowerCase().trim()
@@ -62,6 +64,7 @@ export async function GET(req: Request) {
 
     const filtered = leads.filter((lead) => {
       if (stage && lead.pipeline_stage !== stage) return false
+      if (status && lead.lead_status !== status) return false
       if (temperature && lead.relationship_temperature !== temperature) return false
       if (companyFilter && !(lead.company_name ?? '').toLowerCase().includes(companyFilter)) return false
       if (email && (lead.email ?? '').toLowerCase().trim() !== email) return false
@@ -106,7 +109,9 @@ export async function POST(req: Request) {
     const result = await createLeadFromJson(json)
     if (!result.ok) {
       return NextResponse.json(
-        result.duplicate_of ? { error: result.error, duplicate_of: result.duplicate_of } : { error: result.error },
+        result.duplicate_of
+          ? { error: result.error, duplicate_of: result.duplicate_of, lead_status: result.lead_status, do_not_contact: result.do_not_contact }
+          : { error: result.error },
         { status: result.status },
       )
     }

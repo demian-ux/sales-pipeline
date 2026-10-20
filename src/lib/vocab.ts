@@ -19,7 +19,13 @@ import type {
 } from './types'
 
 export const PIPELINE_STAGES = ['New Lead', 'Contacted', 'Replied', 'Discovery', 'Proposal Sent', 'Negotiation', 'Won', 'Lost', 'Nurture', 'Dormant', 'Held'] as const satisfies readonly PipelineStage[]
-export const LEAD_STATUSES = ['Active', 'Inactive', 'Archived'] as const satisfies readonly LeadStatus[]
+export const LEAD_STATUSES = ['Active', 'Inactive', 'Archived', 'Do Not Contact'] as const satisfies readonly LeadStatus[]
+// Statuses that take a lead out of every outreach surface (queues, attention
+// cards, stakeholder prioritization, company rosters).
+export const RETIRED_LEAD_STATUSES: readonly LeadStatus[] = ['Archived', 'Do Not Contact']
+export function isRetiredLead(l: { lead_status?: LeadStatus }): boolean {
+  return !!l.lead_status && RETIRED_LEAD_STATUSES.includes(l.lead_status)
+}
 export const TEMPERATURES = ['Hot', 'Warm', 'Cool', 'Cold'] as const satisfies readonly RelationshipTemperature[]
 export const LINKEDIN_CONNECTION_STATUSES = ['Not Connected', 'Connection Ready', 'Connection Sent', 'Connected', 'Unknown'] as const satisfies readonly LinkedInConnectionStatus[]
 export const LINKEDIN_DM_STATUSES = ['Not Started', 'DM Ready', 'DM Sent', 'Replied', 'Not Interested', 'Unknown'] as const satisfies readonly LinkedInDMStatus[]

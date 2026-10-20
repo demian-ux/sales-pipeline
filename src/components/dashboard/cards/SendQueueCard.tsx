@@ -4,6 +4,7 @@ import { useMemo, useState, useCallback, type ReactNode } from 'react'
 import Link from 'next/link'
 import { Icon } from '@/components/ui/icons'
 import type { Lead, Campaign } from '@/lib/types'
+import { isRetiredLead } from '@/lib/vocab'
 
 // The cold-outreach rhythm: sends happen Tuesdays & Thursdays only.
 // This card answers "what do I send today / on the next send day" —
@@ -93,7 +94,7 @@ export default function SendQueueCard({ leads, campaigns, draftLeadIds, emailDra
     // Due for a send on the send day: follow-up scheduled on/before it,
     // or never touched at all (first touch).
     const dueForSend = (l: Lead) => {
-      if (l.lead_status === 'Archived') return false
+      if (isRetiredLead(l)) return false
       if (l.pipeline_stage === 'Won' || l.pipeline_stage === 'Lost') return false
       const next = parseDate(l.next_followup_date)
       if (next) return next.getTime() <= sendDay.getTime()

@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { StageBadge, Empty } from '@/components/ui/primitives'
 import type { Lead } from '@/lib/types'
+import { isRetiredLead } from '@/lib/vocab'
 
 interface Props {
   leads: Lead[]
@@ -48,7 +49,7 @@ function detectAttention(leads: Lead[]): AttentionItem[] {
   }
 
   for (const lead of leads) {
-    if (lead.lead_status === 'Archived') continue
+    if (isRetiredLead(lead)) continue
     const ds = daysSince(lead.last_touch_date)
     const rel = Number(lead.relationship_score) || 0
     const pri = Number(lead.priority_score) || 0

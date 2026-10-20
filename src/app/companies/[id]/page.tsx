@@ -3,6 +3,7 @@
 import { useState, useEffect, use } from 'react'
 import Link from 'next/link'
 import type { Company, Lead, ResearchFinding, StakeholderPrioritizationOutput, StakeholderRanking } from '@/lib/types'
+import { isRetiredLead } from '@/lib/vocab'
 
 // ── Role classification ────────────────────────────────────────────────────
 
@@ -75,7 +76,7 @@ export default function CompanyDetailPage({ params }: { params: Promise<{ id: st
           findingsRes.json(),
         ])
         setCompany(companyData.company ?? null)
-        setLeads((leadsData.leads ?? []).filter((l: Lead) => l.company_id === id && l.lead_status !== 'Archived'))
+        setLeads((leadsData.leads ?? []).filter((l: Lead) => l.company_id === id && !isRetiredLead(l)))
         setFindings((findingsData.findings ?? []).filter((f: ResearchFinding) => f.company_id === id))
       } finally {
         setLoading(false)

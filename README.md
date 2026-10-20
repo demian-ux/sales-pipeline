@@ -85,7 +85,26 @@ API from a sandbox; the sections below document what that surface covers.
 - Pagination is `limit` + `offset` everywhere it exists (discoveries, leads,
   firm-pool); responses include `total`. `page`/`per_page` are rejected with a 400.
 - `POST /api/leads` requires `full_name` (not `name` — the 400 says so). A
-  duplicate returns `409 { duplicate_of }`.
+  duplicate returns `409 { duplicate_of, lead_status, do_not_contact }`.
+- **`POST /api/leads` and client timeouts (curl `000`).** The create does 3–4
+  sequential Sheets round-trips (dedup read, company find-or-create, append),
+  so p95 can pass a 10–15 s client timeout. A `000` / timeout on the client is
+  NOT a failed write: the row usually persists (observed 4 of 80 on
+  2026-10-20). Treat it as "unknown", then either `GET /api/leads?email=` or
+  simply retry the POST — the retry answers `409 { duplicate_of }`, which is
+  the correct outcome. Use `--max-time 60` or `POST /api/leads/batch` for
+  bulk loads.
+- **Opt-out = `lead_status: "Do Not Contact"`** (2026-10-20). Set it with
+  `PATCH /api/leads/{id} { lead_status: "Do Not Contact" }`. It drops the lead
+  from every outreach surface (send queue, attention card, stakeholder
+  prioritization, company roster), the dedup 409 on `POST /api/leads` reports
+  `do_not_contact: true`, `GET /api/leads?status=Do%20Not%20Contact` lists the
+  opt-out set, and `POST /api/log-send` still logs the send (it happened) but
+  answers with `do_not_contact: true` + a warning. Check `lead_status` before
+  scheduling any bump.
+- From the Cowork device shell, Python `urllib` against this host hangs (the
+  device proxy); `curl` works. Use `curl` (or `requests` with explicit proxy
+  settings) for CRM calls from there.
 - Discovery `work_status` enum includes `value-batch-consumed` (a value-outreach
   batch consumed the signal; hidden from the default board like other worked states).
 - `next_followup_date` on lead PATCH accepts `null` or `''` to clear.
