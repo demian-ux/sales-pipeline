@@ -5,18 +5,26 @@
 // with a work_reason naming the rule that fired, instead of 'unworked'.
 // Deterministic rules in code — not the prompt — so a prompt edit can't
 // silently reopen a killed segment. Applied to BOTH lanes (launch AND
-// opportunity_signal — the Aug 4 test showed Dallas/Ohio items entering
-// unworked through the upstream Cultural Capital / Entitlements feeds).
+// opportunity_signal).
 //
-// Rules mirrored (standing-rulings + fixpack ronda 2, 4-ago-2026):
-//   - off-geo: anything outside NYC metro / South Florida / Europe /
-//     Middle East / Caribbean-luxury (checked FIRST — the widest gap)
+// Rules mirrored:
+//   - off-geo (checked FIRST). Rewritten 2026-11-26 for the 2027 ruling
+//     "se busca por dónde está la firma, no por dónde está el proyecto":
+//       • a US project NEVER rejects on geography (Dallas, Nashville, Denver
+//         are where New York firms build);
+//       • Caribbean-luxury and Middle East projects pass (the allow-lists);
+//       • any other non-US project rejects UNLESS a firm the article names is
+//         headquartered in an open focus geo.
+//     The scope test itself lives in target-geo.ts (geoFit) — one source for
+//     this gate, the score cap and the geography points.
 //   - construction-progress without a launch signal
 //   - market roundups
 //   - leasing / tenanting
 //   - midscale / economy / hostel / Gen-Z hospitality
 //   - workforce-housing or industrial-heavy mixed use
 //   - student housing / EB-5 plays
+
+import { geoFit } from './target-geo'
 
 interface Gate0Input {
   title?: string | null
@@ -26,6 +34,8 @@ interface Gate0Input {
   tags?: string[] | null
   region?: string | null
   country?: string | null
+  // hq_geo of every firm the article names (named_firms[].hq_geo).
+  named_firm_geos?: readonly (string | null | undefined)[] | null
 }
 
 interface Gate0Rule {
@@ -60,29 +70,18 @@ const TEXT_RULES: Gate0Rule[] = [
   },
 ]
 
-// Middle East + Caribbean-luxury country allowlists — regions the analyzer
-// files under 'Other' that the standing rulings explicitly keep.
-const MIDDLE_EAST_ALLOW =
-  /united arab emirates|\buae\b|dubai|abu dhabi|saudi|qatar|kuwait|bahrain|oman|israel|jordan/i
-const CARIBBEAN_ALLOW =
-  /bahamas|turks|caicos|st\.? ?barth|barbados|anguilla|antigua|cayman|bermuda|virgin islands|st\.? ?(lucia|kitts|martin)|dominican republic|jamaica/i
-
-const TARGET_REGIONS = ['New York', 'Miami', 'France', 'Europe']
-
 /**
  * Returns the standing-rulings rule a discovery violates, or null if it passes.
  * The caller stores `ingestion gate-0: <reason>` as work_reason.
  *
- * Off-geo is checked FIRST (fixpack ronda 2): everything outside NYC metro /
- * South Florida / Europe / Middle East / Caribbean-luxury rejects, including
- * US off-geo (Dallas, Ohio) — the upstream feeds carry no geo terms at all.
+ * Off-geo is checked FIRST. A row with no region at all is not rejected on
+ * geography (nothing to judge).
  */
 export function gate0Reason(input: Gate0Input): string | null {
   const region = (input.region ?? '').trim()
   const country = (input.country ?? '').trim()
-  if (region && !TARGET_REGIONS.includes(region)) {
-    const allowed = MIDDLE_EAST_ALLOW.test(country) || CARIBBEAN_ALLOW.test(country)
-    if (!allowed) return `off-geo (${[region, country].filter(Boolean).join(', ')})`
+  if (region && geoFit({ region, country, namedFirmGeos: input.named_firm_geos }) === 'none') {
+    return `off-geo (${[region, country].filter(Boolean).join(', ')})`
   }
 
   const haystack = [
@@ -100,4 +99,30 @@ export function gate0Reason(input: Gate0Input): string | null {
   }
 
   return null
+}
+
+// The verdict gate-0 gives a stored row TODAY. Pure, so the backfill and its
+// tests share it. `named_firms` is absent on rows analyzed before 2026-11-26,
+// so for those only the project's location can be judged: US, Caribbean and
+// Middle East rows flip; other non-US rows stay off-geo until re-analyzed.
+export function regateRow(row: {
+  title?: string | null
+  sector?: string | null
+  project_type?: string | null
+  brief_summary?: string | null
+  tags?: string[] | null
+  region?: string | null
+  country?: string | null
+  named_firms?: { hq_geo?: string | null }[] | null
+}): string | null {
+  return gate0Reason({
+    title: row.title,
+    sector: row.sector,
+    project_type: row.project_type,
+    brief_summary: row.brief_summary,
+    tags: row.tags,
+    region: row.region,
+    country: row.country,
+    named_firm_geos: (row.named_firms ?? []).map((f) => f.hq_geo),
+  })
 }

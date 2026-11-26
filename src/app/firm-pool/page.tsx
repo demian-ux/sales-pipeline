@@ -18,7 +18,8 @@ const CATEGORY_LABEL: Record<string, string> = {
   hospitality_design: 'Hospitality', landscape: 'Landscape', experiential: 'Experiential',
 }
 const GEO_LABEL: Record<string, string> = {
-  nyc: 'NYC', south_florida: 'S. Florida', europe: 'Europe', middle_east: 'Middle East', other: 'Other',
+  nyc: 'NYC', south_florida: 'S. Florida', california: 'California', seattle: 'Seattle',
+  chicago: 'Chicago', dc: 'Washington DC', europe: 'Europe', middle_east: 'Middle East', other: 'Other',
 }
 
 export default async function FirmPoolPage() {

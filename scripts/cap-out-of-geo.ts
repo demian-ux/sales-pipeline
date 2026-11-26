@@ -2,7 +2,7 @@
 // existing discoveries, and swap the two formerly-global GNews source queries
 // for their geo-qualified versions.
 //
-// Out-of-geo rows (region not in TARGET_REGIONS) get:
+// Out-of-geo rows (geoFit 'none' — see src/lib/discoveries/target-geo.ts) get:
 //   - signal_tier strong_opportunity → watchlist
 //   - discovery_score capped at OUT_OF_GEO_SCORE_CAP
 // Mirrors the runtime cap added to processor.ts. Idempotent.
@@ -35,7 +35,7 @@ const SOURCE_URL_UPDATES: { name: string; url: string }[] = [
 
 async function main() {
   const { createClient } = await import('@supabase/supabase-js')
-  const { TARGET_REGIONS, OUT_OF_GEO_SCORE_CAP } = await import('../src/lib/discoveries/target-geo')
+  const { geoFit, OUT_OF_GEO_SCORE_CAP } = await import('../src/lib/discoveries/target-geo')
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -47,10 +47,9 @@ async function main() {
     .select('id, title, city, country, region, signal_tier, discovery_score')
   if (error) throw new Error(error.message)
 
-  const targets = new Set<string>(TARGET_REGIONS)
   const toFix = (rows ?? []).filter(
     (d) =>
-      (!d.region || !targets.has(d.region)) &&
+      geoFit({ region: d.region, country: d.country }) === 'none' &&
       (d.signal_tier === 'strong_opportunity' || (d.discovery_score ?? 0) > OUT_OF_GEO_SCORE_CAP),
   )
 

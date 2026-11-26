@@ -16,7 +16,7 @@ import { computeDiscoveryScore, scoreToTier } from './scoring'
 import { computeIcpFit, sectorFitFromSector } from './icp'
 import { computeOpportunityScore, fitTierFromScore, briefsStatusToTiming } from './opportunity-score'
 import { segmentToSector, getSegmentConfig } from './opportunity-segments'
-import { isInTargetGeo, OUT_OF_GEO_SCORE_CAP, regionToGeo } from './target-geo'
+import { geoFit, OUT_OF_GEO_SCORE_CAP, regionToGeo } from './target-geo'
 import { isDropSignalType } from './signal-type'
 import { gate0Reason } from './gate0'
 import { makeProjectKey } from './project-key'
@@ -25,7 +25,7 @@ import { extractDiscoveryEntities, matchEntitiesToCompanies, entityMatches } fro
 import { fetchRSSFeed, type RawArticleFromRSS } from './rss'
 import { recordSourceOutcomes } from './source-health'
 import { resolveGoogleNewsUrl, isGoogleNewsUrl } from './googleNewsResolver'
-import type { DiscoverySignalTier, Company, DiscoveryKind, SuggestedTargetFirm, FitTier } from '@/lib/types'
+import type { DiscoverySignalTier, Company, DiscoveryKind, SuggestedTargetFirm, FitTier, NamedFirm } from '@/lib/types'
 
 // Lightweight company roster snapshot, loaded once per run for already_engaged
 // cross-reference (avoids a Sheets read per article).
@@ -419,11 +419,15 @@ async function processArticle(article: RawArticleFromRSS, resolvedUrl: string, r
   let discoveryScore = computeDiscoveryScore(analysis.scores)
   let tier: DiscoverySignalTier = analysis.signal_tier ?? scoreToTier(discoveryScore)
 
-  // Deterministic geo cap: out-of-target discoveries can never be strong
+  // Deterministic geo cap: out-of-scope discoveries can never be strong
   // opportunities, however good the project. Enforced in code — not in the
-  // prompt — so rubric drift can't reintroduce geography bleed (Brisbane /
-  // Chicago / Dubai articles were tiering strong at 65–79).
-  if (!isInTargetGeo(analysis.region)) {
+  // prompt — so rubric drift can't reintroduce geography bleed. Scope is where
+  // the FIRMS are (2026-11-26): a US project, a Caribbean / Middle East project,
+  // or any project with a named focus-geo firm is in scope; the cap only bites
+  // when none of those holds (a Brisbane resort by an Australian architect).
+  const namedFirms = cleanNamedFirms(analysis.named_firms)
+  const namedFirmGeos = namedFirms.map((f) => f.hq_geo)
+  if (geoFit({ region: analysis.region, country: analysis.country, namedFirmGeos }) === 'none') {
     discoveryScore = Math.min(discoveryScore, OUT_OF_GEO_SCORE_CAP)
     if (tier === 'strong_opportunity') tier = 'watchlist'
   }
@@ -491,6 +495,7 @@ async function processArticle(article: RawArticleFromRSS, resolvedUrl: string, r
     tags: analysis.tags,
     region: analysis.region,
     country: analysis.country,
+    named_firm_geos: namedFirmGeos,
   })
 
   // CRM cross-reference: tag the discovery if a named actor matches a Company
@@ -515,9 +520,11 @@ async function processArticle(article: RawArticleFromRSS, resolvedUrl: string, r
     est_scale_vs_floor: analysis.est_scale_vs_floor,
     incumbent_viz: analysis.incumbent_viz,
     region: analysis.region,
+    country: analysis.country,
+    named_firm_geos: namedFirmGeos,
   })
 
-  const { error } = await supabase.from('discoveries').insert({
+  const { error } = await insertDiscovery(supabase, {
     title: analysis.title || article.title,
     date_published: article.pubDate ? safeIsoDate(article.pubDate) : null,
     source: article.sourceName,
@@ -538,6 +545,7 @@ async function processArticle(article: RawArticleFromRSS, resolvedUrl: string, r
     main_actors: analysis.main_actors,
     developer: analysis.developer,
     architect: analysis.architect,
+    named_firms: namedFirms,
     government_body: analysis.government_body,
 
     brief_summary: analysis.brief_summary,
@@ -643,6 +651,12 @@ async function processOpportunitySignal(
     return 'archived'
   }
 
+  // Firms the article names, with normalized HQ. Scope (gate-0, cap, geography
+  // points) is decided by where THESE are based — never by the analyzer's
+  // illustrative example firms, and never by the project's location alone.
+  const namedFirms = cleanNamedFirms(analysis.named_firms)
+  const namedFirmGeos = namedFirms.map((f) => f.hq_geo)
+
   const cfg = getSegmentConfig(analysis.segment)
   const opp = computeOpportunityScore({
     segment: analysis.segment,
@@ -652,16 +666,18 @@ async function processOpportunitySignal(
     timing: briefsStatusToTiming(analysis.briefs_status),
     targets: analysis.targets,
     region: analysis.region,
+    country: analysis.country,
+    named_firm_geos: namedFirmGeos,
     // Pre-award gates: an awarded brief or a failed future-work test hard-rejects.
     briefs_status: analysis.briefs_status,
     future_work_test: analysis.future_work_test,
   })
 
-  // Deterministic geo cap — same guarantee as launch mode: out-of-target work
+  // Deterministic geo cap — same guarantee as launch mode: out-of-scope work
   // can never tier strong, however good the signal.
   let score = opp.opportunity_score
   let fitTier: FitTier = opp.fit_tier
-  if (!isInTargetGeo(analysis.region)) {
+  if (geoFit({ region: analysis.region, country: analysis.country, namedFirmGeos }) === 'none') {
     score = Math.min(score, OUT_OF_GEO_SCORE_CAP)
     // The cap lowered the score below its original band — re-derive fit_tier
     // from the capped score so the card badge can never contradict the stored
@@ -723,15 +739,17 @@ async function processOpportunitySignal(
     return true
   })
 
-  // Gate-0 (fixpack 2026-08-04): the upstream feeds carry no geo terms at all,
-  // so Dallas/Ohio-grade off-geo events were entering unworked. Same rules as
-  // the launch lane; a hit inserts pre-rejected with the rule named.
+  // Gate-0: same rules as the launch lane; a hit inserts pre-rejected with the
+  // rule named. Geography no longer rejects US work (2026-11-26) — the upstream
+  // feeds carry no geo terms, and Dallas/Nashville-grade events are exactly
+  // what focus-geo firms compete for.
   const gate0 = gate0Reason({
     title: analysis.title || article.title,
     brief_summary: analysis.brief_summary,
     tags: analysis.tags,
     region: analysis.region,
     country: analysis.country,
+    named_firm_geos: namedFirmGeos,
   })
 
   // CRM cross-reference on the example firms, not the source org. Tag
@@ -742,14 +760,17 @@ async function processOpportunitySignal(
     firm: f.firm,
     why_fit: f.why_fit,
     geography: f.geography,
+    hq_city: f.hq_city,
+    hq_geo: f.hq_geo,
     in_crm: roster.length > 0 && roster.some((c) => c.company_name && entityMatches(f.firm, c.company_name)),
     apollo_org_id: null,
     // Illustrative examples — never a card's primary prospect. The value lane
-    // matches the firm pool by work_categories ∩ geo, not these names.
+    // matches the firm pool by work_categories across the focus firm geos, not
+    // these names.
     confidence: 'unverified_hint' as const,
   }))
 
-  const { error } = await supabase.from('discoveries').insert({
+  const { error } = await insertDiscovery(supabase, {
     title: analysis.title || article.title,
     date_published: article.pubDate ? safeIsoDate(article.pubDate) : null,
     source: article.sourceName,
@@ -760,6 +781,7 @@ async function processOpportunitySignal(
     city: analysis.city,
     country: analysis.country,
     sector: segmentToSector(analysis.segment),
+    named_firms: namedFirms,
 
     brief_summary: analysis.brief_summary,
     why_it_matters: analysis.why_it_matters,
@@ -782,11 +804,12 @@ async function processOpportunitySignal(
     suggested_target_firms: suggestedFirms,
 
     // Upstream-signal fields (2026-07-10) — the a/b/c test stored as fields, plus
-    // the firm-pool join keys (work_categories ∩ geo) the value lane matches on.
+    // the firm-pool join key (work_categories). `geo` is the PROJECT's geo: it
+    // orders the join (same-geo firms first) and no longer gates it.
     program_scope:      analysis.program_scope,
     briefs_status:      analysis.briefs_status,
     work_categories:    analysis.work_categories,
-    geo:                regionToGeo(analysis.region, analysis.country),
+    geo:                regionToGeo(analysis.region, analysis.country, analysis.city),
     future_work_test:   analysis.future_work_test,
     future_work_reason: analysis.future_work_reason,
     buyer_committed:    analysis.buyer_committed,
@@ -1073,6 +1096,43 @@ function normalizeArticleUrl(url: string): string {
   } catch {
     return url.trim()
   }
+}
+
+// Trim + dedup the analyzer's named firms (by name) before they are stored or
+// used for scope. Order is preserved.
+function cleanNamedFirms(firms: NamedFirm[] | null | undefined): NamedFirm[] {
+  const seen = new Set<string>()
+  const out: NamedFirm[] = []
+  for (const f of firms ?? []) {
+    const name = f.firm?.trim()
+    if (!name) continue
+    const key = name.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({ firm: name, role: f.role, hq_city: (f.hq_city ?? '').trim(), hq_geo: f.hq_geo })
+  }
+  return out
+}
+
+// Insert a discovery row. `named_firms` arrived with
+// supabase/migrations/2026-11-26_firm_geo_targeting.sql; if that migration is
+// not applied yet PostgREST rejects the unknown column, so retry once without
+// it rather than lose the discovery (the scope decision was already made in
+// code — only the stored HQ detail is dropped).
+async function insertDiscovery(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  row: Record<string, unknown>,
+) {
+  const first = await supabase.from('discoveries').insert(row)
+  const missingColumn =
+    first.error &&
+    (first.error.code === 'PGRST204' || first.error.code === '42703') &&
+    /named_firms/.test(first.error.message)
+  if (!missingColumn) return first
+  console.warn('[ingest] discoveries.named_firms missing — apply supabase/migrations/2026-11-26_firm_geo_targeting.sql. Inserting without it.')
+  const { named_firms: _dropped, ...rest } = row
+  void _dropped
+  return supabase.from('discoveries').insert(rest)
 }
 
 function safeIsoDate(pubDate: string): string | null {

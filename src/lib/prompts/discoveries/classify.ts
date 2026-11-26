@@ -7,7 +7,7 @@ import { parseJson, extractText, ClaudeParseError } from '@/lib/ai/parse'
 import { withTimeout } from '@/lib/ai/timeout'
 import { env } from '@/lib/env'
 import type { DiscoverySignalTier } from '@/lib/types'
-import { TARGET_GEO_DESCRIPTION } from '@/lib/discoveries/target-geo'
+import { FOCUS_FIRM_GEO_DESCRIPTION, PROJECT_SCOPE_DESCRIPTION } from '@/lib/discoveries/target-geo'
 
 export interface DiscoveryClassification {
   should_analyze: boolean
@@ -35,11 +35,13 @@ Use should_analyze = false only when the article is clearly unrelated, stale com
 
 ━━━ GEOGRAPHY GATE ━━━
 
-Target markets: ${TARGET_GEO_DESCRIPTION}.
+Scope is decided by where the FIRMS are, not where the project is. The tool's user writes to design and development firms based in ${FOCUS_FIRM_GEO_DESCRIPTION}, and those firms mostly design projects in other cities. In-scope project locations: ${PROJECT_SCOPE_DESCRIPTION}.
 
-Use should_analyze = false when the article is clearly about a project located OUTSIDE the target markets (e.g. Australia, the Middle East, Africa, South America, Asia, or US cities other than the New York and Miami metros). The PROJECT's location is what matters, not where the firms involved are headquartered — a Miami developer building in Dubai is out of target; a Dubai investor building in Manhattan is in target.
+Never reject a project for being in a US city other than New York or Miami — a hotel in Nashville, a tower in Dallas or an airport lounge in Denver is in scope.
 
-When the location is unclear, unstated, or the story spans both target and non-target markets, do NOT reject on geography.
+Use should_analyze = false on geography only when BOTH hold: the project is clearly located outside the United States, the Caribbean and the Middle East (e.g. Europe, Australia, Africa, South America, Asia), AND the title/snippet names no US-based developer, architect or design firm behind it. A New York architect designing a resort in Portugal is in scope; a French architect building in Paris is not.
+
+When the location is unclear, unstated, or the story spans both in-scope and out-of-scope places, do NOT reject on geography.
 
 When unsure, choose should_analyze = true.`
 

@@ -10,7 +10,7 @@
 // points and applies the hard disqualifiers — same pure/deterministic contract as
 // computeIcpFit, so a prompt edit can't silently move the ranking.
 
-import { isInTargetGeo } from './target-geo'
+import { geoFit, geoPoints } from './target-geo'
 import { getSegmentConfig } from './opportunity-segments'
 import type { OpportunitySegment, FitTier, BriefsStatus } from '@/lib/types'
 
@@ -31,7 +31,12 @@ export interface OpportunityScoreInput {
   design_scope: DesignScope
   timing: OpportunityTiming
   targets: TargetReachability
+  // Geography: scored by where the FIRMS are, not where the project is — full
+  // points when a named firm is based in a focus geo (or the project is in a
+  // focus market), partial for other US / Caribbean / Middle East work.
   region: string | null | undefined
+  country?: string | null
+  named_firm_geos?: readonly (string | null | undefined)[] | null
   // Upstream-signal gates (2026-07-10). The lane only fires on PRE-AWARD future
   // work, so an awarded brief or a failed future-work test is a hard reject —
   // enforced here (deterministic), never left to the prompt.
@@ -60,7 +65,7 @@ const PRIME_THRESHOLD = 70
 const WORKABLE_THRESHOLD = 45
 
 export function computeOpportunityScore(input: OpportunityScoreInput): OpportunityScoreResult {
-  const { segment, creates_design_demand, design_scope, timing, targets, region, briefs_status, future_work_test } = input
+  const { segment, creates_design_demand, design_scope, timing, targets, briefs_status, future_work_test } = input
   const cfg = getSegmentConfig(segment)
 
   const rawScore =
@@ -70,7 +75,7 @@ export function computeOpportunityScore(input: OpportunityScoreInput): Opportuni
     (cfg.imageryHeavy ? IMAGERY_POINTS : 0) +
     (TIMING_POINTS[timing] ?? TIMING_POINTS.unknown) +
     (TARGET_POINTS[targets] ?? TARGET_POINTS.segment_only) +
-    (isInTargetGeo(region) ? GEO_POINTS : 0)
+    geoPoints(geoFitOf(input), GEO_POINTS)
 
   // Hard disqualifiers — first hit caps at 25 and forces fit_tier=disqualified.
   // Order = priority for the why-not line. The pre-award gates come first: the
@@ -133,6 +138,10 @@ export function briefsStatusToTiming(briefs: BriefsStatus): OpportunityTiming {
   }
 }
 
+function geoFitOf(input: OpportunityScoreInput) {
+  return geoFit({ region: input.region, country: input.country, namedFirmGeos: input.named_firm_geos })
+}
+
 function strengthReason(input: OpportunityScoreInput, segmentLabel: string): string {
   const bits: string[] = [segmentLabel]
   if (input.creates_design_demand === 'high') bits.push('clear design demand')
@@ -147,7 +156,7 @@ function lowScoreReason(input: OpportunityScoreInput): string {
   if (input.creates_design_demand === 'medium') bits.push('soft design demand')
   if (input.design_scope === 'small') bits.push('small design scope')
   if (input.targets === 'segment_only') bits.push('no firms identified yet')
-  if (!isInTargetGeo(input.region)) bits.push('out of target geography')
+  if (geoFitOf(input) === 'none') bits.push('out of target geography')
   return bits.length ? `Weak signal — ${bits.join(', ')}` : 'Weak opportunity signal'
 }
 

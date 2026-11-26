@@ -31,11 +31,16 @@ const KNOWN_PARAMS = new Set([
 // the analysis prompt). Previously this worked only because ILIKE treats `_`
 // as a single-char wildcard ("new_york" happened to match "New York").
 const REGION_VALUES: Record<string, string> = {
-  new_york: 'New York',
-  miami:    'Miami',
-  france:   'France',
-  europe:   'Europe',
-  other:    'Other',
+  new_york:    'New York',
+  miami:       'Miami',
+  california:  'California',
+  seattle:     'Seattle',
+  us_other:    'US Other',
+  caribbean:   'Caribbean',
+  middle_east: 'Middle East',
+  france:      'France',   // legacy rows only — new analyses file France under Europe
+  europe:      'Europe',
+  other:       'Other',
 }
 
 // The list view renders ~10 fields — exclude the heavy text columns

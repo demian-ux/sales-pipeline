@@ -1,6 +1,11 @@
 // POST /api/firm-pool/from-signal — copy an upstream signal's example firms
 // (suggested_target_firms) into the pool as pool_status='candidate' rows, tagged
-// with the signal's work_categories + geo and signal_ref provenance.
+// with the signal's work_categories and signal_ref provenance.
+//
+// Geography (2026-11-26): each firm is filed under ITS OWN headquarters geo
+// (hq_geo), never the project's, and only when that is an open focus geo — a
+// firm based outside the focus geos is not a target, and Chicago / DC hold
+// hand-picked firms only. See candidateSeedsFromExamples (lib/firm-pool/match).
 //
 // Per the firm-pool handoff addendum: example firms are LLM hints — unverified,
 // exclusion-blind, stateless. They NEVER go straight into a batch. They enter as
@@ -12,13 +17,14 @@ import { z } from 'zod'
 import { getSupabaseAdmin, isSupabaseAdminConfigured } from '@/lib/supabase'
 import { computeExclusions } from '@/lib/firm-pool/exclusion'
 import type { WorkCategory, Geo } from '@/lib/types'
+import { candidateSeedsFromExamples } from '@/lib/firm-pool/match'
 
 const Body = z.object({
   // A discovery id (the upstream signal whose example firms to import).
   signal_ref: z.string().min(1, 'signal_ref (discovery id) is required'),
 })
 
-interface ExampleFirm { firm?: string }
+interface ExampleFirm { firm?: string; hq_geo?: string | null }
 
 export async function POST(request: Request) {
   if (!isSupabaseAdminConfigured()) {
@@ -42,11 +48,15 @@ export async function POST(request: Request) {
   if (!signal) return Response.json({ error: 'Signal (discovery) not found — signal_ref must be a discovery id' }, { status: 404 })
 
   const categories = (signal.work_categories ?? []) as WorkCategory[]
-  const geo = (signal.geo ?? null) as Geo | null
   const examples = (signal.suggested_target_firms ?? []) as ExampleFirm[]
-  const names = [...new Set(examples.map((f) => f.firm?.trim()).filter((n): n is string => !!n))]
+  const { seeds, skipped: skippedGeo } = candidateSeedsFromExamples(examples, signal.geo as Geo | null)
+  const geoByName = new Map(seeds.map((s) => [s.name, s.geo]))
+  const names = seeds.map((s) => s.name)
   if (names.length === 0) {
-    return Response.json({ added: 0, excluded: 0, skipped_existing: 0, note: 'Signal has no example firms' })
+    return Response.json({
+      added: 0, excluded: 0, skipped_existing: 0, skipped_geo: skippedGeo,
+      note: examples.length === 0 ? 'Signal has no example firms' : 'No example firm is based in an open focus geo',
+    })
   }
 
   // Skip names already in the pool (never downgrade an active/parked/excluded
@@ -55,7 +65,7 @@ export async function POST(request: Request) {
   const existingSet = new Set((existing ?? []).map((r) => (r.name as string).toLowerCase()))
   const fresh = names.filter((n) => !existingSet.has(n.toLowerCase()))
   if (fresh.length === 0) {
-    return Response.json({ added: 0, excluded: 0, skipped_existing: names.length })
+    return Response.json({ added: 0, excluded: 0, skipped_existing: names.length, skipped_geo: skippedGeo })
   }
 
   const verdicts = await computeExclusions(fresh)
@@ -64,7 +74,7 @@ export async function POST(request: Request) {
     return {
       name,
       categories,
-      geo,
+      geo: geoByName.get(name) ?? null,
       pool_status: v.excluded ? 'excluded' : 'candidate',
       exclusion_reason: v.excluded ? v.reason ?? 'engaged CRM account' : null,
       linked_company_id: v.linked_company_id ?? null,
@@ -89,6 +99,7 @@ export async function POST(request: Request) {
       candidates: added.length - excludedCount,
       excluded: excludedCount,
       skipped_existing: names.length - fresh.length,
+      skipped_geo: skippedGeo,
       firms: added,
     },
     { status: 201 },

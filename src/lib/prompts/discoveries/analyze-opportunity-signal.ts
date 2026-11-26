@@ -16,8 +16,15 @@ import { z } from 'zod'
 import { ai, MODEL, requireAnthropic } from '@/lib/ai/client'
 import { parseJson, extractText } from '@/lib/ai/parse'
 import { withTimeout } from '@/lib/ai/timeout'
-import { TARGET_GEO_DESCRIPTION } from '@/lib/discoveries/target-geo'
-import type { OpportunitySegment, WorkCategory, BriefsStatus } from '@/lib/types'
+import {
+  FOCUS_FIRM_GEO_DESCRIPTION,
+  PROJECT_SCOPE_DESCRIPTION,
+  PROJECT_REGION_ENUM,
+  FIRM_HQ_GEOS,
+  FIRM_HQ_GEO_GUIDE,
+  type FirmHqGeo,
+} from '@/lib/discoveries/target-geo'
+import type { OpportunitySegment, WorkCategory, BriefsStatus, NamedFirmRole } from '@/lib/types'
 import type {
   DesignDemand,
   DesignScope,
@@ -31,6 +38,22 @@ export interface UpstreamFirmExampleRaw {
   firm: string
   why_fit: string
   geography: string
+  // Normalized headquarters (2026-11-26): the firm's main studio city and its
+  // geo bucket, so code never has to parse `geography` prose.
+  hq_city: string
+  hq_geo: FirmHqGeo
+}
+
+// A firm the ARTICLE itself names as attached to the work (masterplanner,
+// architect of one parcel, developer-of-record, shortlisted designer). Distinct
+// from the illustrative examples above: these are facts from the text, and a
+// named firm based in a focus geo puts the signal fully in scope wherever the
+// project is.
+export interface UpstreamNamedFirmRaw {
+  firm: string
+  role: NamedFirmRole
+  hq_city: string
+  hq_geo: FirmHqGeo
 }
 
 export type DecisionMakerRole = 'principal' | 'design_director' | 'marketing_bd'
@@ -68,6 +91,8 @@ export interface OpportunitySignalAnalysis {
   future_work_test: boolean
   future_work_reason: string
 
+  // Firms the article names as attached to the work, with normalized HQ.
+  named_firms: UpstreamNamedFirmRaw[]
   // Illustrative example firms in the target categories (not the lead).
   suggested_target_firms: UpstreamFirmExampleRaw[]
   decision_maker_role: DecisionMakerRole
@@ -131,11 +156,22 @@ From: development, architecture, interior_design, hospitality_design, landscape,
 - branded_residences — hospitality-flagged for-sale residential.
 - other — a served-adjacent event that fits none cleanly.
 
-━━━ GEOGRAPHY ━━━
-Target markets: ${TARGET_GEO_DESCRIPTION}. The Middle East is NOT a target market — classify it region "Other". Score the event by where the WORK is, not where firms are headquartered.
+━━━ GEOGRAPHY — scope is decided by where the FIRMS are, not where the project is ━━━
+oaki writes to design and development firms based in ${FOCUS_FIRM_GEO_DESCRIPTION}. Those firms mostly win work OUTSIDE their own city, so the project can be ${PROJECT_SCOPE_DESCRIPTION}. Never discount a US project for being far from New York or Miami: a hotel program in Nashville or an airport lounge in Denver is exactly the work a New York firm competes for. Europe, Latin America, Asia-Pacific and Africa are not regions of interest in themselves — such a project only matters when the article names a firm based in one of oaki's firm markets.
+
+"region" records where the PROJECT is, for ranking only:
+- "New York" (metro) | "Miami" (South Florida, including Palm Beach) | "California" | "Seattle" (metro)
+- "US Other" — anywhere else in the United States
+- "Caribbean" | "Middle East" | "Europe" (including France and the UK)
+- "Other" — the rest of the world
+Label the region honestly; do not stretch it to fit.
+
+━━━ NAMED FIRMS — facts from the article ━━━
+In named_firms, list EVERY design or development firm the article names as attached to this work: masterplanner, architect, interior designer, landscape architect, developer-of-record, or a shortlisted/competing firm. Never the source org's in-house team, never lenders, brokers or contractors, never a firm the article does not mention. For each, give hq_city and hq_geo. ${FIRM_HQ_GEO_GUIDE}
+Return an empty array when the article names none.
 
 ━━━ EXAMPLE FIRMS (optional, illustrative — NOT the lead) ━━━
-The value lane broadcasts to the whole matched CATEGORY of firms via oaki's firm pool; it does not pitch one named firm. So do NOT hunt for the single firm attached to the project. You MAY list a couple of real, well-known specialist firms in the target category + geography as illustration (e.g. iCrave for aviation/experiential interiors) — never the source org, never invented names. If you can't name real ones, return an empty array; the category + geo is what matters.
+The value lane broadcasts to the whole matched CATEGORY of firms via oaki's firm pool; it does not pitch one named firm. So do NOT hunt for the single firm attached to the project. You MAY list a couple of real, well-known specialist firms in the target category, based in oaki's firm markets, as illustration (e.g. iCrave, New York, for aviation/experiential interiors) — never the source org, never invented names. Give each one's hq_city and hq_geo the same way. If you can't name real ones, return an empty array; the category is what matters.
 
 ━━━ THE RAW SIGNALS (extract literally; do not inflate) ━━━
 - creates_design_demand: "high" (clearly triggers a substantial design commission) | "medium" (likely but soft/partial) | "low" (no real new design work).
@@ -164,7 +200,7 @@ Return this exact JSON structure (replace descriptions with actual values):
   "event_name": "a short canonical label for dedup (e.g. 'JFK Terminal 6 lounges'), or null",
   "city": "city or empty string",
   "country": "country or empty string",
-  "region": "New York|Miami|France|Europe|Other",
+  "region": "${PROJECT_REGION_ENUM}",
   "segment": "aviation|hospitality|cultural|competitions|experiential|branded_residences|other",
   "beneficiary_segment": "free-text label, e.g. 'aviation interior design'",
   "program_scope": "what will be built/renovated, its scale, and its timeframe",
@@ -174,8 +210,11 @@ Return this exact JSON structure (replace descriptions with actual values):
   "programmatic_scope": true,
   "future_work_test": true,
   "future_work_reason": "one line: why it passes or fails the a/b/c test",
+  "named_firms": [
+    { "firm": "a firm the ARTICLE names as attached to the work", "role": "developer|architect|interior_designer|landscape|operator|other", "hq_city": "headquarters city, or empty string", "hq_geo": "${FIRM_HQ_GEOS.join('|')}" }
+  ],
   "suggested_target_firms": [
-    { "firm": "a real example firm in the target category (illustrative)", "why_fit": "one line why they fit this category", "geography": "where they are" }
+    { "firm": "a real example firm in the target category (illustrative)", "why_fit": "one line why they fit this category", "geography": "where they are", "hq_city": "headquarters city, or empty string", "hq_geo": "${FIRM_HQ_GEOS.join('|')}" }
   ],
   "decision_maker_role": "principal|design_director|marketing_bd",
   "outreach_angle": "2-3 sentence hook written TO a firm in the target category — calm, specific, references the real event; positions oaki as the partner who helps them win that kind of work; never generic",
@@ -185,17 +224,32 @@ Return this exact JSON structure (replace descriptions with actual values):
   "brief_summary": "3-5 sentences: the future work, the category it feeds, why oaki should reach that category now",
   "why_it_matters": "2-3 sentences on the strategic significance for oaki",
   "deep_analysis": "300-600 words: the event, the design demand it creates, which firm categories pursue it and why, timing, the value-first angle, risks",
-  "suggested_action": "1-2 sentences: the concrete next step (which category/geo to value-touch, with what hook)",
+  "suggested_action": "1-2 sentences: the concrete next step (which firm category to value-touch, with what hook)",
   "tags": ["tag1", "tag2"],
   "confidence_score": 1-100,
   "urgency_score": 1-100
 }`
 }
 
+// hq_geo degrades to 'unknown' — never to a focus geo — so a malformed field
+// can't pull an out-of-scope signal into scope.
+const HqGeoSchema = z.enum(FIRM_HQ_GEOS).catch('unknown')
+
 const FirmRawSchema = z.object({
   firm: z.string().min(1),
   why_fit: z.string().catch(''),
   geography: z.string().catch(''),
+  hq_city: z.string().catch(''),
+  hq_geo: HqGeoSchema,
+})
+
+const NamedFirmRawSchema = z.object({
+  firm: z.string().min(1),
+  role: z
+    .enum(['developer', 'architect', 'interior_designer', 'landscape', 'operator', 'other'])
+    .catch('other'),
+  hq_city: z.string().catch(''),
+  hq_geo: HqGeoSchema,
 })
 
 // Required core: the raw scoring signals + the a/b/c test fields (a signal
@@ -223,6 +277,7 @@ const AnalysisSchema = z.object({
   programmatic_scope: z.boolean().catch(false),
   future_work_test: z.boolean(),
   future_work_reason: z.string().catch(''),
+  named_firms: z.array(NamedFirmRawSchema).catch([]),
   suggested_target_firms: z.array(FirmRawSchema).catch([]),
   decision_maker_role: z.enum(['principal', 'design_director', 'marketing_bd']).catch('principal'),
   outreach_angle: z.string().catch(''),

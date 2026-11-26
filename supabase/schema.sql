@@ -155,7 +155,8 @@ create table if not exists discoveries (
   program_scope              text,                          -- what will be built/renovated, scale, timeframe
   briefs_status              text,                          -- unawarded | partially_awarded | awarded (awarded auto-rejects)
   work_categories            text[],                        -- developer | architecture | interior_design | … (firm-pool join key)
-  geo                        text,                          -- nyc | south_florida | europe | middle_east | other (firm-pool join key)
+  geo                        text,                          -- the PROJECT's geo: nyc | south_florida | california | seattle | chicago | dc | europe | middle_east | other. Orders the firm join; never gates it (2026-11-26)
+  named_firms                jsonb,                         -- [{firm,role,hq_city,hq_geo}] firms the article names; scope is decided by where THEY are based
   future_work_test           boolean,                       -- a && b && (briefs not awarded)
   future_work_reason         text,                          -- one-line why the test passed/failed
   buyer_committed            boolean,                       -- test (a): named buyer committing to future work
@@ -559,6 +560,19 @@ on conflict (url) do update set
   sector = excluded.sector, active = excluded.active, sort_order = excluded.sort_order,
   discovery_kind = excluded.discovery_kind;
 
+-- ── National US hospitality + branded-residence sources (2026-11-26) ────────
+-- Scope is decided by where the firm is based, so US projects anywhere are in
+-- scope and need feeds that carry them. See migrations/2026-11-26b_national_sources.sql
+-- and docs/source-viability-report-2026-11-26.md.
+insert into sources (name, url, source_type, region, sector, active, sort_order, discovery_kind) values
+  ('GNews Hospitality US · Luxury Dev', 'https://news.google.com/rss/search?q=when:14d+(%22luxury+hotel%22+OR+%22luxury+resort%22+OR+%22Four+Seasons%22+OR+%22Ritz-Carlton%22+OR+Rosewood+OR+Auberge+OR+%22St.+Regis%22)+(%22breaks+ground%22+OR+proposed+OR+planned+OR+approved+OR+unveils)+(developer+OR+development)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'hospitality',          true, 170, 'project_launch'),
+  ('GNews Branded Residences',          'https://news.google.com/rss/search?q=(%22branded+residences%22+OR+%22branded+residence%22)+(announces+OR+unveils+OR+launches+OR+%22breaks+ground%22+OR+planned+OR+proposed)+when:14d&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'luxury_residential',   true, 172, 'project_launch'),
+  ('GNews Airport Lounges US',          'https://news.google.com/rss/search?q=when:30d+(airport+OR+terminal)+lounge+(new+OR+design+OR+%22to+open%22+OR+unveils+OR+opens)+(LAX+OR+SFO+OR+%22Sea-Tac%22+OR+Dallas+OR+Atlanta+OR+Chicago+OR+Boston+OR+Denver+OR+Houston)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'aviation_hospitality', true, 174, 'project_launch'),
+  ('Hotel Dive',                        'https://www.hoteldive.com/feeds/news/',   'rss', 'global', 'hospitality', true, 176, 'project_launch'),
+  ('Boutique Hotel News',               'https://boutiquehotelnews.com/feed/',     'rss', 'global', 'hospitality', true, 178, 'project_launch'),
+  ('Florida YIMBY',                     'https://floridayimby.com/feed',           'rss', 'miami',  'general',     true, 180, 'project_launch')
+on conflict (url) do nothing;
+
 -- ============================================================================
 -- WORKFLOW_ACTIONS — durable sent/copied/dismissed tracking (P0, 2026-06-09).
 -- Replaces sessionCache.workflowActions. IDs reference Sheets rows (no FK).
@@ -640,7 +654,7 @@ create table if not exists firm_pool (
   apollo_org_id      text,
   website            text,
   categories         text[] not null default '{}',
-  geo                text,                              -- nyc | south_florida | europe | middle_east | other
+  geo                text,                              -- where the FIRM is based: nyc | south_florida | california | seattle | chicago (hand-picked) | dc (hand-picked) | europe | middle_east | other
   icp_notes          text,
   pool_status        text not null default 'active',    -- active | parked | candidate | excluded | converted
   exclusion_reason   text,

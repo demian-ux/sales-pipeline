@@ -115,6 +115,30 @@ API from a sandbox; the sections below document what that surface covers.
   An "everything saved today" audit is `status=all&kind=&created_after=...`.
 - Firm-pool GET filters: `category`, `geo`, `pool_status`, `signal_ref`,
   `untouched_since`, plus `limit`/`offset`.
+- **Geography is decided by where the FIRM is, not where the project is**
+  (2026-11-26; `src/lib/discoveries/target-geo.ts`). Focus firm geos: `nyc`,
+  `south_florida`, `california`, `seattle`, plus `chicago` and `dc` for
+  hand-picked firms only (`GET /api/meta` → `focus_firm_geos`). A US project is
+  never rejected or capped for its location; Caribbean and Middle East projects
+  pass; any other non-US project is `off-geo` unless a named firm is based in a
+  focus geo. Europe is no longer a focus (the `europe` geo value stays valid).
+  - Discovery `region` is the PROJECT's region: `New York | Miami | California |
+    Seattle | US Other | Caribbean | Middle East | Europe | Other` (legacy rows
+    may still say `France`). Discovery `geo` is the project's geo and only
+    orders the firm join.
+  - Discovery `named_firms` = `[{firm, role, hq_city, hq_geo}]`: the firms the
+    article names, with headquarters normalized. `hq_geo` in a focus geo is what
+    puts an out-of-US project in scope and earns full geography points.
+  - `GET /api/value-outreach?signal_ref=` returns firms by category across ALL
+    focus firm geos, ordered: the project's geo first, then the geos of the
+    named firms, then the rest. `?geo=` is now a manual filter (one geo, any
+    value). `match` reports `project_geo`, `firm_geos` and `geo_priority`.
+  - `POST /api/firm-pool/from-signal` files each example firm under its own
+    `hq_geo` and skips firms based outside the open focus geos
+    (`skipped_geo` in the response).
+  - `POST /api/discoveries/backfill { "mode": "off_geo", "window_days": 90 }`
+    re-runs gate-0 on rows the old rule rejected as off-geo. Dry run unless
+    `"dry_run": false`.
 
 ### Still UI-only (needs Chrome)
 
