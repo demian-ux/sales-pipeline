@@ -11,6 +11,7 @@
 
 import { getSupabaseAdmin } from '@/lib/supabase'
 import { entityMatches } from '@/lib/discoveries/roster-match'
+import { focusGeoRank } from '@/lib/discoveries/target-geo'
 import { searchPeople, matchPerson, requestWaterfall, isApolloConfigured } from './apollo'
 import { titlesForCategories, rankByTitle } from './titles'
 import { checkFirm, isBlacklistedFirm, isPersonDuplicate, loadPersonDedupContext } from './dedup'
@@ -57,7 +58,9 @@ export async function runSeatsWorker(): Promise<SeatsRunSummary> {
   }
   const supabase = getSupabaseAdmin()
 
-  // Candidate firms: active, no seat row yet. NY first, then oldest-first.
+  // Candidate firms: active, no seat row yet. Focus geos first, in standing
+  // order (New York, South Florida, California, Seattle, then Chicago and DC),
+  // then oldest-first.
   const [{ data: firms, error: fErr }, { data: seats, error: sErr }] = await Promise.all([
     supabase.from('firm_pool').select('firm_id, name, domain, categories, geo, created_at').eq('pool_status', 'active'),
     supabase.from('firm_seats').select('firm_id, seat_status'),
@@ -84,9 +87,7 @@ export async function runSeatsWorker(): Promise<SeatsRunSummary> {
   const queue = ((firms ?? []) as PoolFirm[])
     .filter((f) => !seatByFirm.has(f.firm_id))
     .sort((a, b) => {
-      const aNy = a.geo === 'nyc' ? 0 : 1
-      const bNy = b.geo === 'nyc' ? 0 : 1
-      return aNy - bNy || a.created_at.localeCompare(b.created_at)
+      return focusGeoRank(a.geo) - focusGeoRank(b.geo) || a.created_at.localeCompare(b.created_at)
     })
 
   if (queue.length === 0) {

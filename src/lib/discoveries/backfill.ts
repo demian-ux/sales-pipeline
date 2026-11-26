@@ -9,7 +9,8 @@ import { getCompanies, getOpportunities } from '@/lib/sheets'
 import { analyzeArticle } from '@/lib/prompts/discoveries/analyze'
 import { computeDiscoveryScore, scoreToTier } from './scoring'
 import { computeIcpFit, sectorFitFromSector } from './icp'
-import { isInTargetGeo, OUT_OF_GEO_SCORE_CAP } from './target-geo'
+import { geoFit, OUT_OF_GEO_SCORE_CAP, regionToGeo } from './target-geo'
+import { regateRow } from './gate0'
 import { isDropSignalType } from './signal-type'
 import { makeProjectKey } from './project-key'
 import { extractDiscoveryEntities, matchEntitiesToCompanies, loadEngagedRoster } from './roster-match'
@@ -74,7 +75,8 @@ export async function backfillGate(limit = 12, dryRun = false): Promise<GateBack
 
       let discoveryScore = computeDiscoveryScore(analysis.scores)
       let tier: DiscoverySignalTier = analysis.signal_tier ?? scoreToTier(discoveryScore)
-      if (!isInTargetGeo(analysis.region)) {
+      const namedFirmGeos = (analysis.named_firms ?? []).map((f) => f.hq_geo)
+      if (geoFit({ region: analysis.region, country: analysis.country, namedFirmGeos }) === 'none') {
         discoveryScore = Math.min(discoveryScore, OUT_OF_GEO_SCORE_CAP)
         if (tier === 'strong_opportunity') tier = 'watchlist'
       }
@@ -95,6 +97,8 @@ export async function backfillGate(limit = 12, dryRun = false): Promise<GateBack
         est_scale_vs_floor: analysis.est_scale_vs_floor,
         incumbent_viz: analysis.incumbent_viz,
         region: analysis.region,
+        country: analysis.country,
+        named_firm_geos: namedFirmGeos,
       })
       const engaged = roster.length
         ? matchEntitiesToCompanies(extractDiscoveryEntities(analysis), roster)
@@ -462,4 +466,92 @@ export async function backfillAgeout(maxAgeDays = 120, dryRun = false): Promise<
   }
 
   return { scanned: rows?.length ?? 0, rejected: dryRun ? 0 : rejected, errors, dry_run: dryRun }
+}
+
+export interface OffGeoBackfillResult {
+  window_days: number
+  scanned: number
+  // rejected → unworked: passes every gate-0 rule under the firm-geography rule.
+  flipped_to_unworked: number
+  // still rejected, but by a text rule that off-geo used to mask.
+  rejected_other_rule: number
+  // still off-geo (non-US project, no focus-geo firm on record).
+  still_off_geo: number
+  by_region: Record<string, number>
+  samples: { id: string; title: string; place: string; outcome: string }[]
+  errors: string[]
+  dry_run: boolean
+}
+
+// Re-triage (2026-11-26, firm-geography change). Rows that gate-0 rejected as
+// `off-geo` under the old project-location rule are re-run through today's
+// gate-0. No Claude calls — the verdict is recomputed from stored fields.
+// A row that now passes goes back to `unworked`; one that trips a different
+// rule keeps `rejected` with the new reason. Only rows still carrying the
+// machine verdict are touched (work_reason starts with the gate-0 off-geo
+// prefix), so a human rejection is never reopened. Idempotent.
+export async function backfillOffGeo(windowDays = 90, dryRun = true): Promise<OffGeoBackfillResult> {
+  const supabase = getSupabaseAdmin()
+  const errors: string[] = []
+  const since = new Date(Date.now() - windowDays * 86_400_000).toISOString()
+
+  const { data: rows, error } = await supabase
+    .from('discoveries')
+    .select('*')
+    .eq('work_status', 'rejected')
+    .like('work_reason', 'ingestion gate-0: off-geo%')
+    .gte('created_at', since)
+    .order('created_at', { ascending: false })
+    .limit(2000)
+  if (error) throw new Error(`off-geo select failed: ${error.message}`)
+
+  const result: OffGeoBackfillResult = {
+    window_days: windowDays,
+    scanned: rows?.length ?? 0,
+    flipped_to_unworked: 0,
+    rejected_other_rule: 0,
+    still_off_geo: 0,
+    by_region: {},
+    samples: [],
+    errors,
+    dry_run: dryRun,
+  }
+
+  for (const row of rows ?? []) {
+    const reason = regateRow(row)
+    const place = [row.city, row.country || row.region].filter(Boolean).join(', ')
+    if (reason?.startsWith('off-geo')) {
+      result.still_off_geo++
+      continue
+    }
+
+    const outcome = reason ? `rejected: ${reason}` : 'unworked'
+    if (reason) result.rejected_other_rule++
+    else {
+      result.flipped_to_unworked++
+      const key = (row.region as string) || 'unknown'
+      result.by_region[key] = (result.by_region[key] ?? 0) + 1
+    }
+    if (result.samples.length < 40) {
+      result.samples.push({ id: row.id as string, title: String(row.title).slice(0, 90), place, outcome })
+    }
+    if (dryRun) continue
+
+    const update: Record<string, unknown> = reason
+      ? { work_reason: `ingestion gate-0: ${reason}` }
+      : {
+          work_status: 'unworked',
+          work_reason: null,
+          worked_at: null,
+        }
+    // The stored geo was derived under the old vocabulary; refresh it so the
+    // join orders this signal correctly (opportunity signals only carry one).
+    if (row.discovery_kind === 'opportunity_signal') {
+      update.geo = regionToGeo(row.region as string, row.country as string, row.city as string)
+    }
+    const { error: updErr } = await supabase.from('discoveries').update(update).eq('id', row.id)
+    if (updErr) errors.push(`update ${String(row.id).slice(0, 8)}: ${updErr.message}`)
+  }
+
+  return result
 }

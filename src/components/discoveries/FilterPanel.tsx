@@ -50,11 +50,16 @@ interface FilterPanelProps {
 
 const REGION_OPTIONS = [
   { value: '',         label: 'All regions' },
-  { value: 'new_york', label: 'New York' },
-  { value: 'miami',    label: 'Miami' },
-  { value: 'france',   label: 'France' },
-  { value: 'europe',   label: 'Europe' },
-  { value: 'other',    label: 'Other' },
+  { value: 'new_york',    label: 'New York' },
+  { value: 'miami',       label: 'Miami' },
+  { value: 'california',  label: 'California' },
+  { value: 'seattle',     label: 'Seattle' },
+  { value: 'us_other',    label: 'US — elsewhere' },
+  { value: 'caribbean',   label: 'Caribbean' },
+  { value: 'middle_east', label: 'Middle East' },
+  { value: 'europe',      label: 'Europe' },
+  { value: 'france',      label: 'France (legacy)' },
+  { value: 'other',       label: 'Other' },
 ]
 
 const SECTOR_OPTIONS = [

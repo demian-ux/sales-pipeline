@@ -541,10 +541,31 @@ export type WorkCategory =
   // of simultaneous launches. offering_plan signals match this + development.
   | 'new_dev_marketing'
 
-// Firm-pool geography vocabulary (matches the firm-pool store's `geo`). Derived
-// deterministically from region+country in code (lib/discoveries/target-geo.ts),
-// not the prompt, so it can't drift.
-export type Geo = 'nyc' | 'south_florida' | 'europe' | 'middle_east' | 'other'
+// Firm-pool geography vocabulary (matches the firm-pool store's `geo`). On a
+// firm it is where the firm is based; on a discovery it is the PROJECT's geo,
+// derived deterministically from region+country+city in code
+// (lib/discoveries/target-geo.ts), not the prompt, so it can't drift.
+// 2027: california + seattle are focus geos; chicago + dc hold hand-picked
+// firms only; europe is kept for existing clients but is no longer a focus.
+export type Geo =
+  | 'nyc' | 'south_florida' | 'california' | 'seattle' | 'chicago' | 'dc'
+  | 'europe' | 'middle_east' | 'other'
+
+// A firm the ARTICLE names as attached to the work (designer, architect,
+// developer…), with its headquarters normalized to a geo bucket. Scope is
+// decided by where these firms are based, not by where the project is
+// (lib/discoveries/target-geo.ts → geoFit). Persisted as JSONB on the discovery.
+export type NamedFirmRole =
+  | 'developer' | 'architect' | 'interior_designer' | 'landscape' | 'operator' | 'other'
+
+export interface NamedFirm {
+  firm: string
+  role: NamedFirmRole
+  hq_city: string
+  // nyc | south_florida | california | seattle | chicago | dc | europe |
+  // middle_east | other | unknown
+  hq_geo: Geo | 'unknown'
+}
 
 // Award state of the design/development briefs. `awarded` auto-rejects — the
 // whole point of the lane is to reach firms BEFORE the brief is won.
@@ -557,6 +578,10 @@ export interface SuggestedTargetFirm {
   firm: string
   why_fit: string
   geography: string
+  // Normalized headquarters (2026-11-26). Absent on rows analyzed before the
+  // firm-geography change.
+  hq_city?: string
+  hq_geo?: Geo | 'unknown'
   in_crm: boolean
   // true when the article already named this firm as the designer/developer
   // attached to the work (a stronger, specific lead) vs a candidate the
@@ -669,7 +694,8 @@ export interface Discovery extends DiscoveryScoreBreakdown {
   program_scope?: string | null           // what will be built/renovated, scale, timeframe
   briefs_status?: BriefsStatus | null      // awarded auto-rejects
   work_categories?: WorkCategory[] | null  // firm-pool join key
-  geo?: Geo | null                         // firm-pool join key
+  geo?: Geo | null                         // the PROJECT's geo — orders the firm join, never gates it
+  named_firms?: NamedFirm[] | null         // firms the article names, with HQ geo
   future_work_test?: boolean | null        // a && b && (briefs not awarded)
   future_work_reason?: string | null
   buyer_committed?: boolean | null         // test (a)

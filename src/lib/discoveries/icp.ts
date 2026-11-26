@@ -12,7 +12,7 @@
 // prompt — means a prompt edit can't silently move the ranking, and the same
 // inputs always produce the same tier.
 
-import { isInTargetGeo } from './target-geo'
+import { geoFit, geoPoints } from './target-geo'
 import { isDropSignalType } from './signal-type'
 import type {
   Tenure,
@@ -64,9 +64,14 @@ export interface IcpFitInput {
   // render/image credit was found. Presence relabels the lane to `complement`
   // (a complement play, not greenfield) without lowering the numeric score.
   incumbent_viz: string | null
-  // The discovery's stored region label ("New York" | "Miami" | …), used only
-  // for the geography sub-score via the single source of truth in target-geo.
+  // Geography sub-score, via the single source of truth in target-geo: scored
+  // by where the FIRMS are, not where the project is. `region` is the stored
+  // project region label; `named_firm_geos` the hq_geo of the firms the article
+  // names. Full points for a focus-geo firm (or a project in a focus market),
+  // partial for other US / Caribbean / Middle East work.
   region: string | null | undefined
+  country?: string | null
+  named_firm_geos?: readonly (string | null | undefined)[] | null
 }
 
 export interface IcpFitResult {
@@ -148,6 +153,8 @@ export function computeIcpFit(input: IcpFitInput): IcpFitResult {
     est_scale_vs_floor,
     incumbent_viz,
     region,
+    country,
+    named_firm_geos,
   } = input
 
   const isOffType = isDropSignalType(signal_type)
@@ -165,7 +172,7 @@ export function computeIcpFit(input: IcpFitInput): IcpFitResult {
     stagePoints +
     (BUYER_POINTS[viz_buyer_role] ?? BUYER_POINTS.none_identified) +
     (SCALE_POINTS[est_scale_vs_floor] ?? SCALE_POINTS.unknown) +
-    (isInTargetGeo(region) ? GEO_POINTS : 0)
+    geoPoints(geoFit({ region, country, namedFirmGeos: named_firm_geos }), GEO_POINTS)
 
   // "No for-sale residential" — neither an explicit for-sale/mixed tenure nor
   // the boolean flag. Used by the sector disqualifier below.

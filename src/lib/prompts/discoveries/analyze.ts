@@ -16,8 +16,16 @@ import type {
   DeploymentHorizon,
   VizBuyerRole,
   EstScaleVsFloor,
+  NamedFirm,
 } from '@/lib/types'
 import type { ScoreBreakdownRaw } from '@/lib/discoveries/scoring'
+import {
+  FOCUS_FIRM_GEO_DESCRIPTION,
+  PROJECT_SCOPE_DESCRIPTION,
+  PROJECT_REGION_ENUM,
+  FIRM_HQ_GEOS,
+  FIRM_HQ_GEO_GUIDE,
+} from '@/lib/discoveries/target-geo'
 
 export interface DiscoveryAnalysis {
   is_relevant: boolean
@@ -39,6 +47,10 @@ export interface DiscoveryAnalysis {
   main_actors: string[]
   developer: string | null
   architect: string | null
+  // Every design/development firm the article names as attached to the project,
+  // with its headquarters normalized (2026-11-26). Scope is decided by where
+  // these firms are based, not by where the project is — see target-geo.ts.
+  named_firms: NamedFirm[]
   government_body: string | null
   // ICP-fit signals (scored deterministically in lib/discoveries/icp.ts)
   tenure: Tenure
@@ -116,10 +128,13 @@ development-related word = watchlist minimum.
 - timing: 90+ = imminent | 70+ = within 12 months | 50+ = 1–3 years | 30+ = 3+ years | 15 = unclear
 - actors: 80+ = 3+ named orgs | 60+ = 1–2 named | 30+ = vague/unnamed | 10 = none
 - sector_growth: How actively is this sector investing right now? Use market knowledge.
-- region_strategic: score by the PROJECT's location, not where the firms are headquartered.
-  In-target (New York metro, Miami / South Florida, France, major European cities) = 75–100
-  Adjacent (other US gateway cities, secondary European cities) = 40–60
-  Out-of-target (everywhere else: rest of US, Australia, Middle East, Africa, Asia, South America) = 0–25
+- region_strategic: score by where the FIRMS behind the project are based, not by where the project is.
+  oaki writes to design and development firms based in ${FOCUS_FIRM_GEO_DESCRIPTION}; those firms mostly
+  build elsewhere, so a US project is never out of target for its location alone.
+  75–100 = a named developer/architect/designer is based in one of those firm markets (wherever the project is),
+           or the project itself is in New York metro, South Florida, California or Seattle
+  40–60  = a project elsewhere in the United States, in the Caribbean or in the Middle East, with no such firm named yet
+  0–25   = everywhere else (Europe, Latin America, Asia-Pacific, Africa) with no such firm named
 
 ━━━ ICP-FIT EXTRACTION — read carefully ━━━
 
@@ -203,8 +218,13 @@ Classify what KIND of event this is. This is independent of the signal_tier and 
 ━━━ PROJECT_NAME ━━━
 If the article names the development ("Magic City", "The Standard Residences Midtown", "One High Line"), return that proper name in project_name. Return null if there is no named project (a policy story, a market roundup, a firm-level PR item). Used to dedupe the same project arriving via two outlets — so be consistent (the project's name, not the headline).
 
-Regions: "New York" | "Miami" | "France" | "Europe" | "Other"
-Assign "Other" whenever the project is outside the four target regions — out-of-target discoveries are capped at watchlist downstream, so do not stretch a region label to fit. (The Middle East is NOT a target market — classify it "Other".)
+Regions (where the PROJECT is — a ranking input, not a filter for US work):
+  "New York" (metro) | "Miami" (South Florida, including Palm Beach) | "California" | "Seattle" (metro) |
+  "US Other" (anywhere else in the United States) | "Caribbean" | "Middle East" | "Europe" (including France and the UK) |
+  "Other" (the rest of the world)
+Label the region honestly — do not stretch it to fit. Projects can be ${PROJECT_SCOPE_DESCRIPTION}; elsewhere a project is only in scope when a named firm is based in one of oaki's firm markets.
+
+Named firms: in named_firms list EVERY design or development firm the article names as attached to the project — developer, architect, interior designer, landscape architect, hotel operator/brand acting as developer — with hq_city and hq_geo. Never lenders, brokers, contractors or government bodies, and never a firm the article does not mention. ${FIRM_HQ_GEO_GUIDE}
 Sectors: "hospitality" | "aviation_hospitality" | "luxury_residential" | "mixed_use" | "airports" | "office" | "transport" | "cultural" | "retail" | "other"
   • aviation_hospitality — airport LOUNGES, business/first-class lounges, premium-terminal interiors. oaki does these; treat them as in-scope hospitality, NOT as airport infrastructure.
   • airports — terminal / runway / apron / general airport infrastructure. Off-scope (pair with signal_type "infrastructure").
@@ -229,7 +249,7 @@ Return this exact JSON structure (replace descriptions with actual values):
   "title": "cleaned title",
   "city": "city name or empty string",
   "country": "country name or empty string",
-  "region": "New York|Miami|France|Europe|Other",
+  "region": "${PROJECT_REGION_ENUM}",
   "sector": "hospitality|aviation_hospitality|luxury_residential|mixed_use|airports|office|transport|cultural|retail|other",
   "signal_type": "new_development|approval_filing|groundbreaking|sales_launch|branded_partnership|redesign|capital_event|transaction|financing|completion|policy|government_program|corporate_pr|market_roundup|infrastructure|other",
   "project_name": "the development's proper name, or null",
@@ -239,6 +259,9 @@ Return this exact JSON structure (replace descriptions with actual values):
   "main_actors": ["array", "of", "actor", "names"],
   "developer": "developer name or null — the ENTITY OF RECORD actually buying/building/commissioning, as stated in the article. Do NOT guess from adjacent mentions: if the article names only a seller, broker, lender, or neighboring firm but not the actual buyer/developer, use null.",
   "architect": "architect/designer name or null",
+  "named_firms": [
+    { "firm": "a firm the ARTICLE names as attached to the project", "role": "developer|architect|interior_designer|landscape|operator|other", "hq_city": "headquarters city, or empty string", "hq_geo": "${FIRM_HQ_GEOS.join('|')}" }
+  ],
   "government_body": "government body name or null",
   "tenure": "for_sale|rental|owner_occupied|mixed|unknown — use unknown if the article does not say",
   "has_for_sale_residential": true,
@@ -299,6 +322,20 @@ const AnalysisSchema = z.object({
   main_actors: z.array(z.string()).catch([]),
   developer: z.string().nullable().catch(null),
   architect: z.string().nullable().catch(null),
+  // hq_geo degrades to 'unknown' — never to a focus geo — so a malformed field
+  // can't pull an out-of-scope project into scope.
+  named_firms: z
+    .array(
+      z.object({
+        firm: z.string().min(1),
+        role: z
+          .enum(['developer', 'architect', 'interior_designer', 'landscape', 'operator', 'other'])
+          .catch('other'),
+        hq_city: z.string().catch(''),
+        hq_geo: z.enum(FIRM_HQ_GEOS).catch('unknown'),
+      }),
+    )
+    .catch([]),
   government_body: z.string().nullable().catch(null),
   // ICP-fit signals — each degrades to a conservative default (never assume
   // for_sale / a reachable buyer) so a malformed field can't inflate fit.

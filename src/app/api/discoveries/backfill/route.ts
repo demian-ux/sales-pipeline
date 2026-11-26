@@ -25,6 +25,11 @@
 //     Rejects stale project_launch signals (older than max_age_days, no verified
 //     principal, still unworked). Reversible — flips work_status, deletes nothing.
 //
+//   POST /api/discoveries/backfill { "mode": "off_geo", "window_days": 90, "dry_run": true }
+//     Re-runs gate-0 on rows rejected as `off-geo` under the old
+//     project-location rule (2026-11-26 firm-geography change). Rows that now
+//     pass go back to `unworked`. No Claude. Dry run unless dry_run is false.
+//
 // Same auth as ingest (lib/auth.ts: isIngestAuthorized) — Bearer ${INGEST_SECRET}
 // or a valid session cookie. Start with dry_run:true to preview.
 
@@ -37,6 +42,7 @@ import {
   backfillEngaged,
   backfillExcavate,
   backfillAgeout,
+  backfillOffGeo,
 } from '@/lib/discoveries/backfill'
 
 export const maxDuration = 300
@@ -76,8 +82,14 @@ export async function POST(request: NextRequest) {
       const maxAgeDays = Math.min(Math.max(parseInt(String(body.max_age_days ?? 120), 10) || 120, 30), 730)
       return Response.json(await backfillAgeout(maxAgeDays, dryRun))
     }
+    if (mode === 'off_geo') {
+      // Re-run gate-0 on rows the old project-location rule rejected as off-geo.
+      // No Claude. DRY RUN UNLESS dry_run is explicitly false — it reopens rows.
+      const windowDays = Math.min(Math.max(parseInt(String(body.window_days ?? 90), 10) || 90, 1), 365)
+      return Response.json(await backfillOffGeo(windowDays, body.dry_run !== false))
+    }
     return Response.json(
-      { error: `Unknown mode "${mode}" — use "gate" | "links" | "engaged" | "excavate" | "ageout"` },
+      { error: `Unknown mode "${mode}" — use "gate" | "links" | "engaged" | "excavate" | "ageout" | "off_geo"` },
       { status: 400 },
     )
   } catch (err) {

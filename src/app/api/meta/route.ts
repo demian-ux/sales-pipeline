@@ -19,6 +19,7 @@ import {
   POOL_STATUSES,
   REPLY_STATUSES,
 } from '@/lib/vocab'
+import { FOCUS_FIRM_GEOS, HAND_PICKED_FIRM_GEOS, PROJECT_REGIONS } from '@/lib/discoveries/target-geo'
 
 // GET /api/meta — field vocabularies so API clients don't guess valid values.
 export async function GET() {
@@ -49,6 +50,12 @@ export async function GET() {
     work_categories: WORK_CATEGORIES,
     upstream_work_category: WORK_CATEGORIES,
     upstream_geo: GEOS,
+    // Firm geography (2026-11-26): the geos a signal's firm join spans, in
+    // working order. Scope is decided by where the firm is, not the project.
+    // chicago + dc hold hand-picked firms only.
+    focus_firm_geos: FOCUS_FIRM_GEOS,
+    hand_picked_firm_geos: HAND_PICKED_FIRM_GEOS,
+    project_regions: PROJECT_REGIONS,
     upstream_briefs_status: BRIEFS_STATUSES,
     // Firm-pool + value-outreach vocabularies (2026-07-10). firm categories
     // reuse upstream_work_category so the value-outreach match is exact.
