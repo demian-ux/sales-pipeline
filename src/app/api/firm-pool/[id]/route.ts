@@ -16,7 +16,7 @@
 import { type NextRequest } from 'next/server'
 import { z } from 'zod'
 import { getSupabaseAdmin, isSupabaseAdminConfigured } from '@/lib/supabase'
-import { WORK_CATEGORIES, GEOS, POOL_STATUSES } from '@/lib/vocab'
+import { WORK_CATEGORIES, GEOS, POOL_STATUSES, FIT_LEVELS, VERIFICATION_STATUSES, CRM_RELATIONSHIPS } from '@/lib/vocab'
 
 const PatchBody = z
   .object({
@@ -31,6 +31,25 @@ const PatchBody = z
     exclusion_reason:  z.string().nullable().optional(),
     linked_company_id: z.string().nullable().optional(),
     signal_ref:        z.string().nullable().optional(),
+    // Research details (2026-11-26e).
+    hq_city:             z.string().nullable().optional(),
+    hq_state:            z.string().nullable().optional(),
+    hq_evidence:         z.string().nullable().optional(),
+    other_offices:       z.string().nullable().optional(),
+    fit_level:           z.enum(FIT_LEVELS).nullable().optional(),
+    fit_reason:          z.string().nullable().optional(),
+    work_types:          z.string().nullable().optional(),
+    recent_project:      z.string().nullable().optional(),
+    works_outside_city:  z.string().nullable().optional(),
+    visualization:       z.string().nullable().optional(),
+    size_note:           z.string().nullable().optional(),
+    employees:           z.number().int().nullable().optional(),
+    verification_status: z.enum(VERIFICATION_STATUSES).nullable().optional(),
+    verified_at:         z.string().nullable().optional(),
+    source_url:          z.string().nullable().optional(),
+    research_source:     z.string().nullable().optional(),
+    crm_relationship:    z.enum(CRM_RELATIONSHIPS).nullable().optional(),
+    crm_leads:           z.number().int().nullable().optional(),
   })
   .strict()
 

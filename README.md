@@ -114,7 +114,21 @@ API from a sandbox; the sections below document what that surface covers.
   one (`opportunity_signal`/`upstream_signal`, `offering_plan`, `permit_filing`).
   An "everything saved today" audit is `status=all&kind=&created_after=...`.
 - Firm-pool GET filters: `category`, `geo`, `pool_status`, `signal_ref`,
-  `untouched_since`, plus `limit`/`offset`.
+  `untouched_since`, `fit_level` (comma list, e.g. `A,B`),
+  `verification_status`, `crm_relationship`, `hq_city`, plus `limit`/`offset`.
+- **The pool holds every researched firm** (2026-11-27, ~2,700 rows), not only
+  the ones to contact. Always filter. Firms to write to are
+  `pool_status` `active` or `parked`. `excluded` covers three cases, told apart
+  by `exclusion_reason` and `fit_level`: an engaged CRM account
+  (`engaged CRM account` / `warm thread`), a marginal fit (`fit_level` `C`),
+  and a firm that does not fit (`fit_level` `X`, reason in `fit_reason`).
+  `candidate` = not verified yet. Each row carries its research: `hq_city`,
+  `hq_state`, `hq_evidence`, `fit_level`, `fit_reason`, `work_types`,
+  `recent_project`, `works_outside_city`, `visualization`, `size_note`,
+  `employees`, `verification_status`, `verified_at`, `source_url`,
+  `research_source`, and a snapshot of the relationship with oaki
+  (`crm_relationship`, `crm_leads`). `GET /api/value-outreach` returns A-level
+  firms before B inside each geo.
 - **Geography is decided by where the FIRM is, not where the project is**
   (2026-11-26; `src/lib/discoveries/target-geo.ts`). Focus firm geos: `nyc`,
   `south_florida`, `california`, `seattle`, plus `chicago` and `dc` for
