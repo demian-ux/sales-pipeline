@@ -15,6 +15,9 @@ import type {
   Geo,
   BriefsStatus,
   PoolStatus,
+  FitLevel,
+  VerificationStatus,
+  CrmRelationship,
   ReplyStatus,
 } from './types'
 
@@ -63,6 +66,10 @@ export const BRIEFS_STATUSES = ['unawarded', 'partially_awarded', 'awarded'] as 
 // Firm-pool + value-outreach vocabularies (2026-07-10). Firm categories reuse
 // WORK_CATEGORIES (above) so the value-outreach match (category ∩ geo) is exact.
 export const POOL_STATUSES = ['active', 'parked', 'candidate', 'excluded', 'converted'] as const satisfies readonly PoolStatus[]
+// Firm research vocabularies (2026-11-26e). See FirmPool in lib/types.ts.
+export const FIT_LEVELS = ['A', 'B', 'C', 'X'] as const satisfies readonly FitLevel[]
+export const VERIFICATION_STATUSES = ['verified', 'unopened', 'no_site', 'discarded_by_name', 'unverified'] as const satisfies readonly VerificationStatus[]
+export const CRM_RELATIONSHIPS = ['none', 'new_lead', 'contacted', 'replied', 'nurture', 'won', 'lost', 'dormant', 'held'] as const satisfies readonly CrmRelationship[]
 export const REPLY_STATUSES = ['none', 'replied', 'call', 'brief'] as const satisfies readonly ReplyStatus[]
 
 // Collapse runs of whitespace and trim — names arrive from CSV exports with

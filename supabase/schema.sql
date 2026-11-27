@@ -456,13 +456,13 @@ insert into sources (name, url, source_type, region, sector, active, sort_order)
   ('GNews Real Estate MIA','https://news.google.com/rss/search?q=real+estate+miami+development&hl=en&gl=US&ceid=US:en',          'rss', 'miami',    'general',           true,  20),
   -- Geo-qualified (June 2026): the unqualified queries pulled worldwide articles — 31% of discoveries were out of target geography.
   -- Airport feed targets LOUNGES / premium-terminal interiors (oaki's aviation work), not terminal/runway infrastructure.
-  ('GNews Airport Lounges', 'https://news.google.com/rss/search?q=(airport+OR+terminal)+(lounge+OR+%22business+class%22+OR+%22first+class%22+OR+VIP)+design+(%22New+York%22+OR+JFK+OR+Miami+OR+Paris+OR+London+OR+Europe)&hl=en&gl=US&ceid=US:en','rss','global',  'aviation_hospitality', true,  30),
-  ('GNews Hospitality EU', 'https://news.google.com/rss/search?q=hotel+hospitality+development+europe&hl=en&gl=US&ceid=US:en',   'rss', 'europe',   'hospitality',       true,  40),
+  ('GNews Airport Lounges', 'https://news.google.com/rss/search?q=when:30d+(airport+OR+terminal)+(lounge+OR+%22first+class%22+OR+VIP)+(design+OR+designed+OR+%22to+open%22+OR+unveils)+(%22New+York%22+OR+JFK+OR+LaGuardia+OR+Newark+OR+Miami+OR+%22Fort+Lauderdale%22)&hl=en&gl=US&ceid=US:en','rss','global',  'aviation_hospitality', true,  30),
+  ('GNews Hospitality EU', 'https://news.google.com/rss/search?q=hotel+hospitality+development+europe&hl=en&gl=US&ceid=US:en',   'rss', 'europe',   'hospitality',       false,  40),
   ('GNews Luxury Resi',    'https://news.google.com/rss/search?q=luxury+residential+development+architecture+(%22New+York%22+OR+Manhattan+OR+Brooklyn+OR+Miami+OR+Paris+OR+France+OR+Europe)&hl=en&gl=US&ceid=US:en','rss','global','luxury_residential', true,  50),
-  ('GNews France RE',      'https://news.google.com/rss/search?q=immobilier+developpement+france&hl=fr&gl=FR&ceid=FR:fr',        'rss', 'france',   'general',           true,  60),
+  ('GNews France RE',      'https://news.google.com/rss/search?q=immobilier+developpement+france&hl=fr&gl=FR&ceid=FR:fr',        'rss', 'france',   'general',           false,  60),
   -- Urbanize (repaired 2026-07-14): the publisher moved its feeds to /rss.xml, and the
   -- New York subdomain is `nyc.`, not `ny.` — the old `ny.` host no longer resolves at all.
-  ('Urbanize Miami',       'https://miami.urbanize.city/rss.xml',                        'rss', 'miami',    'general',      true,  70),
+  ('Urbanize Miami',       'https://miami.urbanize.city/rss.xml',                        'rss', 'miami',    'general',      false,  70),
   ('Urbanize NYC',         'https://nyc.urbanize.city/rss.xml',                          'rss', 'new_york', 'general',      true,  80),
   ('NY YIMBY',             'https://newyorkyimby.com/feed',                              'rss', 'new_york', 'general',      true,  85),
   ('6sqft',                'https://www.6sqft.com/feed/',                                'rss', 'new_york', 'general',      true,  86),
@@ -474,7 +474,7 @@ insert into sources (name, url, source_type, region, sector, active, sort_order)
   ('The Real Deal Miami',  'https://therealdeal.com/miami/feed/',                        'rss', 'miami',    'general',      true,  91),
   ('Commercial Observer',  'https://commercialobserver.com/feed/',                       'rss', 'new_york', 'general',      true, 100),
   ('Dezeen',               'https://www.dezeen.com/feed/',                               'rss', 'global',   'architecture', true, 110),
-  ('ArchDaily',            'https://www.archdaily.com/feed',                             'rss', 'global',   'architecture', true, 120),
+  ('ArchDaily',            'https://www.archdaily.com/feed',                             'rss', 'global',   'architecture', false, 120),
   -- Known-inactive. Every row below carries the HTTP status actually observed on
   -- 2026-07-14 — from the pipeline (ingestion_runs.errors) and by direct fetch.
   --
@@ -512,7 +512,7 @@ on conflict (url) do update set active = excluded.active, sort_order = excluded.
 -- keyword query casts wider than any single outlet — NOT as a workaround for a paywall
 -- that never existed. Verify before you disable: see docs/source-viability-report-2026-07-14.md.
 insert into sources (name, url, source_type, region, sector, active, sort_order) values
-  ('GNews Capital · Dev Funds',      'https://news.google.com/rss/search?q=(%22closes+fund%22+OR+%22capital+raise%22+OR+raises+OR+%22launches+fund%22+OR+%22new+fund%22)+(condominium+OR+residential+OR+%22branded+residences%22+OR+hotel+OR+resort+OR+development)+(develop+OR+%22to+build%22+OR+pipeline)+(%22New+York%22+OR+Miami+OR+%22South+Florida%22+OR+London+OR+Paris+OR+Europe)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'luxury_residential',    true, 140),
+  ('GNews Capital · Dev Funds',      'https://news.google.com/rss/search?q=(%22closes+fund%22+OR+%22capital+raise%22+OR+raises+OR+%22launches+fund%22+OR+%22new+fund%22)+(condominium+OR+residential+OR+%22branded+residences%22+OR+hotel+OR+resort+OR+development)+(develop+OR+%22to+build%22+OR+pipeline)+(%22New+York%22+OR+Miami+OR+%22South+Florida%22+OR+London+OR+Paris+OR+Europe)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'luxury_residential',    false, 140),
   ('GNews Capital · Redev Acquisitions','https://news.google.com/rss/search?q=(acquires+OR+acquisition+OR+buys)+(%22development+site%22+OR+hotel+OR+%22for+redevelopment%22+OR+%22to+redevelop%22+OR+%22to+develop%22+OR+repositioning)+(%22New+York%22+OR+Miami+OR+%22South+Florida%22+OR+London+OR+Paris+OR+Europe)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'mixed_use',             true, 150),
   ('GNews Hospitality Rollouts',     'https://news.google.com/rss/search?q=(hotel+OR+resort+OR+%22branded+residences%22)+(%22to+open%22+OR+%22new+hotel%22+OR+%22design+team%22+OR+%22breaks+ground%22+OR+unveils+OR+debuts)+(%22New+York%22+OR+Miami+OR+%22South+Florida%22+OR+London+OR+Paris+OR+Europe)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'hospitality',           true, 160)
 on conflict (url) do update set
@@ -534,12 +534,12 @@ update sources
 insert into sources (name, url, source_type, region, sector, active, sort_order, discovery_kind) values
   ('Upstream · Aviation Programs',   'https://news.google.com/rss/search?q=(airport+OR+airline+OR+terminal)+(lounge+OR+%22terminal+renovation%22+OR+%22terminal+redevelopment%22+OR+%22terminal+expansion%22+OR+modernization+OR+overhaul)+(program+OR+RFP+OR+%22request+for+proposals%22+OR+%22master+plan%22+OR+%22capital+program%22+OR+plan)+(JFK+OR+LaGuardia+OR+Newark+OR+%22New+York%22+OR+Miami+OR+London+OR+Paris+OR+Europe)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'aviation_hospitality', true, 300, 'opportunity_signal'),
   ('Upstream · Hospitality Pipelines','https://news.google.com/rss/search?q=(hotel+OR+resort+OR+hospitality+OR+%22branded+residences%22)+(%22to+enter%22+OR+enters+OR+%22pipeline+of%22+OR+%22expansion+plan%22+OR+%22to+develop%22+OR+%22signs%22+OR+%22management+agreement%22+OR+%22brand+to+enter%22)+(%22New+York%22+OR+Miami+OR+%22South+Florida%22+OR+London+OR+Paris+OR+Europe)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'hospitality', true, 310, 'opportunity_signal'),
-  ('Upstream · Cultural Capital Projects','https://news.google.com/rss/search?q=(museum+OR+university+OR+library+OR+%22performing+arts%22+OR+civic+OR+cultural)+(%22capital+project%22+OR+expansion+OR+%22new+building%22+OR+%22new+wing%22+OR+%22to+build%22+OR+%22master+plan%22+OR+competition+OR+RFP)+(Europe+OR+London+OR+Paris+OR+%22New+York%22+OR+Miami)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'cultural', true, 320, 'opportunity_signal'),
-  ('Upstream · Competitions & RFPs',  'https://news.google.com/rss/search?q=(%22design+competition%22+OR+%22architecture+competition%22+OR+%22open+call%22+OR+%22request+for+proposals%22+OR+RFP+OR+%22master+plan%22+OR+masterplan+OR+%22invited+competition%22)+(architecture+OR+design+OR+redevelopment+OR+waterfront+OR+district)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'other', true, 330, 'opportunity_signal'),
-  ('Upstream · Entitlements & Rezoning','https://news.google.com/rss/search?q=(%22rezoning+approved%22+OR+%22zoning+approved%22+OR+%22master+plan+approved%22+OR+entitlement+OR+%22special+permit%22+OR+%22redevelopment+plan%22+OR+%22approves+plan%22+OR+%22land+use%22)+(development+OR+district+OR+waterfront+OR+mixed-use)+(%22New+York%22+OR+Brooklyn+OR+Queens+OR+Miami+OR+%22Miami+Beach%22+OR+%22South+Florida%22)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'mixed_use', true, 340, 'opportunity_signal'),
+  ('Upstream · Cultural Capital Projects','https://news.google.com/rss/search?q=when:30d+(museum+OR+%22performing+arts+center%22+OR+%22concert+hall%22+OR+%22opera+house%22)+(expansion+OR+%22new+building%22+OR+%22new+wing%22+OR+%22capital+campaign%22)+(architect+OR+architects+OR+%22designed+by%22)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'cultural', true, 320, 'opportunity_signal'),
+  ('Upstream · Competitions & RFPs',  'https://news.google.com/rss/search?q=when:30d+(%22design+competition%22+OR+%22architecture+competition%22+OR+%22invited+competition%22+OR+%22selected+to+design%22+OR+RFP)+(hotel+OR+resort+OR+museum+OR+%22performing+arts%22+OR+%22concert+hall%22)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'other', true, 330, 'opportunity_signal'),
+  ('Upstream · Entitlements & Rezoning','https://news.google.com/rss/search?q=when:30d+(rezoning+OR+%22special+permit%22+OR+%22planning+commission%22+OR+council)+(approves+OR+approved)+(%22luxury+hotel%22+OR+%22boutique+hotel%22+OR+%22luxury+condo%22+OR+%22condo+tower%22+OR+%22branded+residences%22)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'mixed_use', true, 340, 'opportunity_signal'),
   ('Upstream · Capital for Pipeline', 'https://news.google.com/rss/search?q=(%22capital+commitment%22+OR+%22closes+fund%22+OR+raises+OR+%22development+pipeline%22+OR+%22joint+venture%22+OR+%22to+develop%22)+(develop+OR+%22to+build%22+OR+pipeline+OR+residential+OR+hotel+OR+mixed-use)+(%22New+York%22+OR+Miami+OR+%22South+Florida%22+OR+London+OR+Paris+OR+Europe)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'luxury_residential', true, 350, 'opportunity_signal'),
-  ('Upstream · Licenses & Approvals', 'https://news.google.com/rss/search?q=(%22licenses+awarded%22+OR+%22license+awarded%22+OR+%22gaming+license%22+OR+%22casino+license%22+OR+%22awarded+the+license%22+OR+%22wins+bid%22+OR+%22selected+to+develop%22+OR+%22development+rights%22)+(casino+OR+resort+OR+development+OR+district+OR+waterfront)+(%22New+York%22+OR+downstate+OR+Miami+OR+%22South+Florida%22+OR+Europe)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'mixed_use', true, 360, 'opportunity_signal'),
-  ('Upstream · Skift',                'https://skift.com/feed/', 'rss', 'global', 'aviation_hospitality', true, 370, 'opportunity_signal')
+  ('Upstream · Licenses & Approvals', 'https://news.google.com/rss/search?q=(%22licenses+awarded%22+OR+%22license+awarded%22+OR+%22gaming+license%22+OR+%22casino+license%22+OR+%22awarded+the+license%22+OR+%22wins+bid%22+OR+%22selected+to+develop%22+OR+%22development+rights%22)+(casino+OR+resort+OR+development+OR+district+OR+waterfront)+(%22New+York%22+OR+downstate+OR+Miami+OR+%22South+Florida%22+OR+Europe)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'mixed_use', false, 360, 'opportunity_signal'),
+  ('Upstream · Skift',                'https://skift.com/feed/', 'rss', 'global', 'aviation_hospitality', false, 370, 'opportunity_signal')
 on conflict (url) do update set
   name = excluded.name, region = excluded.region, sector = excluded.sector,
   active = excluded.active, sort_order = excluded.sort_order,
@@ -565,12 +565,29 @@ on conflict (url) do update set
 -- scope and need feeds that carry them. See migrations/2026-11-26b_national_sources.sql
 -- and docs/source-viability-report-2026-11-26.md.
 insert into sources (name, url, source_type, region, sector, active, sort_order, discovery_kind) values
-  ('GNews Hospitality US · Luxury Dev', 'https://news.google.com/rss/search?q=when:14d+(%22luxury+hotel%22+OR+%22luxury+resort%22+OR+%22Four+Seasons%22+OR+%22Ritz-Carlton%22+OR+Rosewood+OR+Auberge+OR+%22St.+Regis%22)+(%22breaks+ground%22+OR+proposed+OR+planned+OR+approved+OR+unveils)+(developer+OR+development)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'hospitality',          true, 170, 'project_launch'),
+  ('GNews Hospitality US · Luxury Dev', 'https://news.google.com/rss/search?q=when:14d+(%22luxury+hotel%22+OR+%22luxury+resort%22+OR+%22Four+Seasons%22+OR+%22Ritz-Carlton%22+OR+Rosewood+OR+Auberge+OR+%22St.+Regis%22)+(%22breaks+ground%22+OR+proposed+OR+planned+OR+unveils)+(developer+OR+development)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'hospitality',          true, 170, 'project_launch'),
   ('GNews Branded Residences',          'https://news.google.com/rss/search?q=(%22branded+residences%22+OR+%22branded+residence%22)+(announces+OR+unveils+OR+launches+OR+%22breaks+ground%22+OR+planned+OR+proposed)+when:14d&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'luxury_residential',   true, 172, 'project_launch'),
   ('GNews Airport Lounges US',          'https://news.google.com/rss/search?q=when:30d+(airport+OR+terminal)+lounge+(new+OR+design+OR+%22to+open%22+OR+unveils+OR+opens)+(LAX+OR+SFO+OR+%22Sea-Tac%22+OR+Dallas+OR+Atlanta+OR+Chicago+OR+Boston+OR+Denver+OR+Houston)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'aviation_hospitality', true, 174, 'project_launch'),
   ('Hotel Dive',                        'https://www.hoteldive.com/feeds/news/',   'rss', 'global', 'hospitality', true, 176, 'project_launch'),
   ('Boutique Hotel News',               'https://boutiquehotelnews.com/feed/',     'rss', 'global', 'hospitality', true, 178, 'project_launch'),
   ('Florida YIMBY',                     'https://floridayimby.com/feed',           'rss', 'miami',  'general',     true, 180, 'project_launch')
+on conflict (url) do nothing;
+
+-- ── Firm-centric sources (2026-11-26, round 2) ──────────────────────────────
+-- Built from pool firm names: what focus-geo firms are working on, wherever the
+-- project is. Google News reads only the first ~200 characters of a query —
+-- keep every query at or under that. See migrations/2026-11-26c_sources_round2.sql.
+insert into sources (name, url, source_type, region, sector, active, sort_order, discovery_kind) values
+  ('GNews Firms · NY Hospitality Designers', 'https://news.google.com/rss/search?q=when:30d+(%22Yabu+Pushelberg%22+OR+%22Tihany+Design%22+OR+%22Jeffrey+Beers%22+OR+%22Roman+and+Williams%22+OR+%22Post+Company%22+OR+%22Islyn+Studio%22+OR+%22dash+design%22)+(hotel+OR+resort+OR+residences+OR+restaurant)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'hospitality', true, 182, 'project_launch'),
+  ('GNews Firms · NY Dev Marketing', 'https://news.google.com/rss/search?q=when:30d+(%22Corcoran+Sunshine%22+OR+%22Elliman+Development+Marketing%22+OR+%22Stevens+Development+Marketing%22+OR+%22Compass+Development+Marketing%22+OR+%22SERHANT+New+Development%22)+(condo+OR+residences+OR+tower)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'luxury_residential', true, 184, 'project_launch'),
+  ('GNews Firms · NY Architects', 'https://news.google.com/rss/search?q=when:30d+(%22Handel+Architects%22+OR+%22Fogarty+Finger%22+OR+%22Studio+Gang%22+OR+%22Rafael+Vi%C3%B1oly+Architects%22+OR+%22INC+Architecture%22+OR+%22SO-IL%22+OR+%22Pei+Cobb+Freed%22)+(tower+OR+hotel+OR+condo+OR+museum)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'mixed_use', true, 186, 'project_launch'),
+  ('GNews · Hospitality Design', 'https://news.google.com/rss/search?q=when:30d+site:hospitalitydesign.com+(unveils+OR+%22to+open%22+OR+%22set+to+open%22+OR+debut+OR+coming+OR+revives+OR+%22breaks+ground%22+OR+residences)&hl=en&gl=US&ceid=US:en', 'rss', 'global', 'hospitality', true, 188, 'project_launch')
+on conflict (url) do nothing;
+
+-- ── Jury-accepted source (2026-11-26, round 3) ──────────────────────────────
+-- See migrations/2026-11-26d_sources_round3.sql.
+insert into sources (name, url, source_type, region, sector, active, sort_order, discovery_kind) values
+  ('PROFILEmiami', 'https://profilemiami.com/miamirealestate?format=rss', 'rss', 'miami', 'luxury_residential', true, 192, 'project_launch')
 on conflict (url) do nothing;
 
 -- ============================================================================
@@ -660,9 +677,31 @@ create table if not exists firm_pool (
   exclusion_reason   text,
   linked_company_id  text,
   signal_ref         text,
+  -- Research details (migrations/2026-11-26e_firm_pool_details.sql): what was
+  -- learned when the firm was verified, and its relationship with oaki.
+  hq_city             text,
+  hq_state            text,
+  hq_evidence         text,
+  other_offices       text,
+  fit_level           text,                             -- A | B | C | X (X = researched, does not fit)
+  fit_reason          text,
+  work_types          text,
+  recent_project      text,
+  works_outside_city  text,
+  visualization       text,
+  size_note           text,
+  employees           integer,
+  verification_status text,                             -- verified | unopened | no_site | discarded_by_name | unverified
+  verified_at         date,
+  source_url          text,
+  research_source     text,
+  crm_relationship    text,                             -- none | new_lead | contacted | replied | nurture | won | lost | dormant | held
+  crm_leads           integer,
   created_at         timestamptz not null default now(),
   updated_at         timestamptz not null default now()
 );
+create index if not exists idx_firm_pool_fit_level  on firm_pool(fit_level);
+create index if not exists idx_firm_pool_hq_city    on firm_pool(hq_city);
 create index if not exists idx_firm_pool_status     on firm_pool(pool_status);
 create index if not exists idx_firm_pool_geo        on firm_pool(geo);
 create index if not exists idx_firm_pool_categories on firm_pool using gin(categories);

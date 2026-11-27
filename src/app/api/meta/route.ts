@@ -18,6 +18,9 @@ import {
   BRIEFS_STATUSES,
   POOL_STATUSES,
   REPLY_STATUSES,
+  FIT_LEVELS,
+  VERIFICATION_STATUSES,
+  CRM_RELATIONSHIPS,
 } from '@/lib/vocab'
 import { FOCUS_FIRM_GEOS, HAND_PICKED_FIRM_GEOS, PROJECT_REGIONS } from '@/lib/discoveries/target-geo'
 
@@ -60,6 +63,10 @@ export async function GET() {
     // Firm-pool + value-outreach vocabularies (2026-07-10). firm categories
     // reuse upstream_work_category so the value-outreach match is exact.
     firm_pool_status: POOL_STATUSES,
+    // Firm research vocabularies (2026-11-26e). fit_level X = researched, does not fit.
+    firm_fit_level: FIT_LEVELS,
+    firm_verification_status: VERIFICATION_STATUSES,
+    firm_crm_relationship: CRM_RELATIONSHIPS,
     value_touch_reply_status: REPLY_STATUSES,
   })
 }

@@ -986,9 +986,38 @@ export interface FirmPool {
   exclusion_reason?: string | null
   linked_company_id?: string | null
   signal_ref?: string | null
+  // Research details (2026-11-26e migration). What was learned when the firm
+  // was verified lives on the row, not in a spreadsheet.
+  hq_city?: string | null
+  hq_state?: string | null
+  hq_evidence?: string | null
+  other_offices?: string | null
+  fit_level?: FitLevel | null
+  fit_reason?: string | null
+  work_types?: string | null
+  recent_project?: string | null
+  works_outside_city?: string | null
+  visualization?: string | null
+  size_note?: string | null
+  employees?: number | null
+  verification_status?: VerificationStatus | null
+  verified_at?: string | null
+  source_url?: string | null
+  research_source?: string | null
+  // Snapshot of the best lead stage at the linked CRM company.
+  crm_relationship?: CrmRelationship | null
+  crm_leads?: number | null
   created_at: string
   updated_at: string
 }
+
+// A = clear luxury work of the kind oaki sells into, firm active; B = fits with
+// a reservation; C = marginal (includes studios that only do private luxury
+// homes); X = researched and does not fit.
+export type FitLevel = 'A' | 'B' | 'C' | 'X'
+export type VerificationStatus = 'verified' | 'unopened' | 'no_site' | 'discarded_by_name' | 'unverified'
+export type CrmRelationship =
+  | 'none' | 'new_lead' | 'contacted' | 'replied' | 'nurture' | 'won' | 'lost' | 'dormant' | 'held'
 
 export interface FirmPoolContact {
   contact_id: string

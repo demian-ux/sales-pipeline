@@ -45,7 +45,14 @@ interface PoolFirmLike {
   categories?: readonly string[] | null
   geo?: string | null
   pool_status?: string | null
+  fit_level?: string | null
 }
+
+// Inside one geo, clear fits come first: A, then B, then firms with no level
+// yet, then C. (Firms researched as not fitting are stored as 'excluded' and
+// never reach this point.)
+const LEVEL_RANK: Record<string, number> = { A: 0, B: 1, C: 3, X: 4 }
+const levelRank = (l: string | null | undefined) => (l && l in LEVEL_RANK ? LEVEL_RANK[l] : 2)
 
 export interface MatchInput extends JoinOrderInput {
   categories: readonly WorkCategory[] | readonly string[]
@@ -55,8 +62,9 @@ export interface MatchInput extends JoinOrderInput {
 
 /**
  * The firms a signal reaches: category overlap, in a focus firm geo (or the
- * override geo), not excluded/converted — ordered by geoPriority. The sort is
- * stable, so the caller's order holds inside each geo.
+ * override geo), not excluded/converted — ordered by geoPriority, then by fit
+ * level (A before B). The sort is stable, so the caller's order holds inside
+ * each geo and level.
  */
 export function matchPoolFirms<T extends PoolFirmLike>(firms: readonly T[], input: MatchInput): T[] {
   const wanted = new Set<string>(input.categories)
@@ -71,7 +79,7 @@ export function matchPoolFirms<T extends PoolFirmLike>(firms: readonly T[], inpu
     .filter((f) => (f.categories ?? []).some((c) => wanted.has(c)))
     .filter((f) => !!f.geo && geos.includes(f.geo))
     .map((f, i) => ({ f, i }))
-    .sort((a, b) => rank(a.f.geo) - rank(b.f.geo) || a.i - b.i)
+    .sort((a, b) => rank(a.f.geo) - rank(b.f.geo) || levelRank(a.f.fit_level) - levelRank(b.f.fit_level) || a.i - b.i)
     .map(({ f }) => f)
 }
 
