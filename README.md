@@ -129,6 +129,12 @@ API from a sandbox; the sections below document what that surface covers.
   `research_source`, and a snapshot of the relationship with oaki
   (`crm_relationship`, `crm_leads`). `GET /api/value-outreach` returns A-level
   firms before B inside each geo.
+- **Campaigns of their own.** A firm whose `signal_ref` starts with `campaign:`
+  is contactable but is NOT returned by the general signal join
+  (`GET /api/value-outreach`), and neither is any level C firm. The first one
+  is `campaign:luxury-homes`: studios in New York, California and South Florida
+  that only do private luxury homes. Read a campaign's list with
+  `GET /api/firm-pool?signal_ref=campaign:luxury-homes&pool_status=parked`.
 - **Geography is decided by where the FIRM is, not where the project is**
   (2026-11-26; `src/lib/discoveries/target-geo.ts`). Focus firm geos: `nyc`,
   `south_florida`, `california`, `seattle`, plus `chicago` and `dc` for
