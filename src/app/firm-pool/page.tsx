@@ -7,6 +7,7 @@
 import { getSupabaseAdmin, isSupabaseAdminConfigured } from '@/lib/supabase'
 import type { FirmPool, ValueTouch } from '@/lib/types'
 import { selectAllPool } from '@/lib/firm-pool/query'
+import { isCampaignFirm, LUXURY_HOMES_CAMPAIGN } from '@/lib/firm-pool/match'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,10 +30,11 @@ const GEO_LABEL: Record<string, string> = {
 // Which slice of the pool to show. The pool holds every researched firm, most
 // of them excluded as not fitting, so the default is the firms to work.
 const VIEWS = {
-  work:     { label: 'To contact',        test: (f: FirmPool) => f.pool_status === 'active' || f.pool_status === 'parked' },
+  work:     { label: 'To contact',        test: (f: FirmPool) => (f.pool_status === 'active' || f.pool_status === 'parked') && !isCampaignFirm(f) },
+  homes:    { label: 'Luxury homes campaign', test: (f: FirmPool) => f.signal_ref === LUXURY_HOMES_CAMPAIGN && (f.pool_status === 'active' || f.pool_status === 'parked') },
   engaged:  { label: 'Already in the CRM', test: (f: FirmPool) => f.pool_status === 'excluded' && /engaged|warm/i.test(f.exclusion_reason ?? '') },
   pending:  { label: 'Not verified',      test: (f: FirmPool) => f.pool_status === 'candidate' },
-  marginal: { label: 'Level C',           test: (f: FirmPool) => f.fit_level === 'C' },
+  marginal: { label: 'Level C',           test: (f: FirmPool) => f.fit_level === 'C' && f.pool_status === 'excluded' && !/engaged|warm/i.test(f.exclusion_reason ?? '') },
   nofit:    { label: 'Does not fit',      test: (f: FirmPool) => f.fit_level === 'X' },
   all:      { label: 'Everything',        test: () => true },
 } as const

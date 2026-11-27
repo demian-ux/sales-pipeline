@@ -254,16 +254,17 @@ test('focus geo order: New York, South Florida, California, Seattle, then Chicag
   assert.deepEqual(geoPriority({ projectGeo: 'california', namedFirmGeos: ['nyc'] }).slice(0, 2), ['california', 'nyc'])
 })
 
-test('inside one geo, level A firms come before B, then unrated, then C', () => {
+test('inside one geo, level A firms come before B, then unrated; level C and campaign firms stay out of the general join', () => {
   const pool = [
     { name: 'NY C', geo: 'nyc', categories: ['hospitality_design'], pool_status: 'parked', fit_level: 'C' },
     { name: 'NY unrated', geo: 'nyc', categories: ['hospitality_design'], pool_status: 'active' },
     { name: 'NY B', geo: 'nyc', categories: ['hospitality_design'], pool_status: 'parked', fit_level: 'B' },
     { name: 'Miami A', geo: 'south_florida', categories: ['hospitality_design'], pool_status: 'parked', fit_level: 'A' },
     { name: 'NY A', geo: 'nyc', categories: ['hospitality_design'], pool_status: 'parked', fit_level: 'A' },
+    { name: 'NY luxury homes', geo: 'nyc', categories: ['hospitality_design'], pool_status: 'parked', fit_level: 'B', signal_ref: 'campaign:luxury-homes' },
   ]
   const out = matchPoolFirms(pool, { categories: ['hospitality_design'], projectGeo: 'nyc' })
-  assert.deepEqual(names(out), ['NY A', 'NY B', 'NY unrated', 'NY C', 'Miami A'])
+  assert.deepEqual(names(out), ['NY A', 'NY B', 'NY unrated', 'Miami A'])
 })
 
 test('example firms enter the pool under their own HQ geo, never the project geo', () => {

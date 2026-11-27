@@ -46,13 +46,22 @@ interface PoolFirmLike {
   geo?: string | null
   pool_status?: string | null
   fit_level?: string | null
+  signal_ref?: string | null
 }
 
 // Inside one geo, clear fits come first: A, then B, then firms with no level
-// yet, then C. (Firms researched as not fitting are stored as 'excluded' and
-// never reach this point.)
+// yet. (Firms researched as not fitting are stored as 'excluded' and never
+// reach this point.)
 const LEVEL_RANK: Record<string, number> = { A: 0, B: 1, C: 3, X: 4 }
 const levelRank = (l: string | null | undefined) => (l && l in LEVEL_RANK ? LEVEL_RANK[l] : 2)
+
+// Firms that belong to a campaign of their own carry this prefix in signal_ref
+// (e.g. 'campaign:luxury-homes', the studios that only do private luxury
+// homes). They are contactable, but NOT through the general signal join: their
+// campaign reads them with GET /api/firm-pool?signal_ref=campaign:<name>.
+export const CAMPAIGN_PREFIX = 'campaign:'
+export const LUXURY_HOMES_CAMPAIGN = 'campaign:luxury-homes'
+export const isCampaignFirm = (f: { signal_ref?: string | null }) => !!f.signal_ref && f.signal_ref.startsWith(CAMPAIGN_PREFIX)
 
 export interface MatchInput extends JoinOrderInput {
   categories: readonly WorkCategory[] | readonly string[]
@@ -65,6 +74,9 @@ export interface MatchInput extends JoinOrderInput {
  * override geo), not excluded/converted — ordered by geoPriority, then by fit
  * level (A before B). The sort is stable, so the caller's order holds inside
  * each geo and level.
+ *
+ * This is the GENERAL campaign's join: level C firms and firms that belong to
+ * a campaign of their own (signal_ref 'campaign:…') are left out.
  */
 export function matchPoolFirms<T extends PoolFirmLike>(firms: readonly T[], input: MatchInput): T[] {
   const wanted = new Set<string>(input.categories)
@@ -76,6 +88,7 @@ export function matchPoolFirms<T extends PoolFirmLike>(firms: readonly T[], inpu
   }
   return firms
     .filter((f) => f.pool_status !== 'excluded' && f.pool_status !== 'converted')
+    .filter((f) => f.fit_level !== 'C' && f.fit_level !== 'X' && !isCampaignFirm(f))
     .filter((f) => (f.categories ?? []).some((c) => wanted.has(c)))
     .filter((f) => !!f.geo && geos.includes(f.geo))
     .map((f, i) => ({ f, i }))
